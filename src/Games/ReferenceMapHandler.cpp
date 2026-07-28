@@ -117,23 +117,17 @@ void CReferenceMapHandler::PermuteMapOrder()
 bool CReferenceMapHandler::WriteToFile()
 {
 	std::string refName = "mapGame/ReferenceData/MapReferenceSettings.xml";
-
 	ofXml XMLOut;
-	XMLOut.addChild("MapReferenceSettings");
-	XMLOut.setTo("MapReferenceSettings");
-	XMLOut.addValue("DefaultMap", 0);
+	auto root = XMLOut.appendChild("MapReferenceSettings");
+	root.appendChild("DefaultMap").set(0);
 
-	XMLOut.addChild("maps");
-	XMLOut.setTo("maps");
+	auto mapsNode = root.appendChild("maps");
 
-	for (int i = 0; i < ReferenceMaps.size(); i++)
-	{
-		XMLOut.addChild("map");
-		XMLOut.setTo("map["+ ofToString(i) +"]");
-		XMLOut.setAttribute("id", ofToString(i));
-		XMLOut.addValue("MapName", ReferenceNames[i]);
-		XMLOut.addValue("GroundTruth", ReferenceMaps[i]);
-		XMLOut.setToParent();
+	for (int i = 0; i < ReferenceMaps.size(); i++) {
+		auto mapNode = mapsNode.appendChild("map");
+		mapNode.setAttribute("id", ofToString(i));
+		mapNode.appendChild("MapName").set(ReferenceNames[i]);
+		mapNode.appendChild("GroundTruth").set(ReferenceMaps[i]);
 	}
 
 	return XMLOut.save(refName);
@@ -143,36 +137,29 @@ bool CReferenceMapHandler::WriteToFile()
 bool CReferenceMapHandler::ReadFromFile()
 {
 	std::string refName = "mapGame/ReferenceData/MapReferenceSettings.xml";
-
 	ReferenceNames.clear();
 	ReferenceMaps.clear();
 
 	ofXml XMLIn;
-	if (!XMLIn.load(refName))
-	{
+	if (!XMLIn.load(refName)) {
 		std::cout << "Could not read " << refName << std::endl;
 		return false;
 	}
 
-	XMLIn.setTo("MapReferenceSettings");
+	auto root = XMLIn.getChild("MapReferenceSettings");
+	if (!root) return false;
 
-	DefaultMap = XMLIn.getValue<int>("DefaultMap");
+	DefaultMap = root.getChild("DefaultMap").getIntValue();
 	ActualMap = DefaultMap;
 
-	XMLIn.setTo("maps");
+	auto mapsNode = root.getChild("maps");
+	if (!mapsNode) return false;
 
-	int nmaps = XMLIn.getNumChildren(); // how many do you have?
-
-	for (int i = 0; i < nmaps; i++)
-	{
-		XMLIn.setTo("map[" + ofToString(i) + "]");
-		std::string rn = XMLIn.getValue<string>("MapName");
-		std::string rGT = XMLIn.getValue<string>("GroundTruth");
-
+	for (auto mapNode : mapsNode.getChildren("map")) {
+		std::string rn = mapNode.getChild("MapName").getValue();
+		std::string rGT = mapNode.getChild("GroundTruth").getValue();
 		ReferenceNames.push_back(rn);
 		ReferenceMaps.push_back(rGT);
-
-		XMLIn.setToParent();
 	}
 
 	return true;

@@ -39,14 +39,12 @@ bool setWindowDimensions(ofGLFWWindowSettings& settings, int windowsNum) {
 		if (windowsNum == 0)
 		{
 			// Make main window almost full screen - but just a bit of space around to be able to grab other windows
-			settings.width = desktopMode->width * 4.0 / 5.0;
-			settings.height = desktopMode->height * 4.0 / 5.0;
+			settings.setSize(desktopMode->width * 4.0 / 5.0, desktopMode->height * 4.0 / 5.0);
 		}
 		else
 		{
 			// Projector window full screen
-			settings.width = desktopMode->width;
-			settings.height = desktopMode->height;
+			settings.setSize(desktopMode->width, desktopMode->height);
 		}
 
 		settings.setPosition(ofVec2f(xM, yM));
@@ -54,8 +52,7 @@ bool setWindowDimensions(ofGLFWWindowSettings& settings, int windowsNum) {
 		return true;
 	}
 	else {
-		settings.width = 1600; // Default settings
-		settings.height = 800;
+		settings.setSize(1600, 800);
 		settings.setPosition(ofVec2f(0, 0));
 		return false;
 	}
@@ -66,10 +63,7 @@ bool setWindowDimensions(ofGLFWWindowSettings& settings, int windowsNum) {
 int main() {
 	ofGLFWWindowSettings settings;
 //	setFirstWindowDimensions(settings);
-	//settings.width = 1200;
- //	settings.height = 600;
-    settings.width = 1600; // Default settings
-    settings.height = 800;
+	settings.setSize(1600, 800);
     settings.setPosition(ofVec2f(0, 0));
 	settings.resizable = true;
 	settings.decorated = true;
@@ -77,8 +71,8 @@ int main() {
 	shared_ptr<ofAppBaseWindow> mainWindow = ofCreateWindow(settings);
     
 	setWindowDimensions(settings, 0);
-	mainWindow->setWindowPosition(ofGetScreenWidth() / 2 - settings.width / 2, ofGetScreenHeight() / 2 - settings.height / 2);
-    mainWindow->setWindowShape(settings.width, settings.height);
+	mainWindow->setWindowPosition(ofGetScreenWidth() / 2 - settings.getWidth() / 2, ofGetScreenHeight() / 2 - settings.getHeight() / 2);
+	mainWindow->setWindowShape(settings.getWidth(), settings.getHeight());
     
 	setWindowDimensions(settings, 1);
 	settings.resizable = false;

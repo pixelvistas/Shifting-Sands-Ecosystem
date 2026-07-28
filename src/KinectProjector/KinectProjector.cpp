@@ -21,6 +21,9 @@ with the Magic Sand; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 ***********************************************************************/
 
+#include "ofxImGui.h"
+#include <algorithm>
+#include <vector>
 #include "KinectProjector.h"
 #include <sstream>
 
@@ -48,22 +51,15 @@ drawKinectColorView(true)
 }
 
 void KinectProjector::setup(bool sdisplayGui)
+
 {
 	applicationState = APPLICATION_STATE_SETUP;
 
 	ofAddListener(ofEvents().exit, this, &KinectProjector::exit);
 
 	// instantiate the modal windows //
-    modalTheme = make_shared<ofxModalThemeProjKinect>();
-    confirmModal = make_shared<ofxModalConfirm>();
-    confirmModal->setTheme(modalTheme);
-    confirmModal->addListener(this, &KinectProjector::onConfirmModalEvent);
-    confirmModal->setButtonLabel("Ok");
-    
-    calibModal = make_shared<ofxModalAlert>();
-    calibModal->setTheme(modalTheme);
-    calibModal->addListener(this, &KinectProjector::onCalibModalEvent);
-    calibModal->setButtonLabel("Cancel");
+	confirmModal = std::make_shared<StubModal>();
+	calibModal = std::make_shared<StubModal>();
         
 	displayGui = sdisplayGui;
 
@@ -97,7 +93,7 @@ void KinectProjector::setup(bool sdisplayGui)
 
 	doInpainting = false;
 	doFullFrameFiltering = false;
-	spatialFiltering = true;
+	spatialFiltering = false;
     followBigChanges = false;
     numAveragingSlots = 15;
 	TemporalFrameCounter = 0;
@@ -134,8 +130,7 @@ void KinectProjector::setup(bool sdisplayGui)
     ofClear(255, 255, 255, 0);
     fboMainWindow.end();
 
-    if (displayGui)
-        setupGui();
+    // GUI now drawn immediate-mode in drawGui(); nothing to update here.
 
     kinectgrabber.start(); // Start the acquisition
 
@@ -155,6 +150,7 @@ void KinectProjector::exit(ofEventArgs& e)
 		}
 	}
 }
+
 
 void KinectProjector::setupGradientField(){
     gradFieldcols = kinectRes.x / gradFieldResolution;
@@ -178,7 +174,9 @@ void KinectProjector::setGradFieldResolution(int sgradFieldResolution){
 // For some reason this call eats milliseconds - so it should only be called when something is changed
 // else it would be convenient just to call it in every update
 void KinectProjector::updateStatusGUI()
+
 {
+/*
 	if (kinectOpened)
 	{
 		StatusGUI->getLabel("Kinect Status")->setLabel("Kinect running");
@@ -241,13 +239,144 @@ void KinectProjector::updateStatusGUI()
 	gui->getToggle("Quick reaction")->setChecked(followBigChanges);
 	gui->getToggle("Inpaint outliers")->setChecked(doInpainting);
 	gui->getToggle("Full Frame Filtering")->setChecked(doFullFrameFiltering);
+
+*/
+}
+
+void KinectProjector::drawGui() {
+	if (!displayGui)
+		return;
+
+	// ---- Control panel ----
+	ImGui::SetNextWindowPos(ImVec2(ofGetWidth() - 340, 10), ImGuiCond_FirstUseEver);
+	ImGui::Begin("Magic Sand");
+
+	if (ImGui::Button("RUN!")) {
+		startApplication();
+	}
+	ImGui::Text("App FPS: %.1f", ofGetFrameRate());
+
+	if (ImGui::CollapsingHeader("Advanced")) {
+		ImGui::Checkbox("Display kinect depth view", &drawKinectView);
+		ImGui::Checkbox("Display kinect color view", &drawKinectColorView);
+		ImGui::Checkbox("Dump Debug", &DumpDebugFiles);
+		ImGui::Checkbox("Spatial filtering", &spatialFiltering);
+		ImGui::Checkbox("Inpaint outliers", &doInpainting);
+		ImGui::Checkbox("Full Frame Filtering", &doFullFrameFiltering);
+		ImGui::Checkbox("Quick reaction", &followBigChanges);
+		int avg = (int)numAveragingSlots;
+		if (ImGui::SliderInt("Averaging", &avg, 1, 40)) {
+			numAveragingSlots = avg;
+		}
+		if (ImGui::Button("Reset sea level")) {
+			ResetSeaLevel();
+		}
+	}
+
+	if (ImGui::CollapsingHeader("Calibration")) {
+		if (ImGui::Button("Manually define sand region")) {
+			StartManualROIDefinition();
+		}
+		if (ImGui::Button("Automatically calibrate kinect & projector")) {
+			startAutomaticKinectProjectorCalibration();
+		}
+		if (ImGui::Button("Auto Adjust ROI")) {
+			updateROIFromCalibration();
+		}
+		ImGui::Checkbox("Show ROI on sand", &doShowROIonProjector);
+	}
+	ImGui::End();
+
+	// ---- Status panel ----
+	ImGui::SetNextWindowPos(ImVec2(10, ofGetHeight() - 210), ImGuiCond_FirstUseEver);
+	ImGui::Begin("Status");
+
+	std::string AppStatus = "Setup";
+	if (applicationState == APPLICATION_STATE_CALIBRATING)
+		AppStatus = "Calibrating";
+	else if (applicationState == APPLICATION_STATE_RUNNING)
+		AppStatus = "Running";
+	ImGui::TextColored(ImVec4(1, 1, 0, 1), "Application state: %s", AppStatus.c_str());
+
+	if (kinectOpened)
+		ImGui::TextColored(ImVec4(0, 1, 0, 1), "Kinect running");
+	else
+		ImGui::TextColored(ImVec4(1, 0, 0, 1), "Kinect not found");
+
+	if (ROIcalibrated)
+		ImGui::TextColored(ImVec4(0, 1, 0, 1), "ROI defined");
+	else
+		ImGui::TextColored(ImVec4(1, 0, 0, 1), "ROI not defined");
+
+	if (basePlaneComputed)
+		ImGui::TextColored(ImVec4(0, 1, 0, 1), "Baseplane found");
+	else
+		ImGui::TextColored(ImVec4(1, 0, 0, 1), "Baseplane not found");
+
+	if (projKinectCalibrated)
+		ImGui::TextColored(ImVec4(0, 1, 0, 1), "Projector/Kinect calibrated");
+	else
+		ImGui::TextColored(ImVec4(1, 0, 0, 1), "Projector/Kinect not calibrated");
+
+	ImGui::Text("Projector %.0f x %.0f", projRes.x, projRes.y);
+	ImGui::TextColored(ImVec4(0, 1, 1, 1), "Calibration Step: %s", calibrationText.c_str());
+
+	ImGui::End();
+
+	// Calibration modal popups (replaces old ofxModal dialogs)
+	drawModal(confirmModal, "confirm_modal");
+	drawModal(calibModal, "calib_modal");
+}
+
+void KinectProjector::drawModal(std::shared_ptr<StubModal> modal, const char * id) {
+	if (!modal || !modal->visible) return;
+
+	ImGui::OpenPopup(id);
+
+	// Center the popup
+	ImVec2 center(ofGetWidth() * 0.5f, ofGetHeight() * 0.5f);
+	ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+
+	if (ImGui::BeginPopupModal(id, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+		if (!modal->title.empty()) {
+			ImGui::Text("%s", modal->title.c_str());
+			ImGui::Separator();
+		}
+		ImGui::TextWrapped("%s", modal->message.c_str());
+		ImGui::Spacing();
+		if (ImGui::Button("OK", ImVec2(120, 0))) {
+			modal->justConfirmed = true;
+			modal->visible = false;
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndPopup();
+	}
 }
 
 void KinectProjector::update()
 {
+	// Handle calibration modal confirmations (replaces old onConfirmModalEvent)
+	if (confirmModal && confirmModal->justConfirmed) {
+		confirmModal->justConfirmed = false;
+		if (applicationState == APPLICATION_STATE_CALIBRATING) {
+			if (waitingForFlattenSand) {
+				waitingForFlattenSand = false;
+			} else if ((calibrationState == CALIBRATION_STATE_PROJ_KINECT_AUTO_CALIBRATION || (calibrationState == CALIBRATION_STATE_FULL_AUTO_CALIBRATION && fullCalibState == FULL_CALIBRATION_STATE_AUTOCALIB))
+				&& autoCalibState == AUTOCALIB_STATE_NEXT_POINT) {
+				if (!upframe) upframe = true;
+			}
+		}
+	}
+	if (calibModal && calibModal->justConfirmed) {
+		calibModal->justConfirmed = false;
+		if (applicationState == APPLICATION_STATE_CALIBRATING) {
+			applicationState = APPLICATION_STATE_SETUP;
+		}
+	}
+
     // Clear updated state variables
     basePlaneUpdated = false;
-//    ROIUpdated = false;
+	// ROIUpdated = false;
     projKinectCalibrationUpdated = false;
 
 	// Try to open the kinect every 3. second if it is not yet open
@@ -272,18 +401,16 @@ void KinectProjector::update()
 		}
 	}
 
-	if (displayGui)
-	{
-		gui->update();
-		StatusGUI->update();
-	}
 
     // Get images from kinect grabber
     ofFloatPixels filteredframe;
     if (kinectOpened && kinectgrabber.filtered.tryReceive(filteredframe)) 
 	{
 		fpsKinect.newFrame();
-		fpsKinectText->setText(ofToString(fpsKinect.getFps(), 2));
+
+		if (filteredframe.getData() == nullptr || filteredframe.getWidth() != (int)kinectRes.x || filteredframe.getHeight() != (int)kinectRes.y) {
+			return;
+		}
 
 		FilteredDepthImage.setFromPixels(filteredframe.getData(), kinectRes.x, kinectRes.y);
         FilteredDepthImage.updateTexture();
@@ -530,11 +657,11 @@ void KinectProjector::updateROIFromCalibration()
 	ofVec2f b = worldCoordTokinectCoord(projCoordAndWorldZToWorldCoord(projRes.x, 0, basePlaneOffset.z));
 	ofVec2f c = worldCoordTokinectCoord(projCoordAndWorldZToWorldCoord(projRes.x, projRes.y, basePlaneOffset.z));
 	ofVec2f d = worldCoordTokinectCoord(projCoordAndWorldZToWorldCoord(0, projRes.y, basePlaneOffset.z));
-	float x1 = max(a.x, d.x);
-	float x2 = min(b.x, c.x);
-	float y1 = max(a.y, b.y);
-	float y2 = min(c.y, d.y);
-	ofRectangle smallKinectROI = ofRectangle(ofPoint(max(x1, kinectROI.getLeft()), max(y1, kinectROI.getTop())), ofPoint(min(x2, kinectROI.getRight()), min(y2, kinectROI.getBottom())));
+	float x1 = std::max(a.x, d.x);
+	float x2 = std::min(b.x, c.x);
+	float y1 = std::max(a.y, b.y);
+	float y2 = std::min(c.y, d.y);
+	ofRectangle smallKinectROI = ofRectangle(ofPoint(std::max(x1, kinectROI.getLeft()), std::max(y1, kinectROI.getTop())), ofPoint(std::min(x2, kinectROI.getRight()), std::min(y2, kinectROI.getBottom())));
 	kinectROI = smallKinectROI;
 
 	kinectROI.standardize();
@@ -670,13 +797,16 @@ void KinectProjector::updateROIFromFile()
 	string settingsFile = "settings/kinectProjectorSettings.xml";
 
 	ofXml xml;
-	if (xml.load(settingsFile))
-	{
-		xml.setTo("KINECTSETTINGS");
-		kinectROI = xml.getValue<ofRectangle>("kinectROI");
-		setNewKinectROI();
-		ROICalibState = ROI_CALIBRATION_STATE_DONE;
-		return;
+	if (xml.load(settingsFile)) {
+		auto ks = xml.getChild("KINECTSETTINGS");
+		if (ks) {
+			auto r = ks.getChild("kinectROI");
+			kinectROI = ofRectangle(r.getChild("x").getFloatValue(), r.getChild("y").getFloatValue(),
+				r.getChild("width").getFloatValue(), r.getChild("height").getFloatValue());
+			setNewKinectROI();
+			ROICalibState = ROI_CALIBRATION_STATE_DONE;
+			return;
+		}
 	}
 	ofLogVerbose("KinectProjector") << "updateROIFromFile(): could not read settings/kinectProjectorSettings.xml";
 	applicationState = APPLICATION_STATE_SETUP;
@@ -737,7 +867,7 @@ std::string KinectProjector::GetTimeAndDateString()
 bool KinectProjector::savePointPair()
 {
 	std::string ppK = ofToDataPath(DebugFileOutDir + "CalibrationPointPairsKinect.txt");
-	std::string ppP = ofToDataPath(DebugFileOutDir + "CalibrationPointPairsKinect.txt");
+	std::string ppP = ofToDataPath(DebugFileOutDir + "CalibrationPointPairsProjector.txt");
 	std::ofstream ppKo(ppK);
 	std::ofstream ppPo(ppP);
 
@@ -992,6 +1122,39 @@ void KinectProjector::CalibrateNextPoint()
 
 			drawChessboardCorners(cvRgbImage, patternSize, cv::Mat(cvPoints), foundChessboard);
 
+			// --- Normalize detected corner order to canonical row-major (top->bottom, left->right) ---
+			// findChessboardCorners may return the board in any of 4 orientations.
+			// Reorder cvPoints to match how drawChessboard generated currentProjectorPoints,
+			// otherwise pairs are scrambled and reprojection error explodes.
+			{
+				int cols = chessboardX - 1; // interior corners per row
+				int rows = chessboardY - 1; // interior corner rows
+				if ((int)cvPoints.size() == cols * rows) {
+					std::vector<cv::Point2f> pts = cvPoints;
+
+					// OpenCV returns corners grouped by rows already, but the row order
+					// and within-row order may be flipped. Determine orientation from
+					// the four extreme corners of the detected set.
+					cv::Point2f first = pts.front();
+					cv::Point2f last = pts.back();
+
+					// Decide if rows run top->bottom: compare y of first vs last row.
+					bool flipVertical = (first.y > last.y);
+					// Decide if cols run left->right within a row: compare x of first two.
+					bool flipHorizontal = (pts[0].x > pts[cols - 1].x);
+
+					std::vector<cv::Point2f> ordered(pts.size());
+					for (int r = 0; r < rows; ++r) {
+						for (int c = 0; c < cols; ++c) {
+							int srcR = flipVertical ? (rows - 1 - r) : r;
+							int srcC = flipHorizontal ? (cols - 1 - c) : c;
+							ordered[r * cols + c] = pts[srcR * cols + srcC];
+						}
+					}
+					cvPoints = ordered;
+				}
+			}
+
 			if (DumpDebugFiles)
 			{
 				std::string tname = DebugFileOutDir + "FoundChessboard_" + GetTimeAndDateString() + "_" + ofToString(currentCalibPts) + "_try_" + ofToString(trials) + ".png";
@@ -1210,12 +1373,6 @@ void KinectProjector::drawMainWindow(float x, float y, float width, float height
 	{
 		fboMainWindow.draw(x, y);
 	}
-
-	if (displayGui)
-	{
-		gui->draw();
-		StatusGUI->draw();
-	}
 }
 
 void KinectProjector::drawChessboard(int x, int y, int chessboardSize) {
@@ -1395,6 +1552,7 @@ ofVec2f KinectProjector::gradientAtKinectCoord(float x, float y){
 }
 
 void KinectProjector::setupGui(){
+	/*
     // instantiate and position the gui //
     gui = new ofxDatGui( ofxDatGuiAnchor::TOP_RIGHT );
 	gui->addButton("RUN!")->setName("Start Application");
@@ -1454,6 +1612,7 @@ void KinectProjector::setupGui(){
 	StatusGUI->addLabel("Projector Status");
 	StatusGUI->addHeader(":: Status ::", false);
 	StatusGUI->setAutoDraw(false);
+	*/
 }
 
 
@@ -1533,8 +1692,6 @@ void KinectProjector::startApplication()
 	autoCalibState = AUTOCALIB_STATE_DONE;
 	drawKinectColorView = false;
 	drawKinectView = false;
-	gui->getToggle("Draw kinect color view")->setChecked(drawKinectColorView);
-	gui->getToggle("Draw kinect depth view")->setChecked(drawKinectView);
 	updateStatusGUI();
 }
 
@@ -1640,6 +1797,7 @@ void KinectProjector::setFollowBigChanges(bool sfollowBigChanges){
 	updateStatusGUI();
 }
 
+/*
 void KinectProjector::onButtonEvent(ofxDatGuiButtonEvent e){
     if (e.target->is("Full Calibration")) {
         startFullCalibration();
@@ -1668,6 +1826,7 @@ void KinectProjector::onButtonEvent(ofxDatGuiButtonEvent e){
 		updateROIFromCalibration();
 	}
 }
+*/
 
 void KinectProjector::StartManualROIDefinition()
 {
@@ -1679,11 +1838,7 @@ void KinectProjector::StartManualROIDefinition()
 	updateStatusGUI();
 }
 
-void KinectProjector::ResetSeaLevel()
-{
-	gui->getSlider("Tilt X")->setValue(0);
-	gui->getSlider("Tilt Y")->setValue(0);
-	gui->getSlider("Vertical offset")->setValue(0);
+void KinectProjector::ResetSeaLevel() {
 	basePlaneNormal = basePlaneNormalBack;
 	basePlaneOffset = basePlaneOffsetBack;
 	basePlaneEq = getPlaneEquation(basePlaneOffset, basePlaneNormal);
@@ -1703,6 +1858,7 @@ bool KinectProjector::getDumpDebugFiles()
 	return DumpDebugFiles;
 }
 
+/*
 void KinectProjector::onToggleEvent(ofxDatGuiToggleEvent e){
     if (e.target->is("Spatial filtering")) {
 		setSpatialFiltering(e.checked);
@@ -1742,6 +1898,7 @@ void KinectProjector::onToggleEvent(ofxDatGuiToggleEvent e){
 	}
 }
 
+
 void KinectProjector::onSliderEvent(ofxDatGuiSliderEvent e){
     if (e.target->is("Tilt X") || e.target->is("Tilt Y")) {
         basePlaneNormal = basePlaneNormalBack.getRotated(gui->getSlider("Tilt X")->getValue(), ofVec3f(1,0,0));
@@ -1765,7 +1922,9 @@ void KinectProjector::onSliderEvent(ofxDatGuiSliderEvent e){
         });
     }
 }
+*/
 
+/*
 void KinectProjector::onConfirmModalEvent(ofxModalEvent e)
 {
     if (e.type == ofxModalEvent::SHOWN)
@@ -1807,7 +1966,9 @@ void KinectProjector::onConfirmModalEvent(ofxModalEvent e)
         ofLogVerbose("KinectProjector") << "Modal confirm button pressed" ;
     }
 }
+*/
 
+/*
 void KinectProjector::onCalibModalEvent(ofxModalEvent e)
 {
     if (e.type == ofxModalEvent::SHOWN)
@@ -1825,6 +1986,7 @@ void KinectProjector::onCalibModalEvent(ofxModalEvent e)
 		updateStatusGUI();
     }
 }
+*/
 
 void KinectProjector::saveCalibrationAndSettings()
 {
@@ -1850,48 +2012,76 @@ void KinectProjector::saveCalibrationAndSettings()
 	}
 }
 
-bool KinectProjector::loadSettings(){
-    string settingsFile = "settings/kinectProjectorSettings.xml";
-    
-    ofXml xml;
-    if (!xml.load(settingsFile))
-        return false;
-    xml.setTo("KINECTSETTINGS");
-    kinectROI = xml.getValue<ofRectangle>("kinectROI");
-    basePlaneNormalBack = xml.getValue<ofVec3f>("basePlaneNormalBack");
-    basePlaneNormal = basePlaneNormalBack;
-    basePlaneOffsetBack = xml.getValue<ofVec3f>("basePlaneOffsetBack");
-    basePlaneOffset = basePlaneOffsetBack;
-    basePlaneEq = xml.getValue<ofVec4f>("basePlaneEq");
-    maxOffsetBack = xml.getValue<float>("maxOffsetBack");
-    maxOffset = maxOffsetBack;
-    spatialFiltering = xml.getValue<bool>("spatialFiltering");
-    followBigChanges = xml.getValue<bool>("followBigChanges");
-    numAveragingSlots = xml.getValue<int>("numAveragingSlots");
-	doInpainting = xml.getValue<bool>("OutlierInpainting", false);
-	doFullFrameFiltering = xml.getValue<bool>("FullFrameFiltering", false);
-    return true;
+bool KinectProjector::loadSettings() {
+	string settingsFile = "settings/kinectProjectorSettings.xml";
+
+	ofXml xml;
+	if (!xml.load(settingsFile))
+		return false;
+	auto ks = xml.getChild("KINECTSETTINGS");
+	if (!ks) return false;
+
+	auto r = ks.getChild("kinectROI");
+	kinectROI = ofRectangle(r.getChild("x").getFloatValue(), r.getChild("y").getFloatValue(),
+		r.getChild("width").getFloatValue(), r.getChild("height").getFloatValue());
+
+	auto bnn = ks.getChild("basePlaneNormalBack");
+	basePlaneNormalBack = ofVec3f(bnn.getChild("x").getFloatValue(), bnn.getChild("y").getFloatValue(), bnn.getChild("z").getFloatValue());
+	basePlaneNormal = basePlaneNormalBack;
+
+	auto bob = ks.getChild("basePlaneOffsetBack");
+	basePlaneOffsetBack = ofVec3f(bob.getChild("x").getFloatValue(), bob.getChild("y").getFloatValue(), bob.getChild("z").getFloatValue());
+	basePlaneOffset = basePlaneOffsetBack;
+
+	auto bpe = ks.getChild("basePlaneEq");
+	basePlaneEq = ofVec4f(bpe.getChild("x").getFloatValue(), bpe.getChild("y").getFloatValue(), bpe.getChild("z").getFloatValue(), bpe.getChild("w").getFloatValue());
+
+	maxOffsetBack = ks.getChild("maxOffsetBack").getFloatValue();
+	maxOffset = maxOffsetBack;
+	spatialFiltering = ks.getChild("spatialFiltering").getBoolValue();
+	followBigChanges = ks.getChild("followBigChanges").getBoolValue();
+	numAveragingSlots = ks.getChild("numAveragingSlots").getIntValue();
+	if (ks.getChild("OutlierInpainting")) doInpainting = ks.getChild("OutlierInpainting").getBoolValue();
+	if (ks.getChild("FullFrameFiltering")) doFullFrameFiltering = ks.getChild("FullFrameFiltering").getBoolValue();
+	return true;
 }
 
-bool KinectProjector::saveSettings()
-{
-    string settingsFile = "settings/kinectProjectorSettings.xml";
+bool KinectProjector::saveSettings() {
+	string settingsFile = "settings/kinectProjectorSettings.xml";
 
-    ofXml xml;
-    xml.addChild("KINECTSETTINGS");
-    xml.setTo("KINECTSETTINGS");
-    xml.addValue("kinectROI", kinectROI);
-    xml.addValue("basePlaneNormalBack", basePlaneNormalBack);
-    xml.addValue("basePlaneOffsetBack", basePlaneOffsetBack);
-    xml.addValue("basePlaneEq", basePlaneEq);
-    xml.addValue("maxOffsetBack", maxOffsetBack);
-    xml.addValue("spatialFiltering", spatialFiltering);
-    xml.addValue("followBigChanges", followBigChanges);
-    xml.addValue("numAveragingSlots", numAveragingSlots);
-	xml.addValue("OutlierInpainting", doInpainting);
-	xml.addValue("FullFrameFiltering", doFullFrameFiltering);
-	xml.setToParent();
-    return xml.save(settingsFile);
+	ofXml xml;
+	auto ks = xml.appendChild("KINECTSETTINGS");
+
+	auto r = ks.appendChild("kinectROI");
+	r.appendChild("x").set(kinectROI.x);
+	r.appendChild("y").set(kinectROI.y);
+	r.appendChild("width").set(kinectROI.width);
+	r.appendChild("height").set(kinectROI.height);
+
+	auto bnn = ks.appendChild("basePlaneNormalBack");
+	bnn.appendChild("x").set(basePlaneNormalBack.x);
+	bnn.appendChild("y").set(basePlaneNormalBack.y);
+	bnn.appendChild("z").set(basePlaneNormalBack.z);
+
+	auto bob = ks.appendChild("basePlaneOffsetBack");
+	bob.appendChild("x").set(basePlaneOffsetBack.x);
+	bob.appendChild("y").set(basePlaneOffsetBack.y);
+	bob.appendChild("z").set(basePlaneOffsetBack.z);
+
+	auto bpe = ks.appendChild("basePlaneEq");
+	bpe.appendChild("x").set(basePlaneEq.x);
+	bpe.appendChild("y").set(basePlaneEq.y);
+	bpe.appendChild("z").set(basePlaneEq.z);
+	bpe.appendChild("w").set(basePlaneEq.w);
+
+	ks.appendChild("maxOffsetBack").set(maxOffsetBack);
+	ks.appendChild("spatialFiltering").set(spatialFiltering);
+	ks.appendChild("followBigChanges").set(followBigChanges);
+	ks.appendChild("numAveragingSlots").set(numAveragingSlots);
+	ks.appendChild("OutlierInpainting").set(doInpainting);
+	ks.appendChild("FullFrameFiltering").set(doFullFrameFiltering);
+
+	return xml.save(settingsFile);
 }
 
 void KinectProjector::ProcessChessBoardInput(ofxCvGrayscaleImage& image)

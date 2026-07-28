@@ -154,7 +154,7 @@ void CBoidGameController::update()
 			InitiateGameSequence();
 		}
 	}
-	gui->update();
+	//gui->update();
 }
 
 void CBoidGameController::ComputeScores()
@@ -309,7 +309,7 @@ void CBoidGameController::DrawFinalScoresOnFBO()
 void CBoidGameController::drawMainWindow(float x, float y, float width, float height) 
 {
 	fboVehicles.draw(x, y, width, height);
-	gui->draw();
+	//gui->draw();
 }
 
 
@@ -802,6 +802,7 @@ void CBoidGameController::drawMotherRabbit()
 	ofSetColor(255);
 }
 
+/*
 void CBoidGameController::setupGui() {
 	// instantiate and position the gui //
 	gui = new ofxDatGui();
@@ -929,4 +930,21 @@ void CBoidGameController::onSliderEvent(ofxDatGuiSliderEvent e) {
 				sharks.pop_back();
 			}
 	}
+}
+*/
+
+void CBoidGameController::setupGui() {
+	// GUI stripped in ecosystem fork.
+}
+
+void CBoidGameController::drawGui() {
+	// PORT-TODO(imgui): re-add boid controls if needed.
+}
+
+void CBoidGameController::UpdateGUI() {
+	// GUI stripped in ecosystem fork — no-op.
+}
+
+bool CBoidGameController::isIdle() {
+	return (GameSequence[CurrentGameSequence] == GAME_STATE_IDLE);
 }

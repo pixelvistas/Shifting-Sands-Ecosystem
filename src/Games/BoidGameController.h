@@ -61,15 +61,17 @@ class CBoidGameController
 
 		void setupGui();
 
+		void drawGui();
+
 		bool isIdle();
 
 	private:
 		
 		std::shared_ptr<KinectProjector> kinectProjector;
 
-		void onButtonEvent(ofxDatGuiButtonEvent e);
-		void onToggleEvent(ofxDatGuiToggleEvent e);
-		void onSliderEvent(ofxDatGuiSliderEvent e);
+		//void onButtonEvent(ofxDatGuiButtonEvent e);
+		//void onToggleEvent(ofxDatGuiToggleEvent e);
+		//void onSliderEvent(ofxDatGuiSliderEvent e);
 		void UpdateGUI();
 
 		void updateBOIDS();
@@ -166,7 +168,7 @@ class CBoidGameController
 		double Player2Skins;
 
 		// GUI
-		ofxDatGui* gui;
+		//ofxDatGui* gui;
 };
 
 #endif

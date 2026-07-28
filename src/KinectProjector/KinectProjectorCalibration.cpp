@@ -98,45 +98,55 @@ vector<double> ofxKinectProjectorToolkit::getCalibration()
     return coefficients;
 }
 
-bool ofxKinectProjectorToolkit::loadCalibration(string path){
-    ofXml xml;
-    if (!xml.load(path))
-        return false;
-	xml.setTo("RESOLUTIONS");
-	ofVec2f sprojRes = xml.getValue<ofVec2f>("PROJECTOR");
-	ofVec2f skinectRes = xml.getValue<ofVec2f>("KINECT");
-	if (sprojRes!=projRes || skinectRes!=kinectRes)
+bool ofxKinectProjectorToolkit::loadCalibration(string path) {
+	ofXml xml;
+	if (!xml.load(path))
 		return false;
-    xml.setTo("//CALIBRATION/COEFFICIENTS");
-    for (int i=0; i<11; i++) {
-        x(i, 0) = xml.getValue<float>("COEFF"+ofToString(i));
-    }
-    projMatrice = ofMatrix4x4(x(0,0), x(1,0), x(2,0), x(3,0),
-                              x(4,0), x(5,0), x(6,0), x(7,0),
-                              x(8,0), x(9,0), x(10,0), 1,
-                              0, 0, 0, 0);
-    calibrated = true;
-    return true;
+
+	auto calib = xml.getChild("CALIBRATION");
+	if (!calib) return false;
+
+	auto res = calib.getChild("RESOLUTIONS");
+	if (!res) return false;
+	auto pr = res.getChild("PROJECTOR");
+	auto kr = res.getChild("KINECT");
+	ofVec2f sprojRes(pr.getChild("x").getFloatValue(), pr.getChild("y").getFloatValue());
+	ofVec2f skinectRes(kr.getChild("x").getFloatValue(), kr.getChild("y").getFloatValue());
+	if (sprojRes != projRes || skinectRes != kinectRes)
+		return false;
+
+	auto coeffs = calib.getChild("COEFFICIENTS");
+	if (!coeffs) return false;
+	for (int i = 0; i < 11; i++) {
+		x(i, 0) = coeffs.getChild("COEFF" + ofToString(i)).getFloatValue();
+	}
+
+	projMatrice = ofMatrix4x4(x(0, 0), x(1, 0), x(2, 0), x(3, 0),
+		x(4, 0), x(5, 0), x(6, 0), x(7, 0),
+		x(8, 0), x(9, 0), x(10, 0), 1,
+		0, 0, 0, 0);
+	calibrated = true;
+	return true;
 }
 
-bool ofxKinectProjectorToolkit::saveCalibration(string path){
-    ofXml xml;
-	xml.addChild("CALIBRATION");
-	xml.setTo("//CALIBRATION");
-	xml.addChild("RESOLUTIONS");
-	xml.setTo("RESOLUTIONS");
-	xml.addValue("PROJECTOR", projRes);
-	xml.addValue("KINECT", kinectRes);
-	xml.setTo("//CALIBRATION");
-	xml.addChild("COEFFICIENTS");
-	xml.setTo("COEFFICIENTS");
-	for (int i=0; i<11; i++) {
-        ofXml coeff;
-        coeff.addValue("COEFF"+ofToString(i), x(i, 0));
-        xml.addXml(coeff);
-    }
-    xml.setToParent();
-    return xml.save(path);
+bool ofxKinectProjectorToolkit::saveCalibration(string path) {
+	ofXml xml;
+	auto calib = xml.appendChild("CALIBRATION");
+
+	auto res = calib.appendChild("RESOLUTIONS");
+	auto pr = res.appendChild("PROJECTOR");
+	pr.appendChild("x").set(projRes.x);
+	pr.appendChild("y").set(projRes.y);
+	auto kr = res.appendChild("KINECT");
+	kr.appendChild("x").set(kinectRes.x);
+	kr.appendChild("y").set(kinectRes.y);
+
+	auto coeffs = calib.appendChild("COEFFICIENTS");
+	for (int i = 0; i < 11; i++) {
+		coeffs.appendChild("COEFF" + ofToString(i)).set(x(i, 0));
+	}
+
+	return xml.save(path);
 }
 
 

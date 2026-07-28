@@ -107,55 +107,39 @@ std::string CSandboxScoreTracker::getScoreImage(int idx)
 bool CSandboxScoreTracker::SaveScoresXML(std::string &fname)
 {
 	ofXml XMLOut;
-	XMLOut.addChild("scores");
-	XMLOut.setTo("scores");
+	auto scoresNode = XMLOut.appendChild("scores");
 
-	for (int i = 0; i < scores.size(); i++)
-	{
-		XMLOut.addChild("score");
-		XMLOut.setTo("score[" + ofToString(i) + "]");
-		XMLOut.setAttribute("id", ofToString(i));
-		XMLOut.addValue("value", scores[i]);
-		XMLOut.addValue("image", scoreImages[i]);
-		XMLOut.addValue("date", scoreDates[i]);
-		XMLOut.setToParent();
+	for (int i = 0; i < scores.size(); i++) {
+		auto scoreNode = scoresNode.appendChild("score");
+		scoreNode.setAttribute("id", ofToString(i));
+		scoreNode.appendChild("value").set(scores[i]);
+		scoreNode.appendChild("image").set(scoreImages[i]);
+		scoreNode.appendChild("date").set(scoreDates[i]);
 	}
+
 	return XMLOut.save(fname);
 }
 
 bool CSandboxScoreTracker::LoadScoresXML(std::string &fname)
 {
 	ofXml XMLIn;
-	if (!XMLIn.load(fname))
-	{
-		std::cout << "Could not read " << fname << std::endl;
+	if (!XMLIn.load(fname)) {
+		// keep whatever the original did on failure (return false / log)
 		return false;
 	}
-	scores.clear();
-	scoreImages.clear();
-	scoreDates.clear();
 
-	XMLIn.setTo("scores");
+	auto scoresNode = XMLIn.getChild("scores");
+	if (!scoresNode) return false;
 
-	int nscores = XMLIn.getNumChildren(); // how many do you have?
+	for (auto scoreNode : scoresNode.getChildren("score")) {
+		int tsc = scoreNode.getChild("value").getIntValue();
+		std::string tI = scoreNode.getChild("image").getValue();
+		std::string tD = scoreNode.getChild("date").getValue();
 
-	for (int i = 0; i < nscores; i++)
-	{
-		if (XMLIn.setTo("score[" + ofToString(i) + "]"))
-		{
-			int tsc = XMLIn.getValue<int>("value");
-			std::string tI = XMLIn.getValue<string>("image");
-			std::string tD = XMLIn.getValue<string>("date");
-
-			scores.push_back(tsc);
-			scoreImages.push_back(tI);
-			scoreDates.push_back(tD);
-
-			XMLIn.setToParent();
-		}
+		scores.push_back(tsc);
+		scoreImages.push_back(tI);
+		scoreDates.push_back(tD);
 	}
-
-	return true;
 }
 
 bool CSandboxScoreTracker::getHighScore(int &score, std::string &fname)

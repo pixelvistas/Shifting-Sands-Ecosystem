@@ -189,9 +189,9 @@ void SandSurfaceRenderer::setupMesh(){
 	for (unsigned int y = 0; y < meshheight; y++)
         for(unsigned int x=0;x<meshwidth;x++)
         {
-            ofPoint pt = ofPoint(x+kinectROI.x,y+kinectROI.y,0.0f)-ofPoint(0.5,0.5,0); // We move of a half pixel to center the color pixel (more beautiful)
-            mesh.addVertex(pt); // make a new vertex
-            mesh.addTexCoord(pt);
+			ofPoint pt = ofPoint(x + kinectROI.x, y + kinectROI.y, 0.0f) - ofPoint(0.5, 0.5, 0); // We move of a half pixel to center the color pixel (more beautiful)
+			mesh.addVertex(pt); // make a new vertex
+			mesh.addTexCoord(glm::vec2(pt.x, pt.y));
         }
     for(unsigned int y=0;y<meshheight-1;y++)
         for(unsigned int x=0;x<meshwidth-1;x++)
@@ -221,29 +221,11 @@ void SandSurfaceRenderer::update(){
         prepareContourLinesFbo();
     drawSandbox();
     
-    // GUI
-	if (displayGui) {
-		gui->update();
-		gui2->update();
-        if (editColorMap){
-            gui3->update();
-            colorList->update();
-        }
-	}
+    // GUI now immediate-mode (drawGui); nothing to update here.
 }
 
-void SandSurfaceRenderer::drawMainWindow(float x, float y, float width, float height){
-    fboProjWindow.draw(x, y, width, height);
-    
-    if (displayGui) {
-        heightMap.getTexture().draw(gui2->getPosition().x, gui2->getPosition().y+gui2->getHeight(), gui2->getWidth(), 30);
-		gui->draw();
-		gui2->draw();
-        if (editColorMap){
-            gui3->draw();
-            colorList->draw();
-        }
-	}
+void SandSurfaceRenderer::drawMainWindow(float x, float y, float width, float height) {
+	fboProjWindow.draw(x, y, width, height);
 }
 
 void SandSurfaceRenderer::drawProjectorWindow(){
@@ -287,6 +269,7 @@ void SandSurfaceRenderer::prepareContourLinesFbo()
     contourLineFramebufferObject.end();
 }
 
+/*
 void SandSurfaceRenderer::setupGui(){
     // instantiate the modal windows //
     auto theme = make_shared<ofxModalThemeProjKinect>();
@@ -501,35 +484,70 @@ void SandSurfaceRenderer::onSaveModalEvent(ofxModalEvent e){
         ofLogVerbose("SandSurfaceRenderer") << "save confirm button pressed, filename: " << filen;
     }
 }
+*/
 
+/*
+void SandSurfaceRenderer::setupGui() {
+	// GUI stripped in ecosystem fork — colormap editor to be re-added via ofxImGui when needed.
+}
+
+void SandSurfaceRenderer::populateColorList() {
+	// No-op: colormap list UI stripped. Colormap still loads from file in setup().
+}
+
+void SandSurfaceRenderer::updateColorListColor(int i, int j) {
+	// No-op: colormap list UI stripped.
+}
+
+void SandSurfaceRenderer::drawGui() {
+	// PORT-TODO(imgui): re-expose colormap/contour controls here when needed.
+	// Renderer runs on its loaded colormap and default contour settings.
+}
+*/
+
+void SandSurfaceRenderer::setupGui() {
+	// GUI stripped in ecosystem fork — colormap editor to be re-added via ofxImGui when needed.
+}
+
+void SandSurfaceRenderer::populateColorList() {
+	// No-op: colormap list UI stripped. Colormap still loads from file in setup().
+}
+
+void SandSurfaceRenderer::updateColorListColor(int i, int j) {
+	// No-op: colormap list UI stripped.
+}
+
+void SandSurfaceRenderer::drawGui() {
+	// PORT-TODO(imgui): re-expose colormap/contour controls here when needed.
+	// Renderer runs on its loaded colormap and default contour settings.
+}
 
 //TODO: Save additionnal settings
 
-bool SandSurfaceRenderer::loadSettings(){
-    string settingsFile = "settings/sandSurfaceRendererSettings.xml";
-    
-    ofXml xml;
-    if (!xml.load(settingsFile))
-        return false;
-    xml.setTo("SURFACERENDERERSETTINGS");
-    colorMapFile = xml.getValue<string>("colorMapFile");
-    drawContourLines = xml.getValue<bool>("drawContourLines");
-    contourLineDistance = xml.getValue<float>("contourLineDistance");
-    
-    return true;
+bool SandSurfaceRenderer::loadSettings() {
+	string settingsFile = "settings/sandSurfaceRendererSettings.xml";
+
+	ofXml xml;
+	if (!xml.load(settingsFile))
+		return false;
+	auto s = xml.getChild("SURFACERENDERERSETTINGS");
+	if (!s) return false;
+	colorMapFile = s.getChild("colorMapFile").getValue();
+	drawContourLines = s.getChild("drawContourLines").getBoolValue();
+	contourLineDistance = s.getChild("contourLineDistance").getFloatValue();
+
+	return true;
 }
 
-bool SandSurfaceRenderer::saveSettings(){
-    string settingsFile = "settings/sandSurfaceRendererSettings.xml";
+bool SandSurfaceRenderer::saveSettings() {
+	string settingsFile = "settings/sandSurfaceRendererSettings.xml";
 
-    ofXml xml;
-    xml.addChild("SURFACERENDERERSETTINGS");
-    xml.setTo("SURFACERENDERERSETTINGS");
-    xml.addValue("colorMapFile", colorMapFile);
-    xml.addValue("drawContourLines", drawContourLines);
-    xml.addValue("contourLineDistance", contourLineDistance);
-    xml.setToParent();
-    return xml.save(settingsFile);
+	ofXml xml;
+	auto s = xml.appendChild("SURFACERENDERERSETTINGS");
+	s.appendChild("colorMapFile").set(colorMapFile);
+	s.appendChild("drawContourLines").set(drawContourLines);
+	s.appendChild("contourLineDistance").set(contourLineDistance);
+	return xml.save(settingsFile);
 }
 
 

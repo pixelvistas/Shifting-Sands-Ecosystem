@@ -21,6 +21,9 @@ General Public License for more details.
 
 #include "KinectGrabber.h"
 #include "ofConstants.h"
+#include <algorithm>
+using std::min;
+using std::max;
 
 KinectGrabber::KinectGrabber()
 :newFrame(true),
@@ -71,6 +74,15 @@ bool KinectGrabber::setup(){
 
 bool KinectGrabber::openKinect() {
 	kinectOpened = kinect.open();
+	if (kinectOpened) {
+		width = kinect.getWidth();
+		height = kinect.getHeight();
+		if (width > 0 && height > 0) {
+			kinectDepthImage.allocate(width, height, 1);
+			filteredframe.allocate(width, height, 1);
+			kinectColorImage.allocate(width, height);
+		}
+	}
 	return kinectOpened;
 }
 void KinectGrabber::setupFramefilter(int sgradFieldresolution, float newMaxOffset, ofRectangle ROI, bool sspatialFilter, bool sfollowBigChange, int snumAveragingSlots) {
@@ -165,7 +177,17 @@ void KinectGrabber::threadedFunction() {
         
         kinect.update();
         if(kinect.isFrameNew()){
-            kinectDepthImage = kinect.getRawDepthPixels();
+			kinectDepthImage = kinect.getRawDepthPixels();
+			static bool once = true;
+			if (once) {
+				ofLogNotice("DIMS") << "buffer w=" << width << " h=" << height
+									<< " | frame w=" << kinectDepthImage.getWidth()
+									<< " h=" << kinectDepthImage.getHeight()
+									<< " | frame TotalBytes=" << kinectDepthImage.getTotalBytes()
+									<< " | expected bytes=" << (width * height * sizeof(unsigned short))
+									<< " | filteredframe bytes=" << filteredframe.getTotalBytes();
+				once = false;
+			}
             filter();
             filteredframe.setImageType(OF_IMAGE_GRAYSCALE);
             updateGradientField();
@@ -173,7 +195,7 @@ void KinectGrabber::threadedFunction() {
         }
         if (storedframes == 0)
         {
-            filtered.send(std::move(filteredframe));
+            filtered.send(filteredframe);
 			gradient.send(std::move(gradField));
             colored.send(std::move(kinectColorImage.getPixels()));
             lock();
@@ -197,6 +219,11 @@ void KinectGrabber::performInThread(std::function<void(KinectGrabber&)> action) 
 
 void KinectGrabber::filter()
 {
+    if (kinectDepthImage.getWidth() != width ||
+        kinectDepthImage.getHeight() != height ||
+        kinectDepthImage.getData() == nullptr) {
+        return;   // drop malformed frame instead of crashing
+    }
 	if (bufferInitiated && numAveragingSlots < 2)
 	{
 		// Just copy raw kinect data
@@ -231,26 +258,41 @@ void KinectGrabber::filter()
 	}
 	else if (bufferInitiated)
     {
-        const RawDepth* inputFramePtr = static_cast<const RawDepth*>(kinectDepthImage.getData());
-        float* averagingBufferPtr = averagingBuffer+averagingSlotIndex*height*width;
-        float* statBufferPtr = statBuffer;
-        float* validBufferPtr = validBuffer;
-        float* filteredFramePtr = filteredframe.getData();
-        
-        inputFramePtr += minY*width;  // We only scan kinect ROI
-        averagingBufferPtr += minY*width;
-        statBufferPtr += minY*width*3;
-        validBufferPtr += minY*width;
-        filteredFramePtr += minY*width;
+		if (numAveragingSlots < 1) return;
+		if (averagingBuffer == nullptr || statBuffer == nullptr || validBuffer == nullptr) return;
+		if (filteredframe.getData() == nullptr || kinectDepthImage.getData() == nullptr) return;
 
-		for(unsigned int y=minY ; y<maxY ; ++y)
-        {
-            inputFramePtr += minX;
-            averagingBufferPtr += minX;
-            statBufferPtr += minX*3;
-            validBufferPtr += minX;
-            filteredFramePtr += minX;
-            for(unsigned int x=minX ; x<maxX ; ++x,++inputFramePtr,++averagingBufferPtr,statBufferPtr+=3,++validBufferPtr,++filteredFramePtr)
+		// Snapshot ROI bounds so a mid-frame change from the main thread can't desync the pointers
+		int lminX = minX, lmaxX = maxX, lminY = minY, lmaxY = maxY;
+
+		// Hard clamp against actual frame dimensions
+		if (lminX < 0) lminX = 0;
+		if (lminY < 0) lminY = 0;
+		if (lmaxX > (int)width) lmaxX = width;
+		if (lmaxY > (int)height) lmaxY = height;
+		if (lmaxX <= lminX || lmaxY <= lminY) return; // nothing valid to scan
+		if (kinectDepthImage.getData() == nullptr) return;
+
+		const RawDepth * inputFramePtr = static_cast<const RawDepth *>(kinectDepthImage.getData());
+		float * averagingBufferPtr = averagingBuffer + averagingSlotIndex * height * width;
+		float * statBufferPtr = statBuffer;
+		float * validBufferPtr = validBuffer;
+		float * filteredFramePtr = filteredframe.getData();
+
+		inputFramePtr += lminY * width; // We only scan kinect ROI
+		averagingBufferPtr += lminY * width;
+		statBufferPtr += lminY * width * 3;
+		validBufferPtr += lminY * width;
+		filteredFramePtr += lminY * width;
+
+        for (unsigned int y = lminY; y < lmaxY; ++y) {
+			inputFramePtr += lminX;
+			averagingBufferPtr += lminX;
+			statBufferPtr += lminX * 3;
+			validBufferPtr += lminX;
+			filteredFramePtr += lminX;
+
+			for (unsigned int x = lminX; x < lmaxX; ++x, ++inputFramePtr, ++averagingBufferPtr, statBufferPtr += 3, ++validBufferPtr, ++filteredFramePtr)
             {
                 float newVal = static_cast<float>(*inputFramePtr);
                 float oldVal = *averagingBufferPtr;
@@ -302,11 +344,11 @@ void KinectGrabber::filter()
                 }
                 *filteredFramePtr = *validBufferPtr;
 			}
-            inputFramePtr += width-maxX;
-            averagingBufferPtr += width-maxX;
-            statBufferPtr += (width-maxX)*3;
-            validBufferPtr += width-maxX;
-            filteredFramePtr += width-maxX;
+			inputFramePtr += width - lmaxX;
+			averagingBufferPtr += width - lmaxX;
+			statBufferPtr += (width - lmaxX) * 3;
+			validBufferPtr += width - lmaxX;
+			filteredFramePtr += width - lmaxX;
         }
 
         /* Go to the next averaging slot: */
@@ -360,60 +402,41 @@ void KinectGrabber::setFullFrameFiltering(bool ff, ofRectangle ROI)
 	}
 }
 
-void KinectGrabber::applySpaceFilter()
-{
-    for(int filterPass=0;filterPass<2;++filterPass)
-    {
-		// Pointer to first pixel of ROI
-		float *ptrOffset = filteredframe.getData() + minY * width + minX;
+void KinectGrabber::applySpaceFilter() {
+	// Snapshot + clamp ROI bounds (main thread may mutate them mid-frame)
+	int lminX = minX, lmaxX = maxX, lminY = minY, lmaxY = maxY;
+	if (lminX < 1) lminX = 1;
+	if (lminY < 1) lminY = 1;
+	if (lmaxX > (int)width - 1) lmaxX = width - 1;
+	if (lmaxY > (int)height - 1) lmaxY = height - 1;
+	if (lmaxX <= lminX || lmaxY <= lminY) return;
 
-        // Low-pass filter the values in the ROI
-		// First a horisontal pass
-        for(unsigned int x = 0; x < width; x++)
-        {
-			// Pointer to current pixel
-            float* colPtr = ptrOffset + x;
+	float * data = filteredframe.getData();
+	if (data == nullptr) return;
+
+	for (int filterPass = 0; filterPass < 2; ++filterPass) {
+		// Horizontal-structure pass: filter down each column, within ROI only
+		for (int x = lminX; x < lmaxX; ++x) {
+			float * colPtr = data + lminY * width + x;
 			float lastVal = *colPtr;
-
-            // Top border pixels 
-            *colPtr = (colPtr[0]*2.0f + colPtr[width]) / 3.0f;
-            colPtr += width;
-            
-            // Filter the interior pixels in the column
-            for(unsigned int y = minY+1; y < maxY-1; ++y, colPtr += width)
-            {
+			for (int y = lminY; y < lmaxY - 1; ++y, colPtr += width) {
 				float nextLastVal = *colPtr;
-                *colPtr=(lastVal + colPtr[0]*2.0f + colPtr[width])*0.25f;
-				lastVal = nextLastVal; // To avoid using already updated pixels
-            }
-            
-            // Filter the last pixel in the column: 
-            *colPtr=(lastVal + colPtr[0] * 2.0f)/3.0f;
-        }
+				*colPtr = (lastVal + colPtr[0] * 2.0f + colPtr[width]) * 0.25f;
+				lastVal = nextLastVal;
+			}
+		}
 
-		// then a vertical pass
-        for(unsigned int y = 0; y < height; y++)
-        {
-			// Pointer to current pixel
-			float* rowPtr = ptrOffset + y * width;
-			
-			// Filter the first pixel in the row: 
-            float lastVal=*rowPtr;
-            *rowPtr=(rowPtr[0]*2.0f + rowPtr[1]) / 3.0f;
-            rowPtr++;
-       
-            // Filter the interior pixels in the row: 
-            for(unsigned int x = minX+1; x < maxX-1; ++x,++rowPtr)
-            {
-                float nextLastVal=*rowPtr;
-                *rowPtr=(lastVal+rowPtr[0]*2.0f+rowPtr[1])*0.25f;
-                lastVal=nextLastVal;
-            }
-            
-            // Filter the last pixel in the row: 
-            *rowPtr=(lastVal+rowPtr[0]*2.0f)/3.0f;
-        }
-    }
+		// Vertical-structure pass: filter along each row, within ROI only
+		for (int y = lminY; y < lmaxY; ++y) {
+			float * rowPtr = data + y * width + lminX;
+			float lastVal = *rowPtr;
+			for (int x = lminX; x < lmaxX - 1; ++x, ++rowPtr) {
+				float nextLastVal = *rowPtr;
+				*rowPtr = (lastVal + rowPtr[0] * 2.0f + rowPtr[1]) * 0.25f;
+				lastVal = nextLastVal;
+			}
+		}
+	}
 }
 
 void KinectGrabber::updateGradientField()
@@ -622,7 +645,8 @@ ofVec3f KinectGrabber::getStatBuffer(int x, int y){
 }
 
 float KinectGrabber::getAveragingBuffer(int x, int y, int slotNum){
-    float* averagingBufferPtr = averagingBuffer + slotNum*height*width + (x + y*width);
+	if (averagingSlotIndex < 0 || averagingSlotIndex >= numAveragingSlots) averagingSlotIndex = 0;
+	float * averagingBufferPtr = averagingBuffer + averagingSlotIndex * height * width;
     return *averagingBufferPtr;
 }
 

@@ -21,6 +21,28 @@ with the Magic Sand; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 ***********************************************************************/
 
+
+// ---- C++17 compatibility shim: restore std::binary_function/unary_function ----
+// (Removed from the standard in C++17; the bundled dlib headers still use them.)
+#include <cstddef>
+#ifndef MAGICSAND_CXX17_COMPAT
+#define MAGICSAND_CXX17_COMPAT
+namespace std {
+template <class Arg1, class Arg2, class Result>
+struct binary_function {
+	typedef Arg1 first_argument_type;
+	typedef Arg2 second_argument_type;
+	typedef Result result_type;
+};
+template <class Arg, class Result>
+struct unary_function {
+	typedef Arg argument_type;
+	typedef Result result_type;
+};
+}
+#endif
+
+
 #ifndef __GreatSand__KinectProjector__
 #define __GreatSand__KinectProjector__
 
@@ -29,12 +51,13 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "ofxOpenCv.h"
 #include "ofxCv.h"
 #include "KinectGrabber.h"
-#include "ofxModal.h"
+//#include "ofxModal.h"
 
 #include "KinectProjectorCalibration.h"
 #include "Utils.h"
 #include "TemporalFrameFilter.h"
 
+/*
 class ofxModalThemeProjKinect : public ofxModalTheme {
 public:
     ofxModalThemeProjKinect()
@@ -43,6 +66,25 @@ public:
         fonts.title = ofxSmartFont::add("ofxbraitsch/fonts/HelveticaNeueLTStd-Md.otf", 20, "modal-title");
         fonts.message = ofxSmartFont::add("ofxbraitsch/fonts/Roboto-Regular.ttf", 16, "modal-message");
     }
+};
+*/
+
+// Minimal stand-in for the old ofxModal popups (calibration status messages).
+class StubModal {
+public:
+	std::string message;
+	std::string title;
+	bool visible = false;
+	bool justConfirmed = false;
+
+	void setTheme(void *) { }
+	void setMessage(const std::string & m) { message = m; }
+	void setTitle(const std::string & t) { title = t; }
+	void setButtonLabel(const std::string &) { }
+	void show() { visible = true; }
+	void hide() { visible = false; }
+	template <class T, class F>
+	void addListener(T *, F) { }
 };
 
 class KinectProjector {
@@ -90,12 +132,14 @@ public:
 
     // Gui and event functions
     void setupGui();
-    void onButtonEvent(ofxDatGuiButtonEvent e);
+	void drawGui();
+	void drawModal(std::shared_ptr<StubModal> modal, const char * id);
+    //void onButtonEvent(ofxDatGuiButtonEvent e);
 
-	void onToggleEvent(ofxDatGuiToggleEvent e);
-    void onSliderEvent(ofxDatGuiSliderEvent e);
-    void onConfirmModalEvent(ofxModalEvent e);
-    void onCalibModalEvent(ofxModalEvent e);
+	//void onToggleEvent(ofxDatGuiToggleEvent e);
+    //void onSliderEvent(ofxDatGuiSliderEvent e);
+    //void onConfirmModalEvent(ofxModalEvent e);
+    //void onCalibModalEvent(ofxModalEvent e);
 
 	void mousePressed(int x, int y, int button);
 	void mouseReleased(int x, int y, int button);
@@ -288,7 +332,7 @@ private:
     ofxCvColorImage             kinectColorImage;
     ofVec2f*                    gradField;
 	ofFpsCounter                fpsKinect;
-	ofxDatGuiTextInput*         fpsKinectText;
+	//ofxDatGuiTextInput*         fpsKinectText;
 
     // Projector and kinect variables
     ofVec2f projRes;
@@ -360,11 +404,10 @@ private:
 
     // GUI Modal window & interface
 	bool displayGui;
-    shared_ptr<ofxModalConfirm>   confirmModal;
-    shared_ptr<ofxModalAlert>   calibModal;
-    shared_ptr<ofxModalThemeProjKinect>   modalTheme;
-    ofxDatGui* gui;
-	ofxDatGui* StatusGUI;
+	std::shared_ptr<StubModal> confirmModal;
+	std::shared_ptr<StubModal> calibModal;
+    //ofxDatGui* gui;
+	//ofxDatGui* StatusGUI;
 	std::string calibrationText;
 	
 	// Debug functions

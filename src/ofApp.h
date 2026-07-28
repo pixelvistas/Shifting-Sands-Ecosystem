@@ -22,7 +22,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #pragma once
 
 #include "ofMain.h"
-#include "ofxDatGui.h"
+#include "ofxImGui.h"
 #include "KinectProjector/KinectProjector.h"
 #include "SandSurfaceRenderer/SandSurfaceRenderer.h"
 #include "Games/MapGameController.h"
@@ -53,6 +53,7 @@ public:
 	std::shared_ptr<ofAppBaseWindow> projWindow;
 
 private:
+	ofxImGui::Gui imgui;
 	std::shared_ptr<KinectProjector> kinectProjector;
 	SandSurfaceRenderer* sandSurfaceRenderer;
 	CMapGameController mapGameController;

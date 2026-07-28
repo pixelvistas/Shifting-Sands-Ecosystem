@@ -57,6 +57,7 @@ void ofApp::setup() {
 	boidGameController.setProjectorRes(projRes);
 	boidGameController.setKinectRes(kinectRes);
 	boidGameController.setKinectROI(kinectROI);
+	imgui.setup();
 
 }
 
@@ -93,6 +94,14 @@ void ofApp::draw()
 	}
 
 	kinectProjector->drawMainWindow(x, y, w, h);
+
+	imgui.begin();
+		kinectProjector->drawGui();
+		if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING) {
+			sandSurfaceRenderer->drawGui();
+		}
+	imgui.end();
+	imgui.draw();
 }
 
 void ofApp::drawProjWindow(ofEventArgs &args) 

@@ -230,7 +230,7 @@ void Vehicle::update(){
         angleChange += (angleChange > 180) ? -360 : (angleChange < -180) ? 360 : 0; // To take into account that the difference between -180 and 180 is 0 and not 360
         angleChange *= velocity.length();
         angleChange /= topSpeed;
-        angleChange = max(min(angleChange, maxRotation), -maxRotation);
+		angleChange = std::max(std::min(angleChange, maxRotation), -maxRotation);
         angle += angleChange;
     }
 }

@@ -31,7 +31,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "../KinectProjector/KinectProjector.h"
 #include "ColorMap.h"
 
-
+/*
 class SaveModal : public ofxModalWindow
 {
 public:
@@ -61,6 +61,7 @@ public:
 private:
     ofxDatGuiTextInput* textInput;
 };
+*/
 
 class SandSurfaceRenderer {
 public:
@@ -74,13 +75,14 @@ public:
     
     // Gui and events functions
     void setupGui();
-    void onButtonEvent(ofxDatGuiButtonEvent e);
-    void onToggleEvent(ofxDatGuiToggleEvent e);
-    void onSliderEvent(ofxDatGuiSliderEvent e);
-    void onColorPickerEvent(ofxDatGuiColorPickerEvent e);
-    void onDropdownEvent(ofxDatGuiDropdownEvent e);
-    void onScrollViewEvent(ofxDatGuiScrollViewEvent e);
-    void onSaveModalEvent(ofxModalEvent e);
+	void drawGui();
+    //void onButtonEvent(ofxDatGuiButtonEvent e);
+    //void onToggleEvent(ofxDatGuiToggleEvent e);
+    //void onSliderEvent(ofxDatGuiSliderEvent e);
+    //void onColorPickerEvent(ofxDatGuiColorPickerEvent e);
+    //void onDropdownEvent(ofxDatGuiDropdownEvent e);
+    //void onScrollViewEvent(ofxDatGuiScrollViewEvent e);
+    //void onSaveModalEvent(ofxModalEvent e);
     void exit(ofEventArgs& e);
    
 private:
@@ -145,12 +147,12 @@ private:
     // GUI Main interface and Modal
     bool displayGui;
     bool editColorMap;
-    ofxDatGui* gui;
-    ofxDatGui* gui2;
-    ofxDatGui* gui3;
-    ofxDatGuiScrollView* colorList;
+    //ofxDatGui* gui;
+    //ofxDatGui* gui2;
+    //ofxDatGui* gui3;
+    //ofxDatGuiScrollView* colorList;
     int selectedColor;
-    shared_ptr<SaveModal> saveModal;
+    //shared_ptr<SaveModal> saveModal;
     ofColor undoColor;
 };
 

@@ -27,11 +27,30 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #ifndef __Magic_Sand__Calibration__
 #define __Magic_Sand__Calibration__
 
+
+// compatibility shim for C++17
+#include <cstddef>
+#ifndef MAGICSAND_CXX17_COMPAT
+	#define MAGICSAND_CXX17_COMPAT
+namespace std {
+template <class Arg1, class Arg2, class Result>
+struct binary_function {
+	typedef Arg1 first_argument_type;
+	typedef Arg2 second_argument_type;
+	typedef Result result_type;
+};
+template <class Arg, class Result>
+struct unary_function {
+	typedef Arg argument_type;
+	typedef Result result_type;
+};
+}
+#endif
+
 #include <iostream>
 #include "ofMain.h"
 #include "libs/dlib/matrix.h"
 #include "libs/dlib/matrix/matrix_qr.h"
-
 
 class ofxKinectProjectorToolkit
 {
