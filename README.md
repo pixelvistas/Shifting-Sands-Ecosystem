@@ -1,11 +1,11 @@
-# Shifting Sands — Ecosystem
+# Shifting Sands - Ecosystem
 
 An augmented-reality sandbox for critical environmental engagement, built as a
 modernized and extended fork of [Magic Sand](https://github.com/thomwolf/Magic-Sand).
 
 This project is part of a Digital Media MRP at York University (PiET Lab). It
 ports the original Magic Sand codebase to a current toolchain and reframes the
-sandbox around ecological attention — moving from a topographic visualization
+sandbox around ecological attention; moving from a topographic visualization
 toward a living terrain of moisture, vegetation, and simulated ecosystem dynamics.
 
 ---
