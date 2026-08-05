@@ -1,6 +1,6 @@
 /***********************************************************************
 SandboxModule.cpp - Base class for extensible sandbox modules
-Copyright (c) 2026 <YOUR NAME> (Shifting Sands - Ecosystem, York University)
+Copyright (c) 2026 Shelby Murchie (Shifting Sands - Ecosystem, York University)
 
 Derived from the module structure latent in Magic Sand
 Copyright (c) 2016-2017 Thomas Wolf and Rasmus R. Paulsen (people.compute.dtu.dk/rapa)
