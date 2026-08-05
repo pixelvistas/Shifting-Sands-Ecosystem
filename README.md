@@ -58,8 +58,6 @@ popups (click OK to advance each step).
 
 ## Credits & license
 
-## Credits & license
-
 This is a fork of **Magic Sand** by Thomas Wolf and Rasmus R. Paulsen, which in
 turn draws on the Augmented Reality Sandbox by Oliver Kreylos (UC Davis). All
 original work remains under its original license (GNU GPL v2). This fork is
