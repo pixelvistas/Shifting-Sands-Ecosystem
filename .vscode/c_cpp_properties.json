@@ -1,0 +1,65 @@
+{
+    "//": "IntelliSense config for Shifting Sands - Ecosystem.",
+    "//2": "Assumes this repo lives at <of_root>/apps/myApps/Shifting-Sands-Ecosystem",
+    "//3": "so that ../../../ resolves to the openFrameworks root. If IntelliSense",
+    "//4": "cannot find ofMain.h, the repo is in the wrong place - see SETUP.md.",
+    "configurations": [
+        {
+            "name": "Win32",
+            "includePath": [
+                "${workspaceFolder}/src",
+                "${workspaceFolder}/src/**",
+                "${workspaceFolder}/../../../libs/openFrameworks",
+                "${workspaceFolder}/../../../libs/openFrameworks/**",
+                "${workspaceFolder}/../../../libs/glm/include",
+                "${workspaceFolder}/../../../libs/glfw/include",
+                "${workspaceFolder}/../../../libs/glew/include",
+                "${workspaceFolder}/../../../libs/FreeImage/include",
+                "${workspaceFolder}/../../../libs/freetype/include",
+                "${workspaceFolder}/../../../libs/cairo/include",
+                "${workspaceFolder}/../../../libs/json/include",
+                "${workspaceFolder}/../../../libs/pugixml/include",
+                "${workspaceFolder}/../../../libs/rtAudio/include",
+                "${workspaceFolder}/../../../libs/tess2/include",
+                "${workspaceFolder}/../../../libs/uriparser/include",
+                "${workspaceFolder}/../../../libs/utf8/include",
+                "${workspaceFolder}/../../../addons/ofxOpenCv/src",
+                "${workspaceFolder}/../../../addons/ofxOpenCv/libs/opencv/include",
+                "${workspaceFolder}/../../../addons/ofxOpenCv/libs/opencv/include/include/opencv4",
+                "${workspaceFolder}/../../../addons/ofxCv/src",
+                "${workspaceFolder}/../../../addons/ofxCv/libs/ofxCv/include",
+                "${workspaceFolder}/../../../addons/ofxImGui/src",
+                "${workspaceFolder}/../../../addons/ofxImGui/libs/**",
+                "${workspaceFolder}/../../../addons/ofxKinect/src",
+                "${workspaceFolder}/../../../addons/ofxKinect/libs/libfreenect/include",
+                "${workspaceFolder}/../../../addons/ofxXmlSettings/src"
+            ],
+            "defines": [
+                "_WINDOWS",
+                "_UNICODE",
+                "UNICODE",
+                "WIN32",
+                "NOMINMAX"
+            ],
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-msvc-x64"
+        },
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/src",
+                "${workspaceFolder}/src/**",
+                "${workspaceFolder}/../../../libs/openFrameworks/**",
+                "${workspaceFolder}/../../../libs/**/include",
+                "${workspaceFolder}/../../../addons/**/src",
+                "${workspaceFolder}/../../../addons/**/libs/**/include"
+            ],
+            "defines": [],
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}

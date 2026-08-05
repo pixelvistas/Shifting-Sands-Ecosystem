@@ -6,6 +6,8 @@ Copyright (c) 2016 Thomas Wolf
 --- Adapted from ofxKinectProjectorToolkit by Gene Kogan:
 https://github.com/genekogan/ofxKinectProjectorToolkit
 Copyright (c) 2014 Gene Kogan
+Modified 2026 by Shelby Murchie (Shifting Sands - Ecosystem, York University).
+  C++17 compatibility shim; ofXml 0.9.3 -> 0.12.1 API port.
 
 This file is part of the Magic Sand.
 

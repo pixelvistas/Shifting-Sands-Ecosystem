@@ -3,6 +3,14 @@ KinectProjector - KinectProjector takes care of the spatial conversion
 between the various coordinate systems, control the kinectgrabber and
 perform the calibration of the kinect and projector.
 Copyright (c) 2016-2017 Thomas Wolf and Rasmus R. Paulsen (people.compute.dtu.dk/rapa)
+Modified 2026 by Shelby Murchie (Shifting Sands - Ecosystem, York University).
+  C++17 compatibility shim for std::binary_function; ofxDatGui -> ofxImGui
+  (immediate-mode drawGui); StubModal replaced with ImGui popups for
+  calibration prompts; ofXml 0.9.3 -> 0.12.1 API port; std::min/max
+  qualification; added buffer/ROI snapshot guards in filter(),
+  applySpaceFilter() and updateGradientField(); normalised chessboard
+  corner ordering in CalibrateNextPoint() (calibration correctness fix);
+  fixed savePointPair() filename bug.
 
 This file is part of the Magic Sand.
 

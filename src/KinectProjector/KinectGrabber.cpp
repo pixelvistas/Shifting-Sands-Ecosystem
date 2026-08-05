@@ -5,6 +5,9 @@ Copyright (c) 2016 Thomas Wolf
 
 --- Adapted from FrameFilter of the Augmented Reality Sandbox
 Copyright (c) 2012-2015 Oliver Kreylos
+Modified 2026 by Shelby Murchie (Shifting Sands - Ecosystem, York University).
+  Removed std::move on filtered.send(), fixing a producer/consumer buffer
+  race; added <algorithm> include; buffer reallocation after kinect.open().
 
 This file is part of the Magic Sand.
 

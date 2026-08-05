@@ -1,6 +1,9 @@
 /***********************************************************************
 Main.cpp
 Copyright (c) 2016-2017 Thomas Wolf and Rasmus R. Paulsen (people.compute.dtu.dk/rapa)
+Modified 2026 by Shelby Murchie (Shifting Sands - Ecosystem, York University).
+  ofWindowSettings width/height replaced with setSize()/getWidth()/getHeight()
+  for openFrameworks 0.12.1.
 
 This file is part of the Magic Sand.
 

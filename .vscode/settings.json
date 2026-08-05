@@ -1,0 +1,17 @@
+{
+    "files.associations": {
+        "*.frag": "glsl",
+        "*.vert": "glsl",
+        "*.h": "cpp"
+    },
+    "search.exclude": {
+        "**/bin/**": true,
+        "**/obj/**": true,
+        "**/.vs/**": true,
+        "**/src/KinectProjector/libs/dlib/**": true,
+        "**/_addon_patches/ofxKinect/libs/**": true
+    },
+    "C_Cpp.default.cppStandard": "c++17",
+    "files.trimTrailingWhitespace": false,
+    "git.branchProtection": ["main"]
+}

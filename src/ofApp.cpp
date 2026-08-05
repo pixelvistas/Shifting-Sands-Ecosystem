@@ -1,6 +1,9 @@
 /***********************************************************************
 ofApp.cpp - main openframeworks app
 Copyright (c) 2016-2017 Thomas Wolf and Rasmus R. Paulsen (people.compute.dtu.dk/rapa)
+Modified 2026 by Shelby Murchie (Shifting Sands - Ecosystem, York University).
+  openFrameworks 0.9.3 -> 0.12.1 port; ofxDatGui replaced with ofxImGui;
+  GUI dispatch reworked for immediate mode.
 
 This file is part of the Magic Sand.
 

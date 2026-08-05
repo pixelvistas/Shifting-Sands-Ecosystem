@@ -1,6 +1,8 @@
 /***********************************************************************
 ReferenceMapHandler.cpp - Part of the Sandbox mapping / Island game
 Copyright (c) 2017  Rasmus R. Paulsen (people.compute.dtu.dk/rapa)
+Modified 2026 by Shelby Murchie (Shifting Sands - Ecosystem, York University).
+  ofXml 0.9.3 -> 0.12.1 API port.
 
 This file is part of the Magic Sand.
 

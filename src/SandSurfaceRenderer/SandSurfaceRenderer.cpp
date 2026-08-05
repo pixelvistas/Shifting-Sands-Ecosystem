@@ -5,6 +5,9 @@ Copyright (c) 2016 Thomas Wolf
 
 --- Adapted from Oliver Kreylos SurfaceRenderer:
 Copyright (c) 2012-2015 Oliver Kreylos
+Modified 2026 by Shelby Murchie (Shifting Sands - Ecosystem, York University).
+  ofXml 0.9.3 -> 0.12.1 API port; addTexCoord replaced with glm::vec2;
+  ofxDatGui GUI stripped.
 
 This file is part of the Magic Sand.
 
