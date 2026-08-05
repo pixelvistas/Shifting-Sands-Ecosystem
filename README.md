@@ -58,9 +58,12 @@ popups (click OK to advance each step).
 
 ## Credits & license
 
-This is a fork of **Magic Sand** by Thomas Wolf and Rasmus R. Paulsen, which in
-turn draws on the Augmented Reality Sandbox by Oliver Kreylos (UC Davis). All
-original work remains under its original license (GNU GPL v2). This fork is
-distributed under the same terms. See `COPYING` for the full license text.
+Shifting Sands - Ecosystem is a modernized and extended fork of Magic Sand (v1.5.4.1, 2017) by Thomas Wolf and Rasmus R. Paulsen.
 
-Modifications and ecosystem extensions © 2026, PiET Lab / York University.
+Magic Sand is itself a partial port of the Augmented Reality Sandbox / SARndbox by Oliver Kreylos (UC Davis, KeckCAVES) into openFrameworks, and is additionally adapted from ofxKinectProjectorToolkit by Gene Kogan.
+
+This fork vendors a copy of libfreenect (from the openFrameworks 0.9.3 release of ofxKinect) under _addon_patches/, to support Kinect model 1473 on Windows. libfreenect is developed by the OpenKinect project and is dual-licensed Apache 2.0 / GPL 2.0.
+
+All upstream work remains under its original license, the GNU General Public License v2 (or later). This fork is distributed under the same terms; see COPYING for the full text. Files modified in this fork carry modification notices per GPLv2 §2(a).
+
+Modifications, the SandboxModule extension point, and the ecosystem modules are copyright © 2026 Shelby Murchie, and were developed as part of a Digital Media Major Research Project at York University (PiET Lab).
