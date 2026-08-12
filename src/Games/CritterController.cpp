@@ -117,6 +117,11 @@ void CCritterController::drawGui()
 		Critter::GRADIENT_SIGN = gradientFlipped ? -1.0f : 1.0f;
 
 	ImGui::Separator();
+	ImGui::SliderFloat("Wander strength", &Critter::WANDER_STRENGTH, 0.0f, 0.2f);
+	ImGui::SliderFloat("Wander turn rate", &Critter::WANDER_TURN_RATE, 0.0f, 1.0f);
+	ImGui::SliderFloat("Wander slope falloff", &Critter::WANDER_SLOPE_FALLOFF, 0.0f, 50.0f);
+
+	ImGui::Separator();
 	ImGui::SliderFloat("Hand threshold", &HandField::THRESHOLD, 1.0f, 100.0f);
 	ImGui::Checkbox("Show hand mask", &showHandDebug);
 

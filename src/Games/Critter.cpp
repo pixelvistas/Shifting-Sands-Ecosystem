@@ -6,6 +6,9 @@ float Critter::SLEEP_SPEED = 0.05f;
 int Critter::SLEEP_FRAME_THRESHOLD = 15;
 float Critter::GRADIENT_SIGN = 1.0f;
 float Critter::HAND_PUSH_STRENGTH = 2.0f;
+float Critter::WANDER_STRENGTH = 0.03f;
+float Critter::WANDER_TURN_RATE = 0.3f;
+float Critter::WANDER_SLOPE_FALLOFF = 10.0f;
 bool Critter::DrawFlipped = false;
 
 Critter::Critter(std::shared_ptr<KinectProjector> const& k, ofPoint slocation, ofRectangle sborders)
@@ -16,6 +19,7 @@ Critter::Critter(std::shared_ptr<KinectProjector> const& k, ofPoint slocation, o
 	velocity = ofVec2f(0);
 	acceleration = ofVec2f(0);
 	angle = ofRandom(360);
+	wanderAngle = ofRandom(TWO_PI);
 	asleep = false;
 	sleepFrames = 0;
 }
@@ -40,6 +44,14 @@ void Critter::update(HandField & handField, std::vector<Tangible> & tangibles)
 	// to mean something else - see the header note on the gravity/mass split.
 	ofVec2f grad = kinectProjector->gradientAtKinectCoord(location.x, location.y);
 	acceleration = grad * GRAVITY * GRADIENT_SIGN;
+
+	// Smooth wander: heading drifts slowly rather than resampling a random
+	// direction every frame, and fades out as the real slope steepens, so
+	// flat ground gets exploration while a real pit or hillside still lets
+	// gravity win and trap the critter.
+	wanderAngle += ofRandom(-WANDER_TURN_RATE, WANDER_TURN_RATE);
+	float wanderScale = 1.0f / (1.0f + grad.length() * WANDER_SLOPE_FALLOFF);
+	acceleration += ofVec2f(cos(wanderAngle), sin(wanderAngle)) * WANDER_STRENGTH * wanderScale;
 
 	// Hands are impassable geometry, not terrain: push straight out of the
 	// blob instead of letting the heightfield treat a hand as a hill. Routed
@@ -77,21 +89,19 @@ void Critter::update(HandField & handField, std::vector<Tangible> & tangibles)
 		}
 	}
 
-	if (!asleep) {
-		velocity += acceleration;
-		velocity *= DAMPING;
+	// Always integrate - wander guarantees flat ground never truly goes
+	// still, and damping is what keeps a real pit from oscillating, so
+	// there's no need to hard-freeze movement the way a "sleep" gate would.
+	velocity += acceleration;
+	velocity *= DAMPING;
+	location += velocity;
 
-		if (velocity.length() < SLEEP_SPEED) {
-			sleepFrames++;
-			if (sleepFrames > SLEEP_FRAME_THRESHOLD) {
-				velocity = ofVec2f(0);
-				asleep = true;
-			}
-		} else {
-			sleepFrames = 0;
-		}
-
-		location += velocity;
+	if (velocity.length() < SLEEP_SPEED) {
+		sleepFrames++;
+		asleep = sleepFrames > SLEEP_FRAME_THRESHOLD;
+	} else {
+		sleepFrames = 0;
+		asleep = false;
 	}
 
 	clampToBorders();

@@ -10,12 +10,22 @@ is the opposite of what a rolling body needs.
 Physics: a = GRAVITY * gradientAtKinectCoord(location), mass-independent
 (free acceleration downhill, deceleration uphill from one line). Mass
 only governs how hard a hand or a Tangible has to push to move a Critter.
-Damping plus a sleep threshold is what actually makes a pit a trap -
-without damping, a critter oscillates in a basin forever instead of
-settling. GRADIENT_SIGN exists because the sign of gradientAtKinectCoord
-relative to true "downhill" depends on Kinect mount and calibration and
-is meant to be verified empirically (spawn ~20 critters on a slope and
-watch which way they go), not derived from the transform chain.
+Damping is what keeps a pit a trap rather than a critter oscillating in
+a basin forever. GRADIENT_SIGN exists because the sign of
+gradientAtKinectCoord relative to true "downhill" depends on Kinect
+mount and calibration and is meant to be verified empirically (spawn
+~20 critters on a slope and watch which way they go), not derived from
+the transform chain.
+
+A small wander force is added on top of gravity, smoothly turning via a
+persistent per-critter heading rather than resampling a random direction
+every frame (that resampling is exactly what produced a "spinning in
+place" artifact at true peaks/valleys, where the real gradient is near
+zero and sensor noise dominated the facing angle instead). Wander is
+scaled down by local slope steepness, so it dominates on flat ground
+(critters roam and actually encounter the terrain and the Tangible
+instead of freezing at spawn) but fades out on a real slope or pit wall,
+where gravity should win and trapping should still hold.
 
 Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 ***********************************************************************/
@@ -39,6 +49,8 @@ public:
 	const ofVec2f & getVelocity() const { return velocity; }
 	float getMass() const { return mass; }
 	float getRadius() const { return radius; }
+	// Reporting only - a critter below SLEEP_SPEED for a while. Does not
+	// gate movement; wander and real forces are always integrated.
 	bool isAsleep() const { return asleep; }
 
 	void applyImpulse(const ofVec2f & impulse) { velocity += impulse / mass; asleep = false; sleepFrames = 0; }
@@ -52,6 +64,9 @@ public:
 	static int SLEEP_FRAME_THRESHOLD;
 	static float GRADIENT_SIGN; // +1.0 or -1.0, flip while watching critters on a slope
 	static float HAND_PUSH_STRENGTH;
+	static float WANDER_STRENGTH;
+	static float WANDER_TURN_RATE; // max heading change per frame, radians
+	static float WANDER_SLOPE_FALLOFF; // higher = wander dies out faster as slope steepens
 
 private:
 	void clampToBorders();
@@ -66,6 +81,8 @@ private:
 
 	float mass;
 	float radius;
+
+	float wanderAngle;
 
 	bool asleep;
 	int sleepFrames;
