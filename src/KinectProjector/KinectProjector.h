@@ -172,6 +172,19 @@ public:
     ofVec2f getKinectRes(){
         return kinectRes;
     }
+    // Raw (unfiltered) depth buffer, kinect pixel layout, same units as
+    // getFilteredDepthPixels() below - the two are directly comparable
+    // per-pixel. Used to detect a hand intervening between the Kinect and
+    // the stabilised sand surface.
+    const ofShortPixels & getRawDepthPixels(){
+        return kinectgrabber.getRawDepthPixels();
+    }
+    // Temporally filtered/stabilised depth buffer - stands in for "the sand
+    // surface" for hand detection, since it deliberately lags behind quick
+    // depth changes such as a hand passing over the sand.
+    const ofFloatPixels & getFilteredDepthPixels(){
+        return FilteredDepthImage.getFloatPixelsRef();
+    }
     ofVec4f getBasePlaneEq(){
         return basePlaneEq;
     }
