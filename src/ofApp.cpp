@@ -57,6 +57,12 @@ void ofApp::setup() {
 	boidGameController.setProjectorRes(projRes);
 	boidGameController.setKinectRes(kinectRes);
 	boidGameController.setKinectROI(kinectROI);
+
+	critterController.setup(kinectProjector);
+	critterController.setProjectorRes(projRes);
+	critterController.setKinectRes(kinectRes);
+	critterController.setKinectROI(kinectROI);
+
 	imgui.setup();
 
 }
@@ -73,10 +79,12 @@ void ofApp::update() {
 		ofRectangle kinectROI = kinectProjector->getKinectROI();
 		mapGameController.setKinectROI(kinectROI);
 		boidGameController.setKinectROI(kinectROI);
+		critterController.setKinectROI(kinectROI);
 	}
 
 	mapGameController.update();
 	boidGameController.update();
+	critterController.update();
 }
 
 
@@ -91,6 +99,7 @@ void ofApp::draw()
 	{
 		sandSurfaceRenderer->drawMainWindow(x, y, w, h);//400, 20, 400, 300);
 		boidGameController.drawMainWindow(x, y, w, h);
+		critterController.drawMainWindow(x, y, w, h);
 	}
 
 	kinectProjector->drawMainWindow(x, y, w, h);
@@ -99,18 +108,20 @@ void ofApp::draw()
 		kinectProjector->drawGui();
 		if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING) {
 			sandSurfaceRenderer->drawGui();
+			critterController.drawGui();
 		}
 	imgui.end();
 	imgui.draw();
 }
 
-void ofApp::drawProjWindow(ofEventArgs &args) 
+void ofApp::drawProjWindow(ofEventArgs &args)
 {
 	if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING)
 	{
 		sandSurfaceRenderer->drawProjectorWindow();
 		mapGameController.drawProjectorWindow();
 		boidGameController.drawProjectorWindow();
+		critterController.drawProjectorWindow();
 	}
 	kinectProjector->drawProjectorWindow();
 }
@@ -206,6 +217,13 @@ void ofApp::keyPressed(int key)
 		mapGameController.setDebug(kinectProjector->getDumpDebugFiles());
 		mapGameController.RealTimeTestMe();
 	}
+	else if (key == 'i')
+	{
+		if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING)
+		{
+			critterController.addCritters(50);
+		}
+	}
 	else if (key == 'w')
 	{
 		mapGameController.setDebug(kinectProjector->getDumpDebugFiles());
@@ -225,13 +243,23 @@ void ofApp::mouseDragged(int x, int y, int button) {
 
 	// We assume that we only use this during ROI annotation
 	kinectProjector->mouseDragged(x - mainWindowROI.x, y - mainWindowROI.y, button);
+
+	if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING)
+	{
+		critterController.mouseDragged(x - mainWindowROI.x, y - mainWindowROI.y, button);
+	}
 }
 
-void ofApp::mousePressed(int x, int y, int button) 
+void ofApp::mousePressed(int x, int y, int button)
 {
 	if (mainWindowROI.inside((float)x, (float)y))
 	{
 		kinectProjector->mousePressed(x-mainWindowROI.x, y-mainWindowROI.y, button);
+
+		if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING)
+		{
+			critterController.mousePressed(x - mainWindowROI.x, y - mainWindowROI.y, button);
+		}
 	}
 }
 
@@ -239,6 +267,10 @@ void ofApp::mouseReleased(int x, int y, int button) {
 	// We assume that we only use this during ROI annotation
 	kinectProjector->mouseReleased(x - mainWindowROI.x, y - mainWindowROI.y, button);
 
+	if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING)
+	{
+		critterController.mouseReleased(x - mainWindowROI.x, y - mainWindowROI.y, button);
+	}
 }
 
 void ofApp::mouseEntered(int x, int y) {

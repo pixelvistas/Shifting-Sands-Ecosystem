@@ -71,7 +71,14 @@ public:
     float getRawDepthAt(int x, int y){
         return kinectDepthImage.getData()[(int)(y*width+x)];
     }
-    
+
+    // Full raw depth buffer, same pixel layout as getRawDepthAt(). Read
+    // lock-free from the main thread, same as the existing single-pixel
+    // accessor above - torn reads just cost a stale pixel for one frame.
+    const ofShortPixels & getRawDepthPixels(){
+        return kinectDepthImage;
+    }
+
 	ofMatrix4x4 getWorldMatrix();
     
     int getNumAveragingSlots(){
