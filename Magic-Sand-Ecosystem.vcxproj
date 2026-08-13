@@ -245,9 +245,13 @@
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\ofApp.cpp" />
     <ClCompile Include="src\Games\BoidGameController.cpp" />
+    <ClCompile Include="src\Games\Critter.cpp" />
+    <ClCompile Include="src\Games\CritterController.cpp" />
+    <ClCompile Include="src\Games\HandField.cpp" />
     <ClCompile Include="src\Games\MapGameController.cpp" />
     <ClCompile Include="src\Games\ReferenceMapHandler.cpp" />
     <ClCompile Include="src\Games\SandboxScoreTracker.cpp" />
+    <ClCompile Include="src\Games\Tangible.cpp" />
     <ClCompile Include="src\Games\vehicle.cpp" />
     <ClCompile Include="src\KinectProjector\KinectGrabber.cpp" />
     <ClCompile Include="src\KinectProjector\KinectProjector.cpp" />
@@ -306,9 +310,13 @@
   <ItemGroup>
     <ClInclude Include="src\ofApp.h" />
     <ClInclude Include="src\Games\BoidGameController.h" />
+    <ClInclude Include="src\Games\Critter.h" />
+    <ClInclude Include="src\Games\CritterController.h" />
+    <ClInclude Include="src\Games\HandField.h" />
     <ClInclude Include="src\Games\MapGameController.h" />
     <ClInclude Include="src\Games\ReferenceMapHandler.h" />
     <ClInclude Include="src\Games\SandboxScoreTracker.h" />
+    <ClInclude Include="src\Games\Tangible.h" />
     <ClInclude Include="src\Games\vehicle.h" />
     <ClInclude Include="src\KinectProjector\KinectGrabber.h" />
     <ClInclude Include="src\KinectProjector\KinectProjector.h" />

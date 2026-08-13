@@ -44,6 +44,7 @@ private:
 
 	std::shared_ptr<KinectProjector> kinectProjector;
 	ofRectangle kinectROI;
+	ofRectangle playArea; // so critters never reach the true edge
 	ofVec2f projRes, kinectRes;
 
 	HandField handField;

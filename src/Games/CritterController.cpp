@@ -26,6 +26,9 @@ void CCritterController::setKinectROI(ofRectangle & KROI)
 	bool firstValidROI = (kinectROI.width <= 0) && (KROI.width > 0);
 	kinectROI = KROI;
 
+	playArea = kinectROI;
+	playArea.scaleFromCenter(0.9f, 0.9f); // 5% margin on each side
+
 	Critter::setDrawFlipped(kinectProjector->getProjectionFlipped());
 
 	if (firstValidROI) {
@@ -36,31 +39,29 @@ void CCritterController::setKinectROI(ofRectangle & KROI)
 
 ofPoint CCritterController::randomLocationInROI()
 {
-	double W = kinectROI.getWidth() * 0.8;
-	double H = kinectROI.getHeight() * 0.8;
-	double X = kinectROI.getLeft() + 0.1 * kinectROI.getWidth();
-	double Y = kinectROI.getTop() + 0.1 * kinectROI.getHeight();
+	double W = playArea.getWidth() * 0.8;
+	double H = playArea.getHeight() * 0.8;
+	double X = playArea.getLeft() + 0.1 * playArea.getWidth();
+	double Y = playArea.getTop() + 0.1 * playArea.getHeight();
 	return ofPoint(ofRandom(X, X + W), ofRandom(Y, Y + H));
 }
 
-void CCritterController::addCritters(int n)
-{
-	if (kinectROI.width <= 0)
+void CCritterController::addCritters(int n) {
+	if (playArea.width <= 0)
 		return;
 
 	for (int i = 0; i < n; i++) {
-		Critter c(kinectProjector, randomLocationInROI(), kinectROI);
+		Critter c(kinectProjector, randomLocationInROI(), playArea);
 		c.setup();
 		critters.push_back(c);
 	}
 }
 
-void CCritterController::addTangible()
-{
-	if (kinectROI.width <= 0)
+void CCritterController::addTangible() {
+	if (playArea.width <= 0)
 		return;
 
-	tangibles.push_back(Tangible(kinectProjector, randomLocationInROI(), kinectROI));
+	tangibles.push_back(Tangible(kinectProjector, randomLocationInROI(), playArea));
 }
 
 void CCritterController::update()

@@ -10,6 +10,15 @@
 		<ClCompile Include="src\Games\BoidGameController.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
+		<ClCompile Include="src\Games\Critter.cpp">
+			<Filter>src\Games</Filter>
+		</ClCompile>
+		<ClCompile Include="src\Games\CritterController.cpp">
+			<Filter>src\Games</Filter>
+		</ClCompile>
+		<ClCompile Include="src\Games\HandField.cpp">
+			<Filter>src\Games</Filter>
+		</ClCompile>
 		<ClCompile Include="src\Games\MapGameController.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
@@ -17,6 +26,9 @@
 			<Filter>src\Games</Filter>
 		</ClCompile>
 		<ClCompile Include="src\Games\SandboxScoreTracker.cpp">
+			<Filter>src\Games</Filter>
+		</ClCompile>
+		<ClCompile Include="src\Games\Tangible.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
 		<ClCompile Include="src\Games\vehicle.cpp">
@@ -725,6 +737,15 @@
 		<ClInclude Include="src\Games\BoidGameController.h">
 			<Filter>src\Games</Filter>
 		</ClInclude>
+		<ClInclude Include="src\Games\Critter.h">
+			<Filter>src\Games</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Games\CritterController.h">
+			<Filter>src\Games</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Games\HandField.h">
+			<Filter>src\Games</Filter>
+		</ClInclude>
 		<ClInclude Include="src\Games\MapGameController.h">
 			<Filter>src\Games</Filter>
 		</ClInclude>
@@ -732,6 +753,9 @@
 			<Filter>src\Games</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Games\SandboxScoreTracker.h">
+			<Filter>src\Games</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Games\Tangible.h">
 			<Filter>src\Games</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Games\vehicle.h">
