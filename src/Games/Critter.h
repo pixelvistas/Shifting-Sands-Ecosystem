@@ -27,6 +27,16 @@ scaled down by local slope steepness, so it dominates on flat ground
 instead of freezing at spawn) but fades out on a real slope or pit wall,
 where gravity should win and trapping should still hold.
 
+Hand interaction is motion-aware, not just contact-aware: while the hand
+is moving, nearby critters get carried along in its direction of travel
+(HandField::herdForce - "guide"), which also covers direct contact since
+the field saturates to full strength right at the hand's own footprint.
+Only once the hand holds still does direct contact fall back to the old
+hard push-out (HandField::pushDirection), so a cupped, held hand still
+traps rather than letting critters drift right through it. This is what
+keeps ordinary sculpting - which is mostly hand motion - from reading as
+the critters fleeing outward the moment your hand nears the sand.
+
 Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 ***********************************************************************/
 
@@ -63,7 +73,8 @@ public:
 	static float SLEEP_SPEED;
 	static int SLEEP_FRAME_THRESHOLD;
 	static float GRADIENT_SIGN; // +1.0 or -1.0, flip while watching critters on a slope
-	static float HAND_PUSH_STRENGTH;
+	static float HAND_PUSH_STRENGTH; // hard push-out when a still hand sits directly on a critter
+	static float HERD_STRENGTH; // carried along by a moving hand's direction of travel
 	static float WANDER_STRENGTH;
 	static float WANDER_TURN_RATE; // max heading change per frame, radians
 	static float WANDER_SLOPE_FALLOFF; // higher = wander dies out faster as slope steepens

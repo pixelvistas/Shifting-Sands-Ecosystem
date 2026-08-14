@@ -1,6 +1,7 @@
 #include "HandField.h"
 
 float HandField::THRESHOLD = 20.0f; // raw depth units
+float HandField::INFLUENCE_RADIUS = 80.0f; // kinect pixels
 
 namespace {
 	const int GRID_STEP = 4; // kinect pixels per grid cell
@@ -12,6 +13,8 @@ void HandField::setup(std::shared_ptr<KinectProjector> const& k)
 	step = GRID_STEP;
 	cols = 0;
 	rows = 0;
+	handVelocity = ofVec2f(0);
+	hadHandLastFrame = false;
 }
 
 void HandField::update()
@@ -21,14 +24,20 @@ void HandField::update()
 	int kw = (int)kinectRes.x;
 	int kh = (int)kinectRes.y;
 
-	if (kinectROI.width <= 0 || kinectROI.height <= 0 || kw <= 0 || kh <= 0)
+	if (kinectROI.width <= 0 || kinectROI.height <= 0 || kw <= 0 || kh <= 0) {
+		handVelocity = ofVec2f(0);
+		hadHandLastFrame = false;
 		return;
+	}
 
 	const ofShortPixels & raw = kinectProjector->getRawDepthPixels();
 	const ofFloatPixels & filtered = kinectProjector->getFilteredDepthPixels();
 	if (raw.getWidth() != kw || raw.getHeight() != kh ||
-		filtered.getWidth() != kw || filtered.getHeight() != kh)
+		filtered.getWidth() != kw || filtered.getHeight() != kh) {
+		handVelocity = ofVec2f(0);
+		hadHandLastFrame = false;
 		return; // buffers not ready yet
+	}
 
 	cols = std::max(1, (int)(kinectROI.width / step));
 	rows = std::max(1, (int)(kinectROI.height / step));
@@ -61,6 +70,22 @@ void HandField::update()
 	cv::dilate(mask, mask, kernel, cv::Point(-1, -1), 2);
 
 	cv::distanceTransform(mask, distField, cv::DIST_L2, 3);
+
+	cv::Mat inverted;
+	cv::bitwise_not(mask, inverted);
+	cv::distanceTransform(inverted, freeDistField, cv::DIST_L2, 3);
+
+	cv::Moments m = cv::moments(mask, true);
+	bool handPresent = m.m00 > 0;
+	if (handPresent) {
+		handCentroid = ofVec2f(kinectROI.x + (float)(m.m10 / m.m00) * step,
+		                        kinectROI.y + (float)(m.m01 / m.m00) * step);
+		handVelocity = hadHandLastFrame ? (handCentroid - prevHandCentroid) : ofVec2f(0);
+		prevHandCentroid = handCentroid;
+	} else {
+		handVelocity = ofVec2f(0);
+	}
+	hadHandLastFrame = handPresent;
 }
 
 bool HandField::gridCoordAt(float x, float y, int & gx, int & gy) const
@@ -101,6 +126,23 @@ ofVec2f HandField::pushDirection(float x, float y) const
 	float dy = distField.at<float>(gyHi, gx) - distField.at<float>(gyLo, gx);
 
 	return ofVec2f(-dx, -dy);
+}
+
+ofVec2f HandField::herdForce(float x, float y) const
+{
+	if (freeDistField.empty() || handVelocity.lengthSquared() < 0.0001f)
+		return ofVec2f(0);
+
+	int gx, gy;
+	if (!gridCoordAt(x, y, gx, gy))
+		return ofVec2f(0);
+
+	float distPixels = freeDistField.at<float>(gy, gx) * step;
+	if (distPixels > INFLUENCE_RADIUS)
+		return ofVec2f(0);
+
+	float falloff = 1.0f - (distPixels / INFLUENCE_RADIUS);
+	return handVelocity.getNormalized() * falloff;
 }
 
 void HandField::draw(float x, float y, float width, float height)

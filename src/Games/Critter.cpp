@@ -6,6 +6,7 @@ float Critter::SLEEP_SPEED = 0.05f;
 int Critter::SLEEP_FRAME_THRESHOLD = 15;
 float Critter::GRADIENT_SIGN = 1.0f;
 float Critter::HAND_PUSH_STRENGTH = 2.0f;
+float Critter::HERD_STRENGTH = 3.0f;
 float Critter::WANDER_STRENGTH = 0.03f;
 float Critter::WANDER_TURN_RATE = 0.3f;
 float Critter::WANDER_SLOPE_FALLOFF = 10.0f;
@@ -53,10 +54,16 @@ void Critter::update(HandField & handField, std::vector<Tangible> & tangibles)
 	float wanderScale = 1.0f / (1.0f + grad.length() * WANDER_SLOPE_FALLOFF);
 	acceleration += ofVec2f(cos(wanderAngle), sin(wanderAngle)) * WANDER_STRENGTH * wanderScale;
 
-	// Hands are impassable geometry, not terrain: push straight out of the
-	// blob instead of letting the heightfield treat a hand as a hill. Routed
-	// through applyImpulse (impulse/mass) so heavier critters resist a shove.
-	if (handField.isInHand(location.x, location.y)) {
+	// A moving hand guides nearby critters along with it (herdForce already
+	// saturates to full strength right at the hand's own footprint, so this
+	// covers direct contact too). Only once the hand goes still does direct
+	// contact fall back to the old hard push-out, so a cupped, held hand
+	// still traps rather than letting critters sit inside it untouched.
+	if (handField.getHandVelocity().lengthSquared() > 0.01f) {
+		ofVec2f herd = handField.herdForce(location.x, location.y);
+		if (herd.lengthSquared() > 0)
+			applyImpulse(herd * HERD_STRENGTH);
+	} else if (handField.isInHand(location.x, location.y)) {
 		ofVec2f push = handField.pushDirection(location.x, location.y);
 		if (push.lengthSquared() > 0)
 			applyImpulse(push.getNormalized() * HAND_PUSH_STRENGTH);

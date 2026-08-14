@@ -30,8 +30,22 @@ public:
 	// with distance from the blob edge, so it's already usable as a force.
 	ofVec2f pushDirection(float x, float y) const;
 
+	// How fast and which way the hand (its mask centroid) moved this frame,
+	// in kinect pixels/frame. Zero when no hand is present, or on the frame
+	// a hand first appears/disappears (avoids a spurious jump).
+	ofVec2f getHandVelocity() const { return handVelocity; }
+	// Nudge toward the hand's current direction of travel, falling off to
+	// zero at INFLUENCE_RADIUS kinect pixels from the nearest hand pixel -
+	// saturates to full strength at and inside the hand's own footprint, so
+	// this alone covers direct contact too, not just nearby cells. Not
+	// normalized - callers scale by their own strength constant.
+	ofVec2f herdForce(float x, float y) const;
+
 	// Depth difference (raw vs. filtered) above which a pixel counts as "hand".
 	static float THRESHOLD;
+	// How far (kinect pixels) a moving hand's influence reaches beyond its
+	// own footprint.
+	static float INFLUENCE_RADIUS;
 
 private:
 	std::shared_ptr<KinectProjector> kinectProjector;
@@ -40,6 +54,11 @@ private:
 
 	cv::Mat mask;     // CV_8UC1, 255 where a hand is detected
 	cv::Mat distField; // CV_32F, distance (in grid cells) to nearest non-hand cell
+	cv::Mat freeDistField; // CV_32F, distance (in grid cells) from free cells to nearest hand cell
+
+	ofVec2f handCentroid, prevHandCentroid;
+	ofVec2f handVelocity;
+	bool hadHandLastFrame;
 
 	ofRectangle kinectROI;
 	int step; // kinect pixels per grid cell
