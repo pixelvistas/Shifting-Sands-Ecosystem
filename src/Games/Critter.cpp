@@ -6,7 +6,7 @@ float Critter::SLEEP_SPEED = 0.05f;
 int Critter::SLEEP_FRAME_THRESHOLD = 15;
 float Critter::GRADIENT_SIGN = 1.0f;
 float Critter::HAND_PUSH_STRENGTH = 2.0f;
-float Critter::HERD_STRENGTH = 3.0f;
+float Critter::HERD_STRENGTH = 0.15f;
 float Critter::WANDER_STRENGTH = 0.03f;
 float Critter::WANDER_TURN_RATE = 0.3f;
 float Critter::WANDER_SLOPE_FALLOFF = 10.0f;
@@ -56,13 +56,18 @@ void Critter::update(HandField & handField, std::vector<Tangible> & tangibles)
 
 	// A moving hand guides nearby critters along with it (herdForce already
 	// saturates to full strength right at the hand's own footprint, so this
-	// covers direct contact too). Only once the hand goes still does direct
-	// contact fall back to the old hard push-out, so a cupped, held hand
-	// still traps rather than letting critters sit inside it untouched.
-	if (handField.getHandVelocity().lengthSquared() > 0.01f) {
+	// covers direct contact too). Fed into acceleration rather than a raw
+	// impulse so it goes through the same damped integration as gravity and
+	// wander below - applying it as a fresh full-strength impulse every
+	// single frame a critter stayed in range had nothing to damp between
+	// additions and read as critters flinging themselves away. Only once
+	// the hand is genuinely held still (isHandStill(), not just "velocity
+	// isn't exactly zero") does direct contact fall back to the old hard
+	// push-out, so a cupped, held hand still traps.
+	if (!handField.isHandStill()) {
 		ofVec2f herd = handField.herdForce(location.x, location.y);
 		if (herd.lengthSquared() > 0)
-			applyImpulse(herd * HERD_STRENGTH);
+			acceleration += herd * HERD_STRENGTH;
 	} else if (handField.isInHand(location.x, location.y)) {
 		ofVec2f push = handField.pushDirection(location.x, location.y);
 		if (push.lengthSquared() > 0)

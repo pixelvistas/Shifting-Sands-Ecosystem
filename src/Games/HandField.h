@@ -31,9 +31,16 @@ public:
 	ofVec2f pushDirection(float x, float y) const;
 
 	// How fast and which way the hand (its mask centroid) moved this frame,
-	// in kinect pixels/frame. Zero when no hand is present, or on the frame
-	// a hand first appears/disappears (avoids a spurious jump).
+	// in kinect pixels/frame, smoothed to filter out per-frame centroid
+	// jitter. Zero when no hand is present, or on the frame a hand first
+	// appears/disappears (avoids a spurious jump).
 	ofVec2f getHandVelocity() const { return handVelocity; }
+	// True when a hand is present and its smoothed velocity is below
+	// STILL_THRESHOLD - the signal Critter uses to fall back from guiding
+	// to the hard trap push. Raw frame-to-frame centroid noise is why this
+	// needs its own smoothed, deliberately-chosen threshold rather than a
+	// bare "velocity != 0" test.
+	bool isHandStill() const { return handVelocity.lengthSquared() < (STILL_THRESHOLD * STILL_THRESHOLD); }
 	// Nudge toward the hand's current direction of travel, falling off to
 	// zero at INFLUENCE_RADIUS kinect pixels from the nearest hand pixel -
 	// saturates to full strength at and inside the hand's own footprint, so
@@ -46,6 +53,13 @@ public:
 	// How far (kinect pixels) a moving hand's influence reaches beyond its
 	// own footprint.
 	static float INFLUENCE_RADIUS;
+	// Below this smoothed speed (kinect pixels/frame), the hand counts as
+	// "held still" for isHandStill().
+	static float STILL_THRESHOLD;
+	// Smoothing factor for the velocity estimate, 0..1 - higher tracks the
+	// raw per-frame centroid delta more closely (twitchier), lower damps
+	// out noise more (laggier).
+	static float VELOCITY_SMOOTHING;
 
 private:
 	std::shared_ptr<KinectProjector> kinectProjector;

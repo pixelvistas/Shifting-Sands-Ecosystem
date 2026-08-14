@@ -2,6 +2,8 @@
 
 float HandField::THRESHOLD = 20.0f; // raw depth units
 float HandField::INFLUENCE_RADIUS = 80.0f; // kinect pixels
+float HandField::STILL_THRESHOLD = 1.5f; // kinect pixels/frame
+float HandField::VELOCITY_SMOOTHING = 0.25f;
 
 namespace {
 	const int GRID_STEP = 4; // kinect pixels per grid cell
@@ -80,7 +82,15 @@ void HandField::update()
 	if (handPresent) {
 		handCentroid = ofVec2f(kinectROI.x + (float)(m.m10 / m.m00) * step,
 		                        kinectROI.y + (float)(m.m01 / m.m00) * step);
-		handVelocity = hadHandLastFrame ? (handCentroid - prevHandCentroid) : ofVec2f(0);
+		if (hadHandLastFrame) {
+			ofVec2f rawVelocity = handCentroid - prevHandCentroid;
+			// Exponential smoothing: raw per-frame centroid deltas are
+			// noisy enough that a genuinely still hand rarely reads as
+			// exactly zero, which is what made isHandStill() unreliable.
+			handVelocity += (rawVelocity - handVelocity) * VELOCITY_SMOOTHING;
+		} else {
+			handVelocity = ofVec2f(0);
+		}
 		prevHandCentroid = handCentroid;
 	} else {
 		handVelocity = ofVec2f(0);

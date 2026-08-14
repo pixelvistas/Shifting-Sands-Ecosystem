@@ -114,7 +114,7 @@ void CCritterController::drawGui()
 	ImGui::SliderFloat("Sleep speed", &Critter::SLEEP_SPEED, 0.0f, 0.5f);
 	ImGui::SliderInt("Sleep frames", &Critter::SLEEP_FRAME_THRESHOLD, 1, 120);
 	ImGui::SliderFloat("Hand push (still hand)", &Critter::HAND_PUSH_STRENGTH, 0.0f, 10.0f);
-	ImGui::SliderFloat("Herd strength (moving hand)", &Critter::HERD_STRENGTH, 0.0f, 10.0f);
+	ImGui::SliderFloat("Herd strength (moving hand)", &Critter::HERD_STRENGTH, 0.0f, 1.0f);
 	if (ImGui::Checkbox("Flip gradient sign", &gradientFlipped))
 		Critter::GRADIENT_SIGN = gradientFlipped ? -1.0f : 1.0f;
 
@@ -126,6 +126,8 @@ void CCritterController::drawGui()
 	ImGui::Separator();
 	ImGui::SliderFloat("Hand threshold", &HandField::THRESHOLD, 1.0f, 100.0f);
 	ImGui::SliderFloat("Hand influence radius", &HandField::INFLUENCE_RADIUS, 10.0f, 300.0f);
+	ImGui::SliderFloat("Hand still threshold", &HandField::STILL_THRESHOLD, 0.1f, 10.0f);
+	ImGui::SliderFloat("Hand velocity smoothing", &HandField::VELOCITY_SMOOTHING, 0.05f, 1.0f);
 	ImGui::Checkbox("Show hand mask", &showHandDebug);
 
 	ImGui::Separator();
