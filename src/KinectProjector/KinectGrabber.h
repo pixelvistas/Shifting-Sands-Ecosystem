@@ -164,6 +164,7 @@ private:
 	float hysteresis; // Amount by which a new filtered value has to differ from the current value to update the display
     bool followBigChange;
     float bigChange; // Amount of change over which the averaging slot is reset to new value
+    float handRejectThreshold; // Raw depth units under the established baseline that gets treated as a hand and excluded from averaging, once that baseline exists
 //	float instableValue; // Value to assign to instable pixels if retainValids is false
 	bool spatialFilter; // Flag whether to apply a spatial filter to time-averaged depth values
     float maxOffset;
