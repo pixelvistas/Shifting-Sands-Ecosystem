@@ -103,7 +103,6 @@ void KinectGrabber::setupFramefilter(int sgradFieldresolution, float newMaxOffse
     maxVariance = 4 ;
     hysteresis = 0.5f ;
     bigChange = 10.0f ;
-    handRejectThreshold = 20.0f ; // raw depth units - a hand reads this much closer than the established terrain baseline
 //	instableValue = 0.0;
     maxgradfield = 1000;
     initialValue = 4000;
@@ -297,18 +296,8 @@ void KinectGrabber::filter()
             {
                 float newVal = static_cast<float>(*inputFramePtr);
                 float oldVal = *averagingBufferPtr;
-
-                // A hand between the Kinect and the sand reads as raw depth
-                // suddenly much closer than the terrain this pixel already
-                // settled on. Once that baseline exists, skip folding this
-                // sample into the average entirely rather than accepting it
-                // (bakes the hand in as a "hill") or fast-snapping to it
-                // (same thing, just immediate) - the pixel just holds its
-                // last real terrain value until the hand moves off.
-                bool haveBaseline = (*validBufferPtr != initialValue);
-                bool looksLikeHand = haveBaseline && (*validBufferPtr - newVal > handRejectThreshold);
-
-				if(newVal > maxOffset && !looksLikeHand)//we are under the ceiling plane
+                
+				if(newVal > maxOffset)//we are under the ceiling plane
                 {
                     *averagingBufferPtr = newVal; // Store the value
                     if (followBigChange && statBufferPtr[0] > 0){ // Follow big changes
