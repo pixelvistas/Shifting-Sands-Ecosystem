@@ -1,9 +1,11 @@
 /***********************************************************************
-SonicWaveController.h - Sand Noise Device-inspired sonic layer: a wave
-periodically sweeps across the play area, releasing bursts of
-SonicParticles that then react to the terrain under their own physics
-(see SonicParticle.h) until they age out. Owns the SonicEngine (audio
-output) and its own HandField instance for hand interaction.
+SonicWaveController.h - Sand Noise Device-inspired sonic layer: while
+the physical puck (see PuckTracker.h) is detected on the sand, it acts
+as a point source, periodically releasing a burst of SonicParticles
+that then react to the terrain under their own physics (see
+SonicParticle.h) until they age out. No puck, no waves - this is
+deliberately not a standalone timer anymore. Owns the SonicEngine
+(audio output) and its own HandField instance for hand interaction.
 
 Deliberately independent of CCritterController/Critter - this is an
 exploration inspired by Jay Van Dyke's Sand Noise Device, not an
@@ -28,6 +30,7 @@ Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 #include "SonicParticle.h"
 #include "SonicEngine.h"
 #include "HandField.h"
+#include "PuckTracker.h"
 #include "Tangible.h"
 
 class CSonicWaveController
@@ -45,7 +48,7 @@ public:
 	void drawGui();
 
 private:
-	void spawnWaveParticles();
+	void spawnBurstAt(const ofPoint & origin);
 
 	std::shared_ptr<KinectProjector> kinectProjector;
 	ofRectangle kinectROI;
@@ -54,20 +57,17 @@ private:
 
 	SonicEngine engine;
 	HandField handField;
+	PuckTracker puckTracker;
 	std::vector<SonicParticle> particles;
 	std::vector<Tangible> noTangibles; // always empty - see header note
 
 	ofFbo fbo;
 
-	bool waveActive;
-	float waveProgress;    // 0..1 across the current sweep
-	float waveSpawnAccum;  // seconds since this sweep's last spawn burst
-	float waveRestTimer;   // seconds since the last sweep finished
+	float waveSpawnAccum; // seconds since the last spawn burst while the puck has been present
+	bool showPuckDebug;
 
 	// Tunable in the debug GUI.
-	float waveDuration;     // seconds for one sweep to cross the play area
-	float waveInterval;     // seconds of rest between sweeps
-	float spawnInterval;    // seconds between spawn bursts during a sweep
+	float spawnInterval;    // seconds between spawn bursts while the puck is present
 	int particlesPerSpawn;
-	float wavePushSpeed;    // initial nudge speed in the wave's direction of travel
+	float wavePushSpeed;    // initial outward burst speed
 };

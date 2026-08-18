@@ -5,18 +5,15 @@ void CSonicWaveController::setup(std::shared_ptr<KinectProjector> const& k)
 {
 	kinectProjector = k;
 	handField.setup(k);
+	puckTracker.setup(k);
 	engine.setup();
 
-	waveActive = false;
-	waveProgress = 0.0f;
 	waveSpawnAccum = 0.0f;
-	waveRestTimer = 0.0f;
+	showPuckDebug = false;
 
-	waveDuration = 6.0f;
-	waveInterval = 4.0f;
-	spawnInterval = 0.15f;
-	particlesPerSpawn = 3;
-	wavePushSpeed = 0.8f;
+	spawnInterval = 0.6f;
+	particlesPerSpawn = 4;
+	wavePushSpeed = 0.6f;
 }
 
 void CSonicWaveController::exit()
@@ -42,19 +39,17 @@ void CSonicWaveController::setKinectROI(ofRectangle & KROI)
 	playArea.scaleFromCenter(0.9f, 0.9f); // same margin convention as CCritterController
 }
 
-void CSonicWaveController::spawnWaveParticles()
+void CSonicWaveController::spawnBurstAt(const ofPoint & origin)
 {
 	if (playArea.width <= 0)
 		return;
 
-	float waveX = playArea.getLeft() + waveProgress * playArea.getWidth();
-
 	for (int i = 0; i < particlesPerSpawn; i++) {
-		float y = ofRandom(playArea.getTop(), playArea.getBottom());
-		ofPoint spawnLoc(waveX, y);
-		ofVec2f initialVelocity(wavePushSpeed, ofRandom(-0.3f, 0.3f));
+		float angle = ofRandom(TWO_PI);
+		ofVec2f initialVelocity(cos(angle), sin(angle));
+		initialVelocity *= wavePushSpeed;
 
-		SonicParticle p(kinectProjector, spawnLoc, playArea, initialVelocity);
+		SonicParticle p(kinectProjector, origin, playArea, initialVelocity);
 		p.setup(engine);
 		particles.push_back(p);
 	}
@@ -66,26 +61,19 @@ void CSonicWaveController::update()
 		return;
 
 	handField.update();
+	puckTracker.update();
 
 	float dt = ofGetLastFrameTime();
-	if (waveActive) {
-		waveProgress += dt / waveDuration;
+	if (puckTracker.isPuckPresent()) {
 		waveSpawnAccum += dt;
 		if (waveSpawnAccum >= spawnInterval) {
 			waveSpawnAccum = 0.0f;
-			spawnWaveParticles();
-		}
-		if (waveProgress >= 1.0f) {
-			waveActive = false;
-			waveRestTimer = 0.0f;
+			spawnBurstAt(puckTracker.getPuckLocation());
 		}
 	} else {
-		waveRestTimer += dt;
-		if (waveRestTimer >= waveInterval) {
-			waveActive = true;
-			waveProgress = 0.0f;
-			waveSpawnAccum = 0.0f;
-		}
+		// Reset so the first burst after the puck is placed again isn't
+		// delayed by whatever was left over from before it was removed.
+		waveSpawnAccum = 0.0f;
 	}
 
 	for (size_t i = 0; i < particles.size(); ) {
@@ -101,6 +89,11 @@ void CSonicWaveController::update()
 	ofClear(255, 255, 255, 0);
 	for (auto & p : particles)
 		p.draw();
+	if (showPuckDebug) {
+		// Fixed-position thumbnail, not spatially registered to the sand -
+		// same convention as HandField's debug overlay.
+		puckTracker.draw(10, 10, 160, 120);
+	}
 	fbo.end();
 }
 
@@ -117,14 +110,25 @@ void CSonicWaveController::drawProjectorWindow()
 void CSonicWaveController::drawGui()
 {
 	ImGui::Begin("Sonic Wave");
-	ImGui::Text("%d particles | wave %s", (int)particles.size(), waveActive ? "sweeping" : "resting");
+	ImGui::Text("%d particles | puck %s", (int)particles.size(),
+		puckTracker.isPuckPresent() ? "DETECTED" : "not detected");
 
 	ImGui::Separator();
-	ImGui::SliderFloat("Wave duration (s)", &waveDuration, 1.0f, 20.0f);
-	ImGui::SliderFloat("Wave rest interval (s)", &waveInterval, 0.0f, 20.0f);
-	ImGui::SliderFloat("Spawn interval (s)", &spawnInterval, 0.02f, 1.0f);
-	ImGui::SliderInt("Particles per spawn", &particlesPerSpawn, 1, 10);
-	ImGui::SliderFloat("Wave push speed", &wavePushSpeed, 0.0f, 3.0f);
+	ImGui::Text("Puck detection");
+	ImGui::SliderFloat("Expected radius (cells)", &PuckTracker::EXPECTED_RADIUS_CELLS, 2.0f, 30.0f);
+	ImGui::SliderFloat("Height threshold", &PuckTracker::HEIGHT_THRESHOLD, 1.0f, 100.0f);
+	ImGui::SliderFloat("Min circularity", &PuckTracker::MIN_CIRCULARITY, 0.1f, 1.0f);
+	ImGui::SliderFloat("Confirm time (s)", &PuckTracker::CONFIRM_TIME, 0.0f, 3.0f);
+	ImGui::SliderFloat("Max track jump (px)", &PuckTracker::MAX_TRACK_JUMP, 5.0f, 150.0f);
+	ImGui::SliderInt("Max lost frames", &PuckTracker::MAX_LOST_FRAMES, 0, 30);
+	ImGui::Checkbox("Invert elevation", &PuckTracker::INVERT_ELEVATION);
+	ImGui::Checkbox("Show puck detection overlay", &showPuckDebug);
+
+	ImGui::Separator();
+	ImGui::Text("Wave (fires while puck is present)");
+	ImGui::SliderFloat("Spawn interval (s)", &spawnInterval, 0.05f, 3.0f);
+	ImGui::SliderInt("Particles per burst", &particlesPerSpawn, 1, 15);
+	ImGui::SliderFloat("Burst push speed", &wavePushSpeed, 0.0f, 3.0f);
 
 	ImGui::Separator();
 	ImGui::SliderFloat("Gravity", &SonicParticle::GRAVITY, 0.0f, 0.3f);
@@ -147,10 +151,8 @@ void CSonicWaveController::drawGui()
 	ImGui::SliderFloat("Pitch: max Hz", &SonicEngine::MAX_FREQ, 40.0f, 4000.0f);
 	ImGui::SliderFloat("Master volume", &SonicEngine::MASTER_GAIN, 0.0f, 1.0f);
 
-	if (ImGui::Button("Trigger wave now")) {
-		waveActive = true;
-		waveProgress = 0.0f;
-		waveSpawnAccum = 0.0f;
+	if (ImGui::Button("Test burst (center, no puck needed)")) {
+		spawnBurstAt(ofPoint(playArea.getCenter()));
 	}
 	ImGui::SameLine();
 	if (ImGui::Button("Clear particles")) {
