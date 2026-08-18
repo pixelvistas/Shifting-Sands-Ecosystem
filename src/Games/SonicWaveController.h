@@ -1,11 +1,17 @@
 /***********************************************************************
 SonicWaveController.h - Sand Noise Device-inspired sonic layer: while
 the physical puck (see PuckTracker.h) is detected on the sand, it acts
-as a point source, periodically releasing a burst of SonicParticles
-that then react to the terrain under their own physics (see
-SonicParticle.h) until they age out. No puck, no waves - this is
-deliberately not a standalone timer anymore. Owns the SonicEngine
-(audio output) and its own HandField instance for hand interaction.
+as a point source, periodically releasing a ring of SonicParticles -
+evenly spaced points around a circle, all pushed outward together - that
+then individually react to the terrain under their own physics (see
+SonicParticle.h) until the ring's shared lifetime runs out. The ring is
+rendered as a single glowing closed loop, not as scattered dots, so it
+visibly ripples outward and deforms as its points cross slopes, pits,
+and hands at different rates. No puck, no waves.
+
+Sonification (SonicEngine/SonicParticle's voice-per-point wiring) is
+still present underneath but not the current focus - this pass is
+graphics and physics only, per direction.
 
 Deliberately independent of CCritterController/Critter - this is an
 exploration inspired by Jay Van Dyke's Sand Noise Device, not an
@@ -33,6 +39,13 @@ Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 #include "PuckTracker.h"
 #include "Tangible.h"
 
+// One expanding ring: a set of points spawned together around a circle,
+// updated and drawn as a group. Owns nothing beyond its own points, so a
+// ring is just removed once every point in it has died.
+struct SonicRing {
+	std::vector<SonicParticle> points;
+};
+
 class CSonicWaveController
 {
 public:
@@ -48,7 +61,8 @@ public:
 	void drawGui();
 
 private:
-	void spawnBurstAt(const ofPoint & origin);
+	void spawnRingAt(const ofPoint & origin);
+	void drawRing(const SonicRing & ring);
 
 	std::shared_ptr<KinectProjector> kinectProjector;
 	ofRectangle kinectROI;
@@ -58,16 +72,18 @@ private:
 	SonicEngine engine;
 	HandField handField;
 	PuckTracker puckTracker;
-	std::vector<SonicParticle> particles;
+	std::vector<SonicRing> rings;
 	std::vector<Tangible> noTangibles; // always empty - see header note
 
 	ofFbo fbo;
 
-	float waveSpawnAccum; // seconds since the last spawn burst while the puck has been present
+	float waveSpawnAccum; // seconds since the last ring while the puck has been present
 	bool showPuckDebug;
 
 	// Tunable in the debug GUI.
-	float spawnInterval;    // seconds between spawn bursts while the puck is present
-	int particlesPerSpawn;
-	float wavePushSpeed;    // initial outward burst speed
+	float spawnInterval;    // seconds between rings while the puck is present
+	int ringPointCount;     // points evenly spaced around each ring
+	float wavePushSpeed;    // initial outward speed of every point
+	ofColor ringColor;
+	float ringColorRGB[3];  // 0..1 mirror of ringColor, kept in sync - ImGui::ColorEdit3 needs float components, ofColor is unsigned char
 };

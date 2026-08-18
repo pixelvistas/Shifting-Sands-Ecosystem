@@ -12,8 +12,12 @@ void CSonicWaveController::setup(std::shared_ptr<KinectProjector> const& k)
 	showPuckDebug = false;
 
 	spawnInterval = 0.6f;
-	particlesPerSpawn = 4;
+	ringPointCount = 32;
 	wavePushSpeed = 0.6f;
+	ringColor = ofColor(90, 230, 255); // neon cyan default
+	ringColorRGB[0] = ringColor.r / 255.0f;
+	ringColorRGB[1] = ringColor.g / 255.0f;
+	ringColorRGB[2] = ringColor.b / 255.0f;
 }
 
 void CSonicWaveController::exit()
@@ -39,20 +43,24 @@ void CSonicWaveController::setKinectROI(ofRectangle & KROI)
 	playArea.scaleFromCenter(0.9f, 0.9f); // same margin convention as CCritterController
 }
 
-void CSonicWaveController::spawnBurstAt(const ofPoint & origin)
+void CSonicWaveController::spawnRingAt(const ofPoint & origin)
 {
-	if (playArea.width <= 0)
+	if (playArea.width <= 0 || ringPointCount < 3)
 		return;
 
-	for (int i = 0; i < particlesPerSpawn; i++) {
-		float angle = ofRandom(TWO_PI);
-		ofVec2f initialVelocity(cos(angle), sin(angle));
-		initialVelocity *= wavePushSpeed;
+	SonicRing ring;
+	float lifetime = ofRandom(SonicParticle::LIFETIME_MIN, SonicParticle::LIFETIME_MAX);
+
+	for (int i = 0; i < ringPointCount; i++) {
+		float angle = (TWO_PI * i) / ringPointCount;
+		ofVec2f dir(cos(angle), sin(angle));
+		ofVec2f initialVelocity = dir * wavePushSpeed;
 
 		SonicParticle p(kinectProjector, origin, playArea, initialVelocity);
-		p.setup(engine);
-		particles.push_back(p);
+		p.setup(engine, lifetime);
+		ring.points.push_back(p);
 	}
+	rings.push_back(ring);
 }
 
 void CSonicWaveController::update()
@@ -68,33 +76,75 @@ void CSonicWaveController::update()
 		waveSpawnAccum += dt;
 		if (waveSpawnAccum >= spawnInterval) {
 			waveSpawnAccum = 0.0f;
-			spawnBurstAt(puckTracker.getPuckLocation());
+			spawnRingAt(puckTracker.getPuckLocation());
 		}
 	} else {
-		// Reset so the first burst after the puck is placed again isn't
+		// Reset so the first ring after the puck is placed again isn't
 		// delayed by whatever was left over from before it was removed.
 		waveSpawnAccum = 0.0f;
 	}
 
-	for (size_t i = 0; i < particles.size(); ) {
-		bool alive = particles[i].update(handField, noTangibles, engine);
-		if (!alive) {
-			particles.erase(particles.begin() + i);
+	for (size_t r = 0; r < rings.size(); ) {
+		bool anyAlive = false;
+		auto & points = rings[r].points;
+		for (size_t i = 0; i < points.size(); ) {
+			bool alive = points[i].update(handField, noTangibles, engine);
+			if (alive) {
+				anyAlive = true;
+				i++;
+			} else {
+				points.erase(points.begin() + i);
+			}
+		}
+		if (anyAlive) {
+			r++;
 		} else {
-			i++;
+			rings.erase(rings.begin() + r);
 		}
 	}
 
 	fbo.begin();
 	ofClear(255, 255, 255, 0);
-	for (auto & p : particles)
-		p.draw();
+	for (auto & ring : rings)
+		drawRing(ring);
 	if (showPuckDebug) {
 		// Fixed-position thumbnail, not spatially registered to the sand -
 		// same convention as HandField's debug overlay.
 		puckTracker.draw(10, 10, 160, 120);
 	}
 	fbo.end();
+}
+
+void CSonicWaveController::drawRing(const SonicRing & ring)
+{
+	if (ring.points.size() < 3)
+		return;
+
+	ofPolyline line;
+	for (auto & p : ring.points) {
+		ofVec2f projectorCoord = kinectProjector->kinectCoordToProjCoord(p.getLocation().x, p.getLocation().y);
+		line.addVertex(projectorCoord.x, projectorCoord.y);
+	}
+	line.close();
+
+	ofPushStyle();
+	ofEnableBlendMode(OF_BLENDMODE_ADD);
+
+	// Soft outer glow: a few progressively wider, dimmer passes underneath
+	// a thin bright core - the standard cheap way to fake a neon bloom
+	// without a real post-process blur.
+	for (int pass = 4; pass >= 1; pass--) {
+		ofSetColor(ringColor, 35);
+		ofSetLineWidth(pass * 5.0f);
+		line.draw();
+	}
+
+	ofSetColor(255, 255, 255, 220);
+	ofSetLineWidth(1.5f);
+	line.draw();
+
+	ofDisableBlendMode();
+	ofPopStyle();
 }
 
 void CSonicWaveController::drawMainWindow(float x, float y, float width, float height)
@@ -109,8 +159,12 @@ void CSonicWaveController::drawProjectorWindow()
 
 void CSonicWaveController::drawGui()
 {
+	int totalPoints = 0;
+	for (auto & ring : rings)
+		totalPoints += (int)ring.points.size();
+
 	ImGui::Begin("Sonic Wave");
-	ImGui::Text("%d particles | puck %s", (int)particles.size(),
+	ImGui::Text("%d rings (%d points) | puck %s", (int)rings.size(), totalPoints,
 		puckTracker.isPuckPresent() ? "DETECTED" : "not detected");
 
 	ImGui::Separator();
@@ -125,10 +179,13 @@ void CSonicWaveController::drawGui()
 	ImGui::Checkbox("Show puck detection overlay", &showPuckDebug);
 
 	ImGui::Separator();
-	ImGui::Text("Wave (fires while puck is present)");
+	ImGui::Text("Ring (fires while puck is present)");
 	ImGui::SliderFloat("Spawn interval (s)", &spawnInterval, 0.05f, 3.0f);
-	ImGui::SliderInt("Particles per burst", &particlesPerSpawn, 1, 15);
-	ImGui::SliderFloat("Burst push speed", &wavePushSpeed, 0.0f, 3.0f);
+	ImGui::SliderInt("Points per ring", &ringPointCount, 8, 96);
+	ImGui::SliderFloat("Ring expansion speed", &wavePushSpeed, 0.0f, 3.0f);
+	if (ImGui::ColorEdit3("Ring color", ringColorRGB)) {
+		ringColor = ofColor(ringColorRGB[0] * 255.0f, ringColorRGB[1] * 255.0f, ringColorRGB[2] * 255.0f);
+	}
 
 	ImGui::Separator();
 	ImGui::SliderFloat("Gravity", &SonicParticle::GRAVITY, 0.0f, 0.3f);
@@ -141,24 +198,15 @@ void CSonicWaveController::drawGui()
 	ImGui::SliderFloat("Lifetime min (s)", &SonicParticle::LIFETIME_MIN, 1.0f, 30.0f);
 	ImGui::SliderFloat("Lifetime max (s)", &SonicParticle::LIFETIME_MAX, 1.0f, 30.0f);
 
-	ImGui::Separator();
-	ImGui::Text("Sonification");
-	ImGui::SliderFloat("Height -> volume: min", &SonicParticle::HEIGHT_MIN, -200.0f, 200.0f);
-	ImGui::SliderFloat("Height -> volume: max", &SonicParticle::HEIGHT_MAX, -200.0f, 200.0f);
-	ImGui::Checkbox("Invert height mapping", &SonicParticle::INVERT_HEIGHT);
-	ImGui::SliderFloat("Speed -> pitch: max speed", &SonicParticle::MAX_SPEED_FOR_PITCH, 0.1f, 10.0f);
-	ImGui::SliderFloat("Pitch: min Hz", &SonicEngine::MIN_FREQ, 40.0f, 2000.0f);
-	ImGui::SliderFloat("Pitch: max Hz", &SonicEngine::MAX_FREQ, 40.0f, 4000.0f);
-	ImGui::SliderFloat("Master volume", &SonicEngine::MASTER_GAIN, 0.0f, 1.0f);
-
-	if (ImGui::Button("Test burst (center, no puck needed)")) {
-		spawnBurstAt(ofPoint(playArea.getCenter()));
+	if (ImGui::Button("Test ring (center, no puck needed)")) {
+		spawnRingAt(ofPoint(playArea.getCenter()));
 	}
 	ImGui::SameLine();
-	if (ImGui::Button("Clear particles")) {
-		for (auto & p : particles)
-			p.release(engine); // otherwise their voices leak from the pool
-		particles.clear();
+	if (ImGui::Button("Clear rings")) {
+		for (auto & ring : rings)
+			for (auto & p : ring.points)
+				p.release(engine); // otherwise their voices leak from the pool
+		rings.clear();
 	}
 
 	ImGui::End();

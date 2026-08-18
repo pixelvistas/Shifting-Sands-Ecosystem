@@ -26,7 +26,11 @@ class SonicParticle {
 public:
 	SonicParticle(std::shared_ptr<KinectProjector> const& k, ofPoint slocation, ofRectangle sborders, ofVec2f initialVelocity);
 
-	void setup(SonicEngine & engine); // allocates a voice
+	// Allocates a voice. fixedLifetime > 0 overrides the usual randomized
+	// LIFETIME_MIN..LIFETIME_MAX draw - ring points share one explicit
+	// lifetime so the ring fades out together instead of unraveling as
+	// individual points die on staggered random timers.
+	void setup(SonicEngine & engine, float fixedLifetime = -1.0f);
 	// Returns false once the particle's lifetime has expired - the caller
 	// should then remove it (its voice is already released by then).
 	bool update(HandField & handField, std::vector<Tangible> & tangibles, SonicEngine & engine);

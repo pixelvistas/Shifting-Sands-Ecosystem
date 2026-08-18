@@ -23,11 +23,11 @@ SonicParticle::SonicParticle(std::shared_ptr<KinectProjector> const& k, ofPoint 
 	voiceIndex = -1;
 }
 
-void SonicParticle::setup(SonicEngine & engine)
+void SonicParticle::setup(SonicEngine & engine, float fixedLifetime)
 {
 	radius = ofRandom(2.0f, 4.0f);
 	mass = ofRandom(0.5f, 2.0f);
-	lifetime = ofRandom(LIFETIME_MIN, LIFETIME_MAX);
+	lifetime = (fixedLifetime > 0.0f) ? fixedLifetime : ofRandom(LIFETIME_MIN, LIFETIME_MAX);
 	voiceIndex = engine.allocateVoice();
 }
 
