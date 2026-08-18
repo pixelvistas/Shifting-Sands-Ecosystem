@@ -28,16 +28,18 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "Games/MapGameController.h"
 #include "Games/BoidGameController.h"
 #include "Games/CritterController.h"
+#include "Games/SonicWaveController.h"
 
 class ofApp : public ofBaseApp {
 
 public:
 	void setup();
- 
+
 	void update();
 
 	void draw();
 	void drawProjWindow(ofEventArgs& args);
+	void exit();
 
 	void keyPressed(int key);
 	void keyReleased(int key);
@@ -60,6 +62,7 @@ private:
 	CMapGameController mapGameController;
 	CBoidGameController boidGameController;
 	CCritterController critterController;
+	CSonicWaveController sonicWaveController;
 
 	// Main window ROI 
 	ofRectangle mainWindowROI;

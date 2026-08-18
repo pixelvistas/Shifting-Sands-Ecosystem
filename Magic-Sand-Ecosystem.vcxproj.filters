@@ -28,6 +28,15 @@
 		<ClCompile Include="src\Games\SandboxScoreTracker.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
+		<ClCompile Include="src\Games\SonicEngine.cpp">
+			<Filter>src\Games</Filter>
+		</ClCompile>
+		<ClCompile Include="src\Games\SonicParticle.cpp">
+			<Filter>src\Games</Filter>
+		</ClCompile>
+		<ClCompile Include="src\Games\SonicWaveController.cpp">
+			<Filter>src\Games</Filter>
+		</ClCompile>
 		<ClCompile Include="src\Games\Tangible.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
@@ -753,6 +762,15 @@
 			<Filter>src\Games</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Games\SandboxScoreTracker.h">
+			<Filter>src\Games</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Games\SonicEngine.h">
+			<Filter>src\Games</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Games\SonicParticle.h">
+			<Filter>src\Games</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Games\SonicWaveController.h">
 			<Filter>src\Games</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Games\Tangible.h">

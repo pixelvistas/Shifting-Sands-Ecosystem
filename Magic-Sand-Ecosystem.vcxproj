@@ -251,6 +251,9 @@
     <ClCompile Include="src\Games\MapGameController.cpp" />
     <ClCompile Include="src\Games\ReferenceMapHandler.cpp" />
     <ClCompile Include="src\Games\SandboxScoreTracker.cpp" />
+    <ClCompile Include="src\Games\SonicEngine.cpp" />
+    <ClCompile Include="src\Games\SonicParticle.cpp" />
+    <ClCompile Include="src\Games\SonicWaveController.cpp" />
     <ClCompile Include="src\Games\Tangible.cpp" />
     <ClCompile Include="src\Games\vehicle.cpp" />
     <ClCompile Include="src\KinectProjector\KinectGrabber.cpp" />
@@ -316,6 +319,9 @@
     <ClInclude Include="src\Games\MapGameController.h" />
     <ClInclude Include="src\Games\ReferenceMapHandler.h" />
     <ClInclude Include="src\Games\SandboxScoreTracker.h" />
+    <ClInclude Include="src\Games\SonicEngine.h" />
+    <ClInclude Include="src\Games\SonicParticle.h" />
+    <ClInclude Include="src\Games\SonicWaveController.h" />
     <ClInclude Include="src\Games\Tangible.h" />
     <ClInclude Include="src\Games\vehicle.h" />
     <ClInclude Include="src\KinectProjector\KinectGrabber.h" />

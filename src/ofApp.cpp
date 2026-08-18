@@ -63,6 +63,11 @@ void ofApp::setup() {
 	critterController.setKinectRes(kinectRes);
 	critterController.setKinectROI(kinectROI);
 
+	sonicWaveController.setup(kinectProjector);
+	sonicWaveController.setProjectorRes(projRes);
+	sonicWaveController.setKinectRes(kinectRes);
+	sonicWaveController.setKinectROI(kinectROI);
+
 	imgui.setup();
 
 }
@@ -80,11 +85,13 @@ void ofApp::update() {
 		mapGameController.setKinectROI(kinectROI);
 		boidGameController.setKinectROI(kinectROI);
 		critterController.setKinectROI(kinectROI);
+		sonicWaveController.setKinectROI(kinectROI);
 	}
 
 	mapGameController.update();
 	boidGameController.update();
 	critterController.update();
+	sonicWaveController.update();
 }
 
 
@@ -100,6 +107,7 @@ void ofApp::draw()
 		sandSurfaceRenderer->drawMainWindow(x, y, w, h);//400, 20, 400, 300);
 		boidGameController.drawMainWindow(x, y, w, h);
 		critterController.drawMainWindow(x, y, w, h);
+		sonicWaveController.drawMainWindow(x, y, w, h);
 	}
 
 	kinectProjector->drawMainWindow(x, y, w, h);
@@ -109,6 +117,7 @@ void ofApp::draw()
 		if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING) {
 			sandSurfaceRenderer->drawGui();
 			critterController.drawGui();
+			sonicWaveController.drawGui();
 		}
 	imgui.end();
 	imgui.draw();
@@ -122,8 +131,14 @@ void ofApp::drawProjWindow(ofEventArgs &args)
 		mapGameController.drawProjectorWindow();
 		boidGameController.drawProjectorWindow();
 		critterController.drawProjectorWindow();
+		sonicWaveController.drawProjectorWindow();
 	}
 	kinectProjector->drawProjectorWindow();
+}
+
+void ofApp::exit()
+{
+	sonicWaveController.exit();
 }
 
 void ofApp::keyPressed(int key) 
