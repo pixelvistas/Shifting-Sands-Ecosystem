@@ -60,7 +60,7 @@ void ofApp::setup() {
 
 	puckTracker.setup(kinectProjector);
 
-	critterController.setup(kinectProjector, &puckTracker);
+	critterController.setup(kinectProjector, &puckTracker, &sonicWaveController);
 	critterController.setProjectorRes(projRes);
 	critterController.setKinectRes(kinectRes);
 	critterController.setKinectROI(kinectROI);
@@ -240,7 +240,7 @@ void ofApp::keyPressed(int key)
 	{
 		if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING)
 		{
-			critterController.addCritters(50);
+			critterController.addCritters(critterController.getCritterSpawnCount());
 		}
 	}
 	else if (key == 'w')

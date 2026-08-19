@@ -1,14 +1,16 @@
 #include "CritterController.h"
 #include "ofxImGui.h"
 
-void CCritterController::setup(std::shared_ptr<KinectProjector> const& k, PuckTracker* tracker)
+void CCritterController::setup(std::shared_ptr<KinectProjector> const& k, PuckTracker* tracker, CSonicWaveController* sonicWave)
 {
 	kinectProjector = k;
 	handField.setup(k);
 	puckTracker = tracker;
+	sonicWaveController = sonicWave;
 	draggedTangible = -1;
 	showHandDebug = false;
 	gradientFlipped = false;
+	critterSpawnCount = 5;
 }
 
 void CCritterController::setProjectorRes(ofVec2f & PR)
@@ -33,7 +35,7 @@ void CCritterController::setKinectROI(ofRectangle & KROI)
 	Critter::setDrawFlipped(kinectProjector->getProjectionFlipped());
 
 	if (firstValidROI) {
-		addCritters(200);
+		addCritters(critterSpawnCount);
 		addTangible();
 	}
 }
@@ -76,8 +78,10 @@ void CCritterController::update()
 	ofPoint puckLocation = puckPresent ? puckTracker->getPuckLocation() : ofPoint();
 	float puckRadius = puckPresent ? puckTracker->getRadiusKinectPixels() : 0.0f;
 
-	for (auto & c : critters)
-		c.update(handField, tangibles, puckPresent, puckLocation, puckRadius);
+	for (auto & c : critters) {
+		bool insideRing = sonicWaveController && sonicWaveController->isInsideAnyRing(c.getLocation());
+		c.update(handField, tangibles, puckPresent, puckLocation, puckRadius, insideRing);
+	}
 
 	for (auto & t : tangibles)
 		t.update(handField);
@@ -158,8 +162,9 @@ void CCritterController::drawGui()
 	ImGui::SliderFloat("Tangible damping", &Tangible::DAMPING, 0.5f, 0.99f);
 	ImGui::SliderFloat("Tangible hand push", &Tangible::HAND_PUSH_STRENGTH, 0.0f, 10.0f);
 
-	if (ImGui::Button("Add 50 critters"))
-		addCritters(50);
+	ImGui::SliderInt("Critters per spawn", &critterSpawnCount, 1, 20);
+	if (ImGui::Button("Add critters"))
+		addCritters(critterSpawnCount);
 	ImGui::SameLine();
 	if (ImGui::Button("Remove all critters"))
 		critters.clear();

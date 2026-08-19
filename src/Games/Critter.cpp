@@ -10,6 +10,7 @@ float Critter::HERD_STRENGTH = 0.15f;
 float Critter::WANDER_STRENGTH = 0.03f;
 float Critter::WANDER_TURN_RATE = 0.3f;
 float Critter::WANDER_SLOPE_FALLOFF = 10.0f;
+ofColor Critter::IN_RING_COLOR = ofColor(60, 170, 255); // glowing neon blue
 bool Critter::DrawFlipped = false;
 
 Critter::Critter(std::shared_ptr<KinectProjector> const& k, ofPoint slocation, ofRectangle sborders)
@@ -23,11 +24,12 @@ Critter::Critter(std::shared_ptr<KinectProjector> const& k, ofPoint slocation, o
 	wanderAngle = ofRandom(TWO_PI);
 	asleep = false;
 	sleepFrames = 0;
+	inRing = false;
 }
 
 void Critter::setup()
 {
-	radius = ofRandom(2.0f, 4.0f); // insect-sized
+	radius = ofRandom(10.0f, 20.0f); // 5x the original insect-sized 2-4
 	mass = ofRandom(0.5f, 2.0f);
 }
 
@@ -40,8 +42,10 @@ void Critter::clampToBorders()
 }
 
 void Critter::update(HandField & handField, std::vector<Tangible> & tangibles,
-	bool puckPresent, const ofPoint & puckLocation, float puckRadius)
+	bool puckPresent, const ofPoint & puckLocation, float puckRadius, bool insideRing)
 {
+	inRing = insideRing;
+
 	// Slope-tangential gravity: mass-independent by design, so mass is free
 	// to mean something else - see the header note on the gravity/mass split.
 	ofVec2f grad = kinectProjector->gradientAtKinectCoord(location.x, location.y);
@@ -163,7 +167,20 @@ void Critter::draw()
 	float len = radius * 2.0f;
 	float wid = radius * 1.2f;
 
-	ofSetColor(255);
+	if (inRing) {
+		// Cheap glow halo behind the body, same additive-blend trick the
+		// sonic ring itself uses (see SonicWaveController::drawRing).
+		ofEnableBlendMode(OF_BLENDMODE_ADD);
+		for (int pass = 3; pass >= 1; pass--) {
+			ofSetColor(IN_RING_COLOR, 60);
+			ofDrawCircle(0, 0, radius * (1.0f + pass * 0.5f));
+		}
+		ofDisableBlendMode();
+		ofSetColor(IN_RING_COLOR);
+	} else {
+		ofSetColor(255);
+	}
+
 	ofFill();
 	ofDrawTriangle(len * 0.6f, 0, -len * 0.4f, -wid * 0.5f, -len * 0.4f, wid * 0.5f);
 	ofNoFill();

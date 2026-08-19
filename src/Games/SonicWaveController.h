@@ -39,8 +39,11 @@ Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 
 // One expanding ring: a set of points spawned together around a circle,
 // updated and drawn as a group. Owns nothing beyond its own points, so a
-// ring is just removed once every point in it has died.
+// ring is just removed once every point in it has died. origin is kept
+// alongside the points (rather than re-derived) so isInsideAnyRing() has
+// a stable center to measure from even as individual points move.
 struct SonicRing {
+	ofPoint origin;
 	std::vector<SonicParticle> points;
 };
 
@@ -59,6 +62,13 @@ public:
 	void drawMainWindow(float x, float y, float width, float height);
 	void drawProjectorWindow();
 	void drawGui();
+
+	// True if kinectCoord falls inside the disc bounded by any current
+	// ring's live average radius from its origin - a lightweight
+	// geometric query so CCritterController can tint critters that are
+	// "inside" a sonic wave without the two systems otherwise depending
+	// on each other (see the header note on why they're kept independent).
+	bool isInsideAnyRing(const ofPoint & kinectCoord) const;
 
 private:
 	void spawnRingAt(const ofPoint & origin);

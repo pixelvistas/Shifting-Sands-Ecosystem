@@ -37,6 +37,13 @@ puck is a recognized object, not scenery, so it needs to physically block
 critters rather than merely being sloped terrain they happen to roll off
 of most of the time.
 
+A critter tints from white to IN_RING_COLOR while its location falls
+inside a sonic wave ring (see CSonicWaveController::isInsideAnyRing),
+reverting to white the moment it crosses back out - purely a draw-time
+color choice driven by a bool the controller queries and passes into
+update() each frame, not something Critter tracks or owns any ring state
+for itself.
+
 Hand interaction is motion-aware, not just contact-aware: while the hand
 is moving, nearby critters get carried along in its direction of travel
 (HandField::herdForce - "guide"), which also covers direct contact since
@@ -68,7 +75,8 @@ public:
 	// puck's position is ground truth from sensing, not physics. Defaults
 	// to "no puck" so existing call sites don't need to change.
 	void update(HandField & handField, std::vector<Tangible> & tangibles,
-		bool puckPresent = false, const ofPoint & puckLocation = ofPoint(), float puckRadius = 0.0f);
+		bool puckPresent = false, const ofPoint & puckLocation = ofPoint(), float puckRadius = 0.0f,
+		bool insideRing = false);
 	void draw();
 
 	const ofPoint & getLocation() const { return location; }
@@ -94,6 +102,7 @@ public:
 	static float WANDER_STRENGTH;
 	static float WANDER_TURN_RATE; // max heading change per frame, radians
 	static float WANDER_SLOPE_FALLOFF; // higher = wander dies out faster as slope steepens
+	static ofColor IN_RING_COLOR; // draw color while inside a sonic wave ring
 
 private:
 	void clampToBorders();
@@ -110,6 +119,7 @@ private:
 	float radius;
 
 	float wanderAngle;
+	bool inRing;
 
 	bool asleep;
 	int sleepFrames;

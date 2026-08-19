@@ -116,6 +116,7 @@ void CSonicWaveController::spawnRingAt(const ofPoint & origin)
 		return;
 
 	SonicRing ring;
+	ring.origin = origin;
 	for (int i = 0; i < ringPointCount; i++) {
 		float angle = (TWO_PI * i) / ringPointCount;
 		ofVec2f dir(cos(angle), sin(angle));
@@ -126,6 +127,23 @@ void CSonicWaveController::spawnRingAt(const ofPoint & origin)
 		ring.points.push_back(p);
 	}
 	rings.push_back(ring);
+}
+
+bool CSonicWaveController::isInsideAnyRing(const ofPoint & kinectCoord) const
+{
+	for (auto & ring : rings) {
+		if (ring.points.empty())
+			continue;
+
+		float avgRadius = 0.0f;
+		for (auto & p : ring.points)
+			avgRadius += (p.getLocation() - ring.origin).length();
+		avgRadius /= ring.points.size();
+
+		if ((kinectCoord - ring.origin).length() <= avgRadius)
+			return true;
+	}
+	return false;
 }
 
 void CSonicWaveController::retireRing(SonicRing & ring)
