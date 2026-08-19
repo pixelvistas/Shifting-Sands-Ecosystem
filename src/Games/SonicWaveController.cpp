@@ -184,6 +184,28 @@ void CSonicWaveController::drawGui()
 	ImGui::Checkbox("Invert elevation", &PuckTracker::INVERT_ELEVATION);
 	ImGui::Checkbox("Show puck detection overlay", &showPuckDebug);
 
+	// Live rejection diagnostics - shows exactly which filter is stopping
+	// detection instead of just a yes/no, since "raised pixels exist but no
+	// contour survived" and "nothing raised at all" need completely
+	// different fixes (shape/size tuning vs. threshold/invert-elevation).
+	if (!puckTracker->getLastAnyRaisedPixels()) {
+		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f),
+			"No raised pixels this frame - lower Height threshold or try Invert elevation.");
+	} else if (!puckTracker->getLastHasCandidateContour()) {
+		ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "Raised pixels found but no contour - unexpected, report this.");
+	} else {
+		float expectedArea = puckTracker->getExpectedAreaCells();
+		double area = puckTracker->getLastCandidateArea();
+		double circ = puckTracker->getLastCandidateCircularity();
+		bool areaOk = area >= expectedArea * 0.3 && area <= expectedArea * 3.0;
+		bool circOk = circ >= PuckTracker::MIN_CIRCULARITY;
+		ImGui::TextColored(areaOk ? ImVec4(0.6f, 1.0f, 0.6f, 1.0f) : ImVec4(1.0f, 0.5f, 0.3f, 1.0f),
+			"Largest blob area: %.0f cells (need %.0f-%.0f, expected ~%.0f)",
+			area, expectedArea * 0.3, expectedArea * 3.0, expectedArea);
+		ImGui::TextColored(circOk ? ImVec4(0.6f, 1.0f, 0.6f, 1.0f) : ImVec4(1.0f, 0.5f, 0.3f, 1.0f),
+			"Largest blob circularity: %.2f (need >= %.2f)", circ, PuckTracker::MIN_CIRCULARITY);
+	}
+
 	ImGui::Separator();
 	ImGui::Text("Ring (fires while puck is present)");
 	ImGui::SliderFloat("Spawn interval (s)", &spawnInterval, 0.05f, 3.0f);

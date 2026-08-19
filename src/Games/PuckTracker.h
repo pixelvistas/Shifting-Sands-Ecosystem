@@ -69,6 +69,18 @@ public:
 	// detection radius is currently tuned to.
 	float getRadiusKinectPixels() const { return EXPECTED_RADIUS_CELLS * step; }
 
+	// Diagnostics from the most recent update() - lets the GUI show *why*
+	// nothing is confirming instead of just a yes/no, since none of the
+	// individual rejection reasons (no raised pixels at all, wrong area,
+	// too irregular a shape) are visible from the confirmed/candidate
+	// state alone.
+	bool getLastAnyRaisedPixels() const { return lastAnyRaisedPixels; }
+	int getLastContourCount() const { return lastContourCount; }
+	bool getLastHasCandidateContour() const { return lastHasCandidateContour; }
+	double getLastCandidateArea() const { return lastCandidateArea; }
+	double getLastCandidateCircularity() const { return lastCandidateCircularity; }
+	float getExpectedAreaCells() const { return (float)CV_PI * EXPECTED_RADIUS_CELLS * EXPECTED_RADIUS_CELLS; }
+
 	// Tunable in the debug GUI - see the header note on why these need
 	// empirical tuning rather than being derived.
 	static float EXPECTED_RADIUS_CELLS; // grid cells (see GRID_STEP in .cpp)
@@ -100,4 +112,10 @@ private:
 
 	bool confirmed;
 	ofPoint trackedLocation;
+
+	bool lastAnyRaisedPixels;
+	int lastContourCount;
+	bool lastHasCandidateContour; // largest contour, regardless of whether it passed the filters
+	double lastCandidateArea;
+	double lastCandidateCircularity;
 };

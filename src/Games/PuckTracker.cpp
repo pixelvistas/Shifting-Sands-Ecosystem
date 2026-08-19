@@ -25,6 +25,12 @@ void PuckTracker::setup(std::shared_ptr<KinectProjector> const& k)
 	candidateAge = 0.0f;
 	lostFrames = 0;
 	confirmed = false;
+
+	lastAnyRaisedPixels = false;
+	lastContourCount = 0;
+	lastHasCandidateContour = false;
+	lastCandidateArea = 0.0;
+	lastCandidateCircularity = 0.0;
 }
 
 void PuckTracker::update()
@@ -62,23 +68,40 @@ void PuckTracker::update()
 	cv::Mat raised = elevationGrid - blurredGrid;
 	raisedMask = raised > HEIGHT_THRESHOLD;
 
+	lastAnyRaisedPixels = cv::countNonZero(raisedMask) > 0;
+
 	std::vector<std::vector<cv::Point>> contours;
 	cv::findContours(raisedMask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+	lastContourCount = (int)contours.size();
 
 	float expectedArea = (float)CV_PI * EXPECTED_RADIUS_CELLS * EXPECTED_RADIUS_CELLS;
+
+	// Track the largest contour regardless of whether it passes the area/
+	// circularity filters below, purely for GUI diagnostics - it's the
+	// most likely candidate to actually be the puck if detection isn't
+	// confirming, and its raw numbers show exactly which filter is
+	// rejecting it.
+	lastHasCandidateContour = false;
+	double largestArea = -1.0;
 
 	int bestIdx = -1;
 	double bestCircularity = -1.0;
 	for (size_t i = 0; i < contours.size(); i++) {
 		double area = cv::contourArea(contours[i]);
+		double perimeter = cv::arcLength(contours[i], true);
+		double circularity = (perimeter > 0) ? 4.0 * CV_PI * area / (perimeter * perimeter) : 0.0;
+
+		if (area > largestArea) {
+			largestArea = area;
+			lastHasCandidateContour = true;
+			lastCandidateArea = area;
+			lastCandidateCircularity = circularity;
+		}
+
 		if (area < expectedArea * 0.3 || area > expectedArea * 3.0)
 			continue;
-
-		double perimeter = cv::arcLength(contours[i], true);
 		if (perimeter <= 0)
 			continue;
-
-		double circularity = 4.0 * CV_PI * area / (perimeter * perimeter);
 		if (circularity < MIN_CIRCULARITY)
 			continue;
 
