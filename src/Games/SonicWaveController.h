@@ -68,6 +68,15 @@ private:
 	std::shared_ptr<KinectProjector> kinectProjector;
 	ofRectangle kinectROI;
 	ofRectangle playArea; // kinectROI inset with a margin, same convention as CCritterController
+	// playArea's four corners mapped through kinectCoordToProjCoord and
+	// bounded - the sand/projector calibration is only valid inside the
+	// play area, so a ring point that wanders past it (see SonicParticle.h -
+	// growth is no longer clamped) maps to warped, uncalibrated projector
+	// coordinates. Rather than fight that in physics, this rect is used to
+	// scissor-clip ring drawing so nothing outside the calibrated area is
+	// ever rendered, however far the underlying point has actually moved.
+	// Recomputed only on ROI change, not per frame.
+	ofRectangle ringClipRect;
 	ofVec2f projRes, kinectRes;
 
 	SonicEngine engine;

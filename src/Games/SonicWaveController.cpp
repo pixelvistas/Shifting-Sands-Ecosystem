@@ -49,6 +49,21 @@ void CSonicWaveController::setKinectROI(ofRectangle & KROI)
 	kinectROI = KROI;
 	playArea = kinectROI;
 	playArea.scaleFromCenter(0.9f, 0.9f); // same margin convention as CCritterController
+
+	// Bounding box of playArea's corners in projector space - see the
+	// ringClipRect declaration for why. The kinect-to-projector mapping
+	// can be a bit perspective-y, not a pure scale, so this is the
+	// bounding box of the mapped corners rather than a direct scale of
+	// playArea itself.
+	ofVec2f c1 = kinectProjector->kinectCoordToProjCoord(playArea.getLeft(), playArea.getTop());
+	ofVec2f c2 = kinectProjector->kinectCoordToProjCoord(playArea.getRight(), playArea.getTop());
+	ofVec2f c3 = kinectProjector->kinectCoordToProjCoord(playArea.getRight(), playArea.getBottom());
+	ofVec2f c4 = kinectProjector->kinectCoordToProjCoord(playArea.getLeft(), playArea.getBottom());
+	float minX = std::min(std::min(c1.x, c2.x), std::min(c3.x, c4.x));
+	float maxX = std::max(std::max(c1.x, c2.x), std::max(c3.x, c4.x));
+	float minY = std::min(std::min(c1.y, c2.y), std::min(c3.y, c4.y));
+	float maxY = std::max(std::max(c1.y, c2.y), std::max(c3.y, c4.y));
+	ringClipRect = ofRectangle(minX, minY, maxX - minX, maxY - minY);
 }
 
 void CSonicWaveController::spawnRingAt(const ofPoint & origin)
@@ -119,8 +134,22 @@ void CSonicWaveController::update()
 
 	fbo.begin();
 	ofClear(255, 255, 255, 0);
+
+	// Scissor-clip ring drawing to the calibrated play area - see
+	// ringClipRect's declaration. glScissor works in raw framebuffer
+	// pixels with a bottom-left origin, unlike oF's own top-left drawing
+	// coordinates, hence the y-flip against the fbo's actual height.
+	GLsizei clipW = (GLsizei)std::max(0.0f, ringClipRect.width);
+	GLsizei clipH = (GLsizei)std::max(0.0f, ringClipRect.height);
+	if (clipW > 0 && clipH > 0) {
+		glEnable(GL_SCISSOR_TEST);
+		glScissor((GLint)ringClipRect.x, (GLint)(fbo.getHeight() - ringClipRect.getBottom()), clipW, clipH);
+	}
 	for (auto & ring : rings)
 		drawRing(ring);
+	if (clipW > 0 && clipH > 0)
+		glDisable(GL_SCISSOR_TEST);
+
 	if (showPuckDebug) {
 		// Fixed-position thumbnail, not spatially registered to the sand.
 		puckTracker->draw(10, 10, 160, 120);
