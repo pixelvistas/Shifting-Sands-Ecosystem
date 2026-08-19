@@ -49,7 +49,9 @@ struct SonicRing {
 class CSonicWaveController
 {
 public:
-	void setup(std::shared_ptr<KinectProjector> const& k);
+	// tracker is owned by ofApp and shared with CCritterController - see
+	// the note in CritterController.h.
+	void setup(std::shared_ptr<KinectProjector> const& k, PuckTracker* tracker);
 	void setProjectorRes(ofVec2f & PR);
 	void setKinectRes(ofVec2f & KR);
 	void setKinectROI(ofRectangle & KROI);
@@ -71,7 +73,7 @@ private:
 
 	SonicEngine engine;
 	HandField handField;
-	PuckTracker puckTracker;
+	PuckTracker* puckTracker;
 	std::vector<SonicRing> rings;
 	std::vector<Tangible> noTangibles; // always empty - see header note
 

@@ -18,11 +18,15 @@ Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 #include "Critter.h"
 #include "Tangible.h"
 #include "HandField.h"
+#include "PuckTracker.h"
 
 class CCritterController
 {
 public:
-	void setup(std::shared_ptr<KinectProjector> const& k);
+	// tracker is owned by ofApp and shared with CSonicWaveController, so
+	// both layers see one consistent puck rather than running detection
+	// twice with independently-tunable/potentially-disagreeing state.
+	void setup(std::shared_ptr<KinectProjector> const& k, PuckTracker* tracker);
 	void setProjectorRes(ofVec2f & PR);
 	void setKinectRes(ofVec2f & KR);
 	void setKinectROI(ofRectangle & KROI);
@@ -48,6 +52,7 @@ private:
 	ofVec2f projRes, kinectRes;
 
 	HandField handField;
+	PuckTracker* puckTracker;
 	std::vector<Critter> critters;
 	std::vector<Tangible> tangibles;
 

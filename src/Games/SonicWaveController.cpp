@@ -1,11 +1,11 @@
 #include "SonicWaveController.h"
 #include "ofxImGui.h"
 
-void CSonicWaveController::setup(std::shared_ptr<KinectProjector> const& k)
+void CSonicWaveController::setup(std::shared_ptr<KinectProjector> const& k, PuckTracker* tracker)
 {
 	kinectProjector = k;
 	handField.setup(k);
-	puckTracker.setup(k);
+	puckTracker = tracker;
 	engine.setup();
 
 	waveSpawnAccum = 0.0f;
@@ -69,14 +69,13 @@ void CSonicWaveController::update()
 		return;
 
 	handField.update();
-	puckTracker.update();
 
 	float dt = ofGetLastFrameTime();
-	if (puckTracker.isPuckPresent()) {
+	if (puckTracker->isPuckPresent()) {
 		waveSpawnAccum += dt;
 		if (waveSpawnAccum >= spawnInterval) {
 			waveSpawnAccum = 0.0f;
-			spawnRingAt(puckTracker.getPuckLocation());
+			spawnRingAt(puckTracker->getPuckLocation());
 		}
 	} else {
 		// Reset so the first ring after the puck is placed again isn't
@@ -110,7 +109,7 @@ void CSonicWaveController::update()
 	if (showPuckDebug) {
 		// Fixed-position thumbnail, not spatially registered to the sand -
 		// same convention as HandField's debug overlay.
-		puckTracker.draw(10, 10, 160, 120);
+		puckTracker->draw(10, 10, 160, 120);
 	}
 	fbo.end();
 }
@@ -165,14 +164,14 @@ void CSonicWaveController::drawGui()
 
 	ImGui::Begin("Sonic Wave");
 	ImGui::Text("%d rings (%d points) | puck %s", (int)rings.size(), totalPoints,
-		puckTracker.isPuckPresent() ? "DETECTED" : "not detected");
+		puckTracker->isPuckPresent() ? "DETECTED" : "not detected");
 
 	ImGui::Separator();
-	ImGui::Text("Puck detection");
+	ImGui::Text("Puck detection (shared with the Critters panel)");
 	ImGui::SliderFloat("Puck diameter (mm)", &PuckTracker::PUCK_DIAMETER_MM, 10.0f, 300.0f);
 	ImGui::SliderFloat("Puck height (mm)", &PuckTracker::PUCK_HEIGHT_MM, 10.0f, 300.0f);
 	if (ImGui::Button("Estimate radius from puck size"))
-		PuckTracker::EXPECTED_RADIUS_CELLS = puckTracker.estimateRadiusCells();
+		PuckTracker::EXPECTED_RADIUS_CELLS = puckTracker->estimateRadiusCells();
 	ImGui::SameLine();
 	if (ImGui::Button("Estimate height threshold"))
 		PuckTracker::HEIGHT_THRESHOLD = PuckTracker::PUCK_HEIGHT_MM * 0.4f;

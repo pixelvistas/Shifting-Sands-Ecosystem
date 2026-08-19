@@ -29,6 +29,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "Games/BoidGameController.h"
 #include "Games/CritterController.h"
 #include "Games/SonicWaveController.h"
+#include "Games/PuckTracker.h"
 
 class ofApp : public ofBaseApp {
 
@@ -61,6 +62,10 @@ private:
 	SandSurfaceRenderer* sandSurfaceRenderer;
 	CMapGameController mapGameController;
 	CBoidGameController boidGameController;
+	// One PuckTracker shared by both ecosystem layers, so the Critters and
+	// Sonic Wave panels agree on where (and whether) the physical puck is
+	// rather than each running its own independently-tuned detection.
+	PuckTracker puckTracker;
 	CCritterController critterController;
 	CSonicWaveController sonicWaveController;
 

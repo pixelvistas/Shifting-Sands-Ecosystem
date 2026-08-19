@@ -1,10 +1,11 @@
 #include "CritterController.h"
 #include "ofxImGui.h"
 
-void CCritterController::setup(std::shared_ptr<KinectProjector> const& k)
+void CCritterController::setup(std::shared_ptr<KinectProjector> const& k, PuckTracker* tracker)
 {
 	kinectProjector = k;
 	handField.setup(k);
+	puckTracker = tracker;
 	draggedTangible = -1;
 	showHandDebug = false;
 	gradientFlipped = false;
@@ -71,8 +72,12 @@ void CCritterController::update()
 
 	handField.update();
 
+	bool puckPresent = puckTracker && puckTracker->isPuckPresent();
+	ofPoint puckLocation = puckPresent ? puckTracker->getPuckLocation() : ofPoint();
+	float puckRadius = puckPresent ? puckTracker->getRadiusKinectPixels() : 0.0f;
+
 	for (auto & c : critters)
-		c.update(handField, tangibles);
+		c.update(handField, tangibles, puckPresent, puckLocation, puckRadius);
 
 	for (auto & t : tangibles)
 		t.update(handField);
@@ -84,6 +89,19 @@ void CCritterController::update()
 		t.draw();
 	for (auto & c : critters)
 		c.draw();
+
+	if (puckPresent) {
+		// Visual confirmation that the system is treating the puck as a
+		// recognized object, not just invisibly colliding with it - same
+		// look as Tangible::draw() so it reads as "the same kind of thing."
+		ofVec2f projCoord = kinectProjector->kinectCoordToProjCoord(puckLocation.x, puckLocation.y);
+		ofPushStyle();
+		ofNoFill();
+		ofSetColor(80, 255, 140);
+		ofSetLineWidth(2.5f);
+		ofDrawCircle(projCoord.x, projCoord.y, puckRadius);
+		ofPopStyle();
+	}
 
 	if (showHandDebug) {
 		// Fixed-position thumbnail, not spatially registered to the sand -
@@ -108,6 +126,12 @@ void CCritterController::drawGui()
 {
 	ImGui::Begin("Critters");
 	ImGui::Text("%d critters, %d tangibles", (int)critters.size(), (int)tangibles.size());
+	bool puckPresent = puckTracker && puckTracker->isPuckPresent();
+	if (puckPresent)
+		ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.55f, 1.0f), "Puck: DETECTED - treated as a solid obstacle (radius %.1f px)",
+			puckTracker->getRadiusKinectPixels());
+	else
+		ImGui::Text("Puck: not detected (tune detection in the Sonic Wave panel)");
 
 	ImGui::SliderFloat("Gravity", &Critter::GRAVITY, 0.0f, 0.3f);
 	ImGui::SliderFloat("Damping", &Critter::DAMPING, 0.5f, 0.99f);

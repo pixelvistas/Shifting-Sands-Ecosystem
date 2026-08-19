@@ -27,6 +27,16 @@ scaled down by local slope steepness, so it dominates on flat ground
 instead of freezing at spawn) but fades out on a real slope or pit wall,
 where gravity should win and trapping should still hold.
 
+The physical puck (PuckTracker) is treated as a solid obstacle, not
+terrain: it collides like a Tangible (see update()'s puck params) rather
+than being climbable via gravity/wander. The Kinect genuinely sees it as
+raised sand, so gradientAtKinectCoord() still reports a bump there, but
+without a hard collision boundary a critter could wander onto its low-
+slope top and get stuck the same way it would in a shallow pit - the
+puck is a recognized object, not scenery, so it needs to physically block
+critters rather than merely being sloped terrain they happen to roll off
+of most of the time.
+
 Hand interaction is motion-aware, not just contact-aware: while the hand
 is moving, nearby critters get carried along in its direction of travel
 (HandField::herdForce - "guide"), which also covers direct contact since
@@ -52,7 +62,13 @@ public:
 	Critter(std::shared_ptr<KinectProjector> const& k, ofPoint slocation, ofRectangle sborders);
 
 	void setup();
-	void update(HandField & handField, std::vector<Tangible> & tangibles);
+	// puckPresent/puckLocation/puckRadius describe the real, physical puck
+	// (see PuckTracker) as a solid, immovable obstacle in kinect-pixel
+	// space - separate from the simulated tangibles vector, since the
+	// puck's position is ground truth from sensing, not physics. Defaults
+	// to "no puck" so existing call sites don't need to change.
+	void update(HandField & handField, std::vector<Tangible> & tangibles,
+		bool puckPresent = false, const ofPoint & puckLocation = ofPoint(), float puckRadius = 0.0f);
 	void draw();
 
 	const ofPoint & getLocation() const { return location; }

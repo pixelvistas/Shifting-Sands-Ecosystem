@@ -58,12 +58,14 @@ void ofApp::setup() {
 	boidGameController.setKinectRes(kinectRes);
 	boidGameController.setKinectROI(kinectROI);
 
-	critterController.setup(kinectProjector);
+	puckTracker.setup(kinectProjector);
+
+	critterController.setup(kinectProjector, &puckTracker);
 	critterController.setProjectorRes(projRes);
 	critterController.setKinectRes(kinectRes);
 	critterController.setKinectROI(kinectROI);
 
-	sonicWaveController.setup(kinectProjector);
+	sonicWaveController.setup(kinectProjector, &puckTracker);
 	sonicWaveController.setProjectorRes(projRes);
 	sonicWaveController.setKinectRes(kinectRes);
 	sonicWaveController.setKinectROI(kinectROI);
@@ -87,6 +89,8 @@ void ofApp::update() {
 		critterController.setKinectROI(kinectROI);
 		sonicWaveController.setKinectROI(kinectROI);
 	}
+
+	puckTracker.update();
 
 	mapGameController.update();
 	boidGameController.update();

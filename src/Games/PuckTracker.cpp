@@ -29,6 +29,12 @@ void PuckTracker::setup(std::shared_ptr<KinectProjector> const& k)
 
 void PuckTracker::update()
 {
+	if (!kinectProjector->isImageStabilized()) {
+		candidateActive = false;
+		confirmed = false;
+		return;
+	}
+
 	kinectROI = kinectProjector->getKinectROI();
 	if (kinectROI.width <= 0 || kinectROI.height <= 0) {
 		candidateActive = false;

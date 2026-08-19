@@ -39,7 +39,8 @@ void Critter::clampToBorders()
 	if (location.y > borders.getBottom()) { location.y = borders.getBottom(); velocity.y = 0; }
 }
 
-void Critter::update(HandField & handField, std::vector<Tangible> & tangibles)
+void Critter::update(HandField & handField, std::vector<Tangible> & tangibles,
+	bool puckPresent, const ofPoint & puckLocation, float puckRadius)
 {
 	// Slope-tangential gravity: mass-independent by design, so mass is free
 	// to mean something else - see the header note on the gravity/mass split.
@@ -97,6 +98,31 @@ void Critter::update(HandField & handField, std::vector<Tangible> & tangibles)
 				ofVec2f impulse = normal * j;
 				applyImpulse(impulse);
 				t.applyImpulse(-impulse);
+			}
+		}
+	}
+
+	if (puckPresent) {
+		ofVec2f delta = location - puckLocation;
+		float dist = delta.length();
+		float minDist = radius + puckRadius;
+		if (dist > 0 && dist < minDist) {
+			ofVec2f normal = delta / dist;
+
+			// The puck's position is sensed, not simulated - it doesn't
+			// move in response to critters, so unlike the Tangible loop
+			// above there's no reciprocal impulse and the critter absorbs
+			// all of the de-penetration itself.
+			location += normal * (minDist - dist);
+
+			// Same restitution formula as the Tangible case in the limit
+			// of infinite obstacle mass: reflect the velocity component
+			// along the contact normal rather than computing an impulse/mass
+			// split that would converge to this anyway.
+			float vAlongNormal = velocity.dot(normal);
+			if (vAlongNormal < 0) {
+				const float restitution = 0.3f;
+				velocity -= normal * ((1.0f + restitution) * vAlongNormal);
 			}
 		}
 	}

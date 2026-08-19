@@ -62,6 +62,13 @@ public:
 	// available yet to measure against.
 	float estimateRadiusCells() const;
 
+	// EXPECTED_RADIUS_CELLS converted back to kinect pixels - the same
+	// units Critter/Tangible physics operates in, so callers that want to
+	// treat a detected puck as a solid obstacle (not terrain) have a
+	// single source of truth for its size, kept in sync with whatever the
+	// detection radius is currently tuned to.
+	float getRadiusKinectPixels() const { return EXPECTED_RADIUS_CELLS * step; }
+
 	// Tunable in the debug GUI - see the header note on why these need
 	// empirical tuning rather than being derived.
 	static float EXPECTED_RADIUS_CELLS; // grid cells (see GRID_STEP in .cpp)
