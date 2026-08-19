@@ -1,7 +1,7 @@
 # Addon Patches — Magic-Sand-Ecosystem
 
 This fork depends on modifications to shared openFrameworks addons that live
-OUTSIDE this project folder (in `of_0.12.1/addons/`). A normal project commit
+outside this project folder (in `of_0.12.1/addons/`). A normal project commit
 does not capture them. The modified files are copied here under `_addon_patches/`
 mirroring their original paths. To rebuild on a fresh machine, install the stock
 addons, then apply these changes.
