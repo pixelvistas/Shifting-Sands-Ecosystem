@@ -188,11 +188,9 @@ void CSonicWaveController::drawGui()
 	}
 
 	ImGui::Separator();
-	ImGui::SliderFloat("Gravity", &SonicParticle::GRAVITY, 0.0f, 0.3f);
 	ImGui::SliderFloat("Damping", &SonicParticle::DAMPING, 0.5f, 0.99f);
 	ImGui::SliderFloat("Hand push (still hand)", &SonicParticle::HAND_PUSH_STRENGTH, 0.0f, 10.0f);
 	ImGui::SliderFloat("Herd strength (moving hand)", &SonicParticle::HERD_STRENGTH, 0.0f, 1.0f);
-	ImGui::Text("Gradient sign is shared with the Critters panel.");
 
 	ImGui::Separator();
 	ImGui::SliderFloat("Lifetime min (s)", &SonicParticle::LIFETIME_MIN, 1.0f, 30.0f);

@@ -1,7 +1,5 @@
 #include "SonicParticle.h"
-#include "Critter.h" // for Critter::GRADIENT_SIGN - see header note
 
-float SonicParticle::GRAVITY = 0.08f;
 float SonicParticle::DAMPING = 0.94f;
 float SonicParticle::HAND_PUSH_STRENGTH = 2.0f;
 float SonicParticle::HERD_STRENGTH = 0.15f;
@@ -41,8 +39,9 @@ void SonicParticle::clampToBorders()
 
 bool SonicParticle::update(HandField & handField, std::vector<Tangible> & tangibles, SonicEngine & engine)
 {
-	ofVec2f grad = kinectProjector->gradientAtKinectCoord(location.x, location.y);
-	acceleration = grad * GRAVITY * Critter::GRADIENT_SIGN;
+	// Deliberately no slope-tangential gravity here - see the header note.
+	// acceleration only ever comes from hand guidance below.
+	acceleration = ofVec2f(0);
 
 	// Same motion-aware hand interaction as Critter - see Critter.cpp for
 	// the reasoning (guide while moving, hard trap once the hand is still).

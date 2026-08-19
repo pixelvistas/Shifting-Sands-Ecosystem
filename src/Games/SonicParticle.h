@@ -1,15 +1,15 @@
 /***********************************************************************
-SonicParticle.h - a Sand Noise Device-style agent: slope-tangential
-gravity, damping, hand and Tangible interaction, same physics shape as
-Critter (see Critter.h) - but no wander (SND's particles don't explore,
-they're released by a wave and then just react to the terrain until
-they die), and each one owns a SonicEngine voice for the lifetime of its
-existence. Height maps to volume, speed to pitch, position to pan.
-
-GRADIENT_SIGN is deliberately Critter::GRADIENT_SIGN, not a separate
-constant - it's the same physical fact (which way is downhill for this
-Kinect's mount and calibration) regardless of which particle population
-is reading it, so there's exactly one place to verify and flip it.
+SonicParticle.h - a ring point for the sonic wave layer: damping, hand
+and Tangible interaction, but deliberately no slope-tangential gravity
+(unlike Critter). Every point in a ring starts with the same outward
+speed, so with no terrain force to perturb it a ring expands as a clean
+circle - gravity was tried first (matching Critter's physics) but with
+32 independently-reacting points it read as the ring randomly tearing
+apart on terrain noise rather than a coherent wave, so it was removed
+rather than tuned down. Hands can still push/guide a ring, which reads
+as deliberate interaction rather than noise. Each point owns a
+SonicEngine voice for its lifetime. Height maps to volume, speed to
+pitch, position to pan.
 
 Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 ***********************************************************************/
@@ -48,7 +48,6 @@ public:
 	void applyImpulse(const ofVec2f & impulse) { velocity += impulse / mass; }
 
 	// Physics tuning.
-	static float GRAVITY;
 	static float DAMPING;
 	static float HAND_PUSH_STRENGTH;
 	static float HERD_STRENGTH;
