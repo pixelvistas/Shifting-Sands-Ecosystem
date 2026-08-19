@@ -85,12 +85,20 @@ void CSonicWaveController::setKinectROI(ofRectangle & KROI)
 	kinectROI = KROI;
 	playArea = kinectROI;
 	playArea.scaleFromCenter(0.9f, 0.9f); // same margin convention as CCritterController
+}
 
+void CSonicWaveController::updateRingClipRect()
+{
 	// Bounding box of playArea's corners in projector space - see the
-	// ringClipRect declaration for why. The kinect-to-projector mapping
-	// can be a bit perspective-y, not a pure scale, so this is the
-	// bounding box of the mapped corners rather than a direct scale of
-	// playArea itself.
+	// ringClipRect declaration for why. Recomputed every frame rather than
+	// cached from setKinectROI(), since the projector calibration
+	// (kinectCoordToProjCoord's mapping) can still be settling when
+	// setKinectROI() first runs - caching it there risked baking in a
+	// stale mapping that would silently disagree with the always-current
+	// mapping the ring's own points are drawn with, clipping everything.
+	// The kinect-to-projector mapping can be a bit perspective-y, not a
+	// pure scale, so this is the bounding box of the mapped corners rather
+	// than a direct scale of playArea itself.
 	ofVec2f c1 = kinectProjector->kinectCoordToProjCoord(playArea.getLeft(), playArea.getTop());
 	ofVec2f c2 = kinectProjector->kinectCoordToProjCoord(playArea.getRight(), playArea.getTop());
 	ofVec2f c3 = kinectProjector->kinectCoordToProjCoord(playArea.getRight(), playArea.getBottom());
@@ -130,6 +138,8 @@ void CSonicWaveController::update()
 {
 	if (!kinectProjector->isImageStabilized())
 		return;
+
+	updateRingClipRect();
 
 	if (puckTracker->isPuckPresent()) {
 		ofPoint puckLocation = puckTracker->getPuckLocation();

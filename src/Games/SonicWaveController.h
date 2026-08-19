@@ -64,6 +64,7 @@ private:
 	void spawnRingAt(const ofPoint & origin);
 	void retireRing(SonicRing & ring); // starts its fade-out via SonicParticle::retire()
 	void drawRing(const SonicRing & ring);
+	void updateRingClipRect(); // refreshes ringClipRect from the current calibration - see its declaration
 
 	std::shared_ptr<KinectProjector> kinectProjector;
 	ofRectangle kinectROI;
@@ -73,9 +74,11 @@ private:
 	// play area, so a ring point that wanders past it (see SonicParticle.h -
 	// growth is no longer clamped) maps to warped, uncalibrated projector
 	// coordinates. Rather than fight that in physics, this rect is used to
-	// scissor-clip ring drawing so nothing outside the calibrated area is
-	// ever rendered, however far the underlying point has actually moved.
-	// Recomputed only on ROI change, not per frame.
+	// clip ring drawing so nothing outside the calibrated area is ever
+	// rendered, however far the underlying point has actually moved.
+	// Refreshed every frame (see updateRingClipRect()) rather than cached
+	// on ROI change, so it can't go stale relative to the calibration the
+	// ring's own points are drawn with.
 	ofRectangle ringClipRect;
 	ofVec2f projRes, kinectRes;
 
