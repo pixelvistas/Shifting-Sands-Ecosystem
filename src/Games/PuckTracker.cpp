@@ -68,6 +68,15 @@ void PuckTracker::update()
 	cv::Mat raised = elevationGrid - blurredGrid;
 	raisedMask = raised > HEIGHT_THRESHOLD;
 
+	// Same noise cleanup as HandField's mask (see HandField.cpp) - a raw
+	// per-cell threshold comes out jagged/speckled from sensor noise,
+	// which tanks contour circularity even when the underlying blob is
+	// roughly the right size. Erode away single-cell speckle, then dilate
+	// back out to restore the real blob's extent.
+	cv::Mat morphKernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
+	cv::erode(raisedMask, raisedMask, morphKernel, cv::Point(-1, -1), 1);
+	cv::dilate(raisedMask, raisedMask, morphKernel, cv::Point(-1, -1), 1);
+
 	lastAnyRaisedPixels = cv::countNonZero(raisedMask) > 0;
 
 	std::vector<std::vector<cv::Point>> contours;
