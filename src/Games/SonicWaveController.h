@@ -1,13 +1,14 @@
 /***********************************************************************
 SonicWaveController.h - Sand Noise Device-inspired sonic layer: while
 the physical puck (see PuckTracker.h) is detected on the sand, it acts
-as a point source, periodically releasing a ring of SonicParticles -
-evenly spaced points around a circle, all pushed outward together - that
-then individually react to the terrain under their own physics (see
-SonicParticle.h) until the ring's shared lifetime runs out. The ring is
-rendered as a single glowing closed loop, not as scattered dots, so it
-visibly ripples outward and deforms as its points cross slopes, pits,
-and hands at different rates. No puck, no waves.
+as a point source for a ring of SonicParticles - evenly spaced points
+around a circle, all pushed outward together (see SonicParticle.h) - that
+expands once and then holds in place, representing the puck's current
+resting spot rather than pulsing repeatedly. A new ring only replaces the
+current one once the puck has moved more than ringMoveThreshold away, or
+is retired (faded out - see SonicParticle::retire()) if the puck is
+picked up and not put back down anywhere. The ring is rendered as a
+single glowing closed loop, not as scattered dots.
 
 Sonification (SonicEngine/SonicParticle's voice-per-point wiring) is
 still present underneath but not the current focus - this pass is
@@ -17,9 +18,7 @@ Deliberately independent of CCritterController/Critter - this is an
 exploration inspired by Jay Van Dyke's Sand Noise Device, not an
 extension of the ecosystem's moisture layer, and keeping it separate
 means it can't destabilise the Critter system while it's being worked
-out. The two HandFields duplicate some per-frame computation (cheap at
-this scale) but share tuning automatically, since HandField's tunables
-are static - see HandField.h.
+out.
 
 Tangible collision in SonicParticle currently has nothing to collide
 with here (an empty vector is passed every frame) - whether tangibles
@@ -35,7 +34,6 @@ Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 #include "../KinectProjector/KinectProjector.h"
 #include "SonicParticle.h"
 #include "SonicEngine.h"
-#include "HandField.h"
 #include "PuckTracker.h"
 #include "Tangible.h"
 
@@ -64,6 +62,7 @@ public:
 
 private:
 	void spawnRingAt(const ofPoint & origin);
+	void retireRing(SonicRing & ring); // starts its fade-out via SonicParticle::retire()
 	void drawRing(const SonicRing & ring);
 
 	std::shared_ptr<KinectProjector> kinectProjector;
@@ -72,20 +71,20 @@ private:
 	ofVec2f projRes, kinectRes;
 
 	SonicEngine engine;
-	HandField handField;
 	PuckTracker* puckTracker;
 	std::vector<SonicRing> rings;
 	std::vector<Tangible> noTangibles; // always empty - see header note
 
 	ofFbo fbo;
 
-	float waveSpawnAccum; // seconds since the last ring while the puck has been present
+	bool hasActiveRing;        // whether "rings.back()" (if non-empty) is the current, non-retiring ring
+	ofPoint activeRingOrigin;  // puck location the active ring was spawned at
 	bool showPuckDebug;
 
 	// Tunable in the debug GUI.
-	float spawnInterval;    // seconds between rings while the puck is present
-	int ringPointCount;     // points evenly spaced around each ring
-	float wavePushSpeed;    // initial outward speed of every point
+	float ringMoveThreshold; // kinect pixels the puck must move before its ring is replaced
+	int ringPointCount;      // points evenly spaced around each ring
+	float wavePushSpeed;     // initial outward speed of every point
 	ofColor ringColor;
 	float ringColorRGB[3];  // 0..1 mirror of ringColor, kept in sync - ImGui::ColorEdit3 needs float components, ofColor is unsigned char
 };

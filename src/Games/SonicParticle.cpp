@@ -1,8 +1,6 @@
 #include "SonicParticle.h"
 
 float SonicParticle::DAMPING = 0.94f;
-float SonicParticle::HAND_PUSH_STRENGTH = 2.0f;
-float SonicParticle::HERD_STRENGTH = 0.15f;
 float SonicParticle::LIFETIME_MIN = 5.0f;
 float SonicParticle::LIFETIME_MAX = 12.0f;
 float SonicParticle::HEIGHT_MIN = -50.0f;
@@ -10,11 +8,13 @@ float SonicParticle::HEIGHT_MAX = 50.0f;
 bool SonicParticle::INVERT_HEIGHT = false;
 float SonicParticle::MAX_SPEED_FOR_PITCH = 3.0f;
 
-SonicParticle::SonicParticle(std::shared_ptr<KinectProjector> const& k, ofPoint slocation, ofRectangle sborders, ofVec2f initialVelocity)
+SonicParticle::SonicParticle(std::shared_ptr<KinectProjector> const& k, ofPoint slocation, ofRectangle sborders, float maxRadius, ofVec2f initialVelocity)
 {
 	kinectProjector = k;
 	location = slocation;
 	borders = sborders;
+	ringOrigin = slocation;
+	maxRingRadius = maxRadius;
 	velocity = initialVelocity;
 	acceleration = ofVec2f(0);
 	age = 0.0f;
@@ -29,31 +29,30 @@ void SonicParticle::setup(SonicEngine & engine, float fixedLifetime)
 	voiceIndex = engine.allocateVoice();
 }
 
-void SonicParticle::clampToBorders()
+void SonicParticle::clampToRingRadius()
 {
-	if (location.x < borders.getLeft())   { location.x = borders.getLeft();   velocity.x = 0; }
-	if (location.x > borders.getRight())  { location.x = borders.getRight();  velocity.x = 0; }
-	if (location.y < borders.getTop())    { location.y = borders.getTop();    velocity.y = 0; }
-	if (location.y > borders.getBottom()) { location.y = borders.getBottom(); velocity.y = 0; }
+	if (maxRingRadius <= 0.0f)
+		return;
+
+	ofVec2f fromOrigin = location - ringOrigin;
+	float dist = fromOrigin.length();
+	if (dist > maxRingRadius) {
+		location = ringOrigin + fromOrigin.getNormalized() * maxRingRadius;
+		// Stop dead rather than sliding along the radius limit - there's
+		// no "outward" velocity component to preserve once a point has
+		// hit the cap, and zeroing it also stops any residual drift from
+		// slowly nudging the point around the boundary circle.
+		velocity = ofVec2f(0);
+	}
 }
 
-bool SonicParticle::update(HandField & handField, std::vector<Tangible> & tangibles, SonicEngine & engine)
+bool SonicParticle::update(std::vector<Tangible> & tangibles, SonicEngine & engine)
 {
-	// Deliberately no slope-tangential gravity here - see the header note.
-	// acceleration only ever comes from hand guidance below.
+	// Deliberately no slope-tangential gravity and no hand interaction
+	// here - see the header note. A ring point only ever moves from its
+	// own initial outward velocity, decaying under DAMPING, plus whatever
+	// a Tangible collision below imparts.
 	acceleration = ofVec2f(0);
-
-	// Same motion-aware hand interaction as Critter - see Critter.cpp for
-	// the reasoning (guide while moving, hard trap once the hand is still).
-	if (!handField.isHandStill()) {
-		ofVec2f herd = handField.herdForce(location.x, location.y);
-		if (herd.lengthSquared() > 0)
-			acceleration += herd * HERD_STRENGTH;
-	} else if (handField.isInHand(location.x, location.y)) {
-		ofVec2f push = handField.pushDirection(location.x, location.y);
-		if (push.lengthSquared() > 0)
-			applyImpulse(push.getNormalized() * HAND_PUSH_STRENGTH);
-	}
 
 	for (auto & t : tangibles) {
 		ofVec2f delta = location - t.getLocation();
@@ -83,7 +82,7 @@ bool SonicParticle::update(HandField & handField, std::vector<Tangible> & tangib
 	velocity *= DAMPING;
 	location += velocity;
 
-	clampToBorders();
+	clampToRingRadius();
 
 	projectorCoord = kinectProjector->kinectCoordToProjCoord(location.x, location.y);
 
@@ -126,6 +125,11 @@ void SonicParticle::release(SonicEngine & engine)
 		engine.releaseVoice(voiceIndex);
 		voiceIndex = -1;
 	}
+}
+
+void SonicParticle::retire(float fadeSeconds)
+{
+	lifetime = std::min(lifetime, age + fadeSeconds);
 }
 
 void SonicParticle::draw()

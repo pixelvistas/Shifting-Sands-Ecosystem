@@ -1,17 +1,25 @@
 #include "SonicWaveController.h"
 #include "ofxImGui.h"
 
+namespace {
+	// A ring is meant to persist until its puck moves or disappears, not
+	// expire on a timer - HELD_RING_LIFETIME just needs to be "longer than
+	// anyone will leave a puck sitting still," not literally infinite.
+	const float HELD_RING_LIFETIME = 3600.0f;
+	// How long a retired ring takes to fade out and release its voices.
+	const float RETIRE_FADE_SECONDS = 0.5f;
+}
+
 void CSonicWaveController::setup(std::shared_ptr<KinectProjector> const& k, PuckTracker* tracker)
 {
 	kinectProjector = k;
-	handField.setup(k);
 	puckTracker = tracker;
 	engine.setup();
 
-	waveSpawnAccum = 0.0f;
+	hasActiveRing = false;
 	showPuckDebug = false;
 
-	spawnInterval = 0.6f;
+	ringMoveThreshold = 25.0f;
 	ringPointCount = 32;
 	wavePushSpeed = 0.6f;
 	ringColor = ofColor(90, 230, 255); // neon cyan default
@@ -48,19 +56,32 @@ void CSonicWaveController::spawnRingAt(const ofPoint & origin)
 	if (playArea.width <= 0 || ringPointCount < 3)
 		return;
 
-	SonicRing ring;
-	float lifetime = ofRandom(SonicParticle::LIFETIME_MIN, SonicParticle::LIFETIME_MAX);
+	// Cap growth at the nearest boundary edge so the ring stops as a clean
+	// circle instead of reaching the edge and flattening onto it (see
+	// SonicParticle::clampToRingRadius).
+	float maxRadius = origin.x - playArea.getLeft();
+	maxRadius = std::min(maxRadius, playArea.getRight() - origin.x);
+	maxRadius = std::min(maxRadius, origin.y - playArea.getTop());
+	maxRadius = std::min(maxRadius, playArea.getBottom() - origin.y);
+	maxRadius = std::max(maxRadius, 0.0f);
 
+	SonicRing ring;
 	for (int i = 0; i < ringPointCount; i++) {
 		float angle = (TWO_PI * i) / ringPointCount;
 		ofVec2f dir(cos(angle), sin(angle));
 		ofVec2f initialVelocity = dir * wavePushSpeed;
 
-		SonicParticle p(kinectProjector, origin, playArea, initialVelocity);
-		p.setup(engine, lifetime);
+		SonicParticle p(kinectProjector, origin, playArea, maxRadius, initialVelocity);
+		p.setup(engine, HELD_RING_LIFETIME);
 		ring.points.push_back(p);
 	}
 	rings.push_back(ring);
+}
+
+void CSonicWaveController::retireRing(SonicRing & ring)
+{
+	for (auto & p : ring.points)
+		p.retire(RETIRE_FADE_SECONDS);
 }
 
 void CSonicWaveController::update()
@@ -68,26 +89,29 @@ void CSonicWaveController::update()
 	if (!kinectProjector->isImageStabilized())
 		return;
 
-	handField.update();
-
-	float dt = ofGetLastFrameTime();
 	if (puckTracker->isPuckPresent()) {
-		waveSpawnAccum += dt;
-		if (waveSpawnAccum >= spawnInterval) {
-			waveSpawnAccum = 0.0f;
-			spawnRingAt(puckTracker->getPuckLocation());
+		ofPoint puckLocation = puckTracker->getPuckLocation();
+		bool canSpawn = playArea.width > 0 && ringPointCount >= 3;
+		bool puckMoved = hasActiveRing && (puckLocation - activeRingOrigin).length() > ringMoveThreshold;
+
+		if (canSpawn && (!hasActiveRing || puckMoved)) {
+			if (hasActiveRing && !rings.empty())
+				retireRing(rings.back()); // the ring being replaced - already the most recent, still non-retiring one
+			spawnRingAt(puckLocation);
+			activeRingOrigin = puckLocation;
+			hasActiveRing = true;
 		}
-	} else {
-		// Reset so the first ring after the puck is placed again isn't
-		// delayed by whatever was left over from before it was removed.
-		waveSpawnAccum = 0.0f;
+	} else if (hasActiveRing) {
+		if (!rings.empty())
+			retireRing(rings.back());
+		hasActiveRing = false;
 	}
 
 	for (size_t r = 0; r < rings.size(); ) {
 		bool anyAlive = false;
 		auto & points = rings[r].points;
 		for (size_t i = 0; i < points.size(); ) {
-			bool alive = points[i].update(handField, noTangibles, engine);
+			bool alive = points[i].update(noTangibles, engine);
 			if (alive) {
 				anyAlive = true;
 				i++;
@@ -107,8 +131,7 @@ void CSonicWaveController::update()
 	for (auto & ring : rings)
 		drawRing(ring);
 	if (showPuckDebug) {
-		// Fixed-position thumbnail, not spatially registered to the sand -
-		// same convention as HandField's debug overlay.
+		// Fixed-position thumbnail, not spatially registered to the sand.
 		puckTracker->draw(10, 10, 160, 120);
 	}
 	fbo.end();
@@ -207,8 +230,8 @@ void CSonicWaveController::drawGui()
 	}
 
 	ImGui::Separator();
-	ImGui::Text("Ring (fires while puck is present)");
-	ImGui::SliderFloat("Spawn interval (s)", &spawnInterval, 0.05f, 3.0f);
+	ImGui::Text("Ring (expands once, holds until the puck moves or is removed)");
+	ImGui::SliderFloat("Puck move distance for new ring (px)", &ringMoveThreshold, 5.0f, 150.0f);
 	ImGui::SliderInt("Points per ring", &ringPointCount, 8, 96);
 	ImGui::SliderFloat("Ring expansion speed", &wavePushSpeed, 0.0f, 3.0f);
 	if (ImGui::ColorEdit3("Ring color", ringColorRGB)) {
@@ -217,12 +240,6 @@ void CSonicWaveController::drawGui()
 
 	ImGui::Separator();
 	ImGui::SliderFloat("Damping", &SonicParticle::DAMPING, 0.5f, 0.99f);
-	ImGui::SliderFloat("Hand push (still hand)", &SonicParticle::HAND_PUSH_STRENGTH, 0.0f, 10.0f);
-	ImGui::SliderFloat("Herd strength (moving hand)", &SonicParticle::HERD_STRENGTH, 0.0f, 1.0f);
-
-	ImGui::Separator();
-	ImGui::SliderFloat("Lifetime min (s)", &SonicParticle::LIFETIME_MIN, 1.0f, 30.0f);
-	ImGui::SliderFloat("Lifetime max (s)", &SonicParticle::LIFETIME_MAX, 1.0f, 30.0f);
 
 	if (ImGui::Button("Test ring (center, no puck needed)")) {
 		spawnRingAt(ofPoint(playArea.getCenter()));
@@ -233,6 +250,7 @@ void CSonicWaveController::drawGui()
 			for (auto & p : ring.points)
 				p.release(engine); // otherwise their voices leak from the pool
 		rings.clear();
+		hasActiveRing = false; // so a still-present puck gets a fresh ring next frame instead of waiting for it to move
 	}
 
 	ImGui::End();
