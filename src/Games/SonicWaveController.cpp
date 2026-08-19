@@ -169,8 +169,15 @@ void CSonicWaveController::drawGui()
 
 	ImGui::Separator();
 	ImGui::Text("Puck detection");
+	ImGui::SliderFloat("Puck diameter (mm)", &PuckTracker::PUCK_DIAMETER_MM, 10.0f, 300.0f);
+	ImGui::SliderFloat("Puck height (mm)", &PuckTracker::PUCK_HEIGHT_MM, 10.0f, 300.0f);
+	if (ImGui::Button("Estimate radius from puck size"))
+		PuckTracker::EXPECTED_RADIUS_CELLS = puckTracker.estimateRadiusCells();
+	ImGui::SameLine();
+	if (ImGui::Button("Estimate height threshold"))
+		PuckTracker::HEIGHT_THRESHOLD = PuckTracker::PUCK_HEIGHT_MM * 0.4f;
 	ImGui::SliderFloat("Expected radius (cells)", &PuckTracker::EXPECTED_RADIUS_CELLS, 2.0f, 30.0f);
-	ImGui::SliderFloat("Height threshold", &PuckTracker::HEIGHT_THRESHOLD, 1.0f, 100.0f);
+	ImGui::SliderFloat("Height threshold (mm)", &PuckTracker::HEIGHT_THRESHOLD, 1.0f, 100.0f);
 	ImGui::SliderFloat("Min circularity", &PuckTracker::MIN_CIRCULARITY, 0.1f, 1.0f);
 	ImGui::SliderFloat("Confirm time (s)", &PuckTracker::CONFIRM_TIME, 0.0f, 3.0f);
 	ImGui::SliderFloat("Max track jump (px)", &PuckTracker::MAX_TRACK_JUMP, 5.0f, 150.0f);

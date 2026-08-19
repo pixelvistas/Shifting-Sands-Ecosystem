@@ -1,7 +1,10 @@
 #include "PuckTracker.h"
 
-float PuckTracker::EXPECTED_RADIUS_CELLS = 8.0f;
-float PuckTracker::HEIGHT_THRESHOLD = 15.0f;
+float PuckTracker::PUCK_DIAMETER_MM = 78.74f; // 3.1in
+float PuckTracker::PUCK_HEIGHT_MM = 63.5f;    // 2.5in
+
+float PuckTracker::EXPECTED_RADIUS_CELLS = 8.0f; // placeholder until estimateRadiusCells() runs against real calibration
+float PuckTracker::HEIGHT_THRESHOLD = PuckTracker::PUCK_HEIGHT_MM * 0.4f; // a dome's edges taper well short of its full height
 float PuckTracker::MIN_CIRCULARITY = 0.6f;
 float PuckTracker::CONFIRM_TIME = 0.6f;
 float PuckTracker::MAX_TRACK_JUMP = 40.0f;
@@ -116,6 +119,26 @@ void PuckTracker::update()
 		// Within the grace period: keep whatever state we had, so brief
 		// single-frame detection dropouts don't flicker the puck on/off.
 	}
+}
+
+float PuckTracker::estimateRadiusCells() const
+{
+	if (kinectROI.width <= 0)
+		return EXPECTED_RADIUS_CELLS; // nothing to measure against yet
+
+	float cx = kinectROI.getCenter().x;
+	float cy = kinectROI.getCenter().y;
+	const float sampleOffsetPixels = 50.0f;
+
+	ofVec3f worldA = kinectProjector->kinectCoordToWorldCoord(cx, cy);
+	ofVec3f worldB = kinectProjector->kinectCoordToWorldCoord(cx + sampleOffsetPixels, cy);
+	float worldDistMM = (worldB - worldA).length();
+	if (worldDistMM <= 0.0001f)
+		return EXPECTED_RADIUS_CELLS; // degenerate calibration sample, don't produce garbage
+
+	float mmPerKinectPixel = worldDistMM / sampleOffsetPixels;
+	float radiusKinectPixels = (PUCK_DIAMETER_MM / 2.0f) / mmPerKinectPixel;
+	return radiusKinectPixels / step;
 }
 
 void PuckTracker::draw(float x, float y, float width, float height)
