@@ -8,6 +8,42 @@ namespace {
 	const float HELD_RING_LIFETIME = 3600.0f;
 	// How long a retired ring takes to fade out and release its voices.
 	const float RETIRE_FADE_SECONDS = 0.5f;
+
+	// Liang-Barsky segment-vs-rectangle clip, entirely in whatever 2D space
+	// the caller's points and rect already share - no GL state or viewport
+	// assumptions involved (unlike glScissor, which depends on the current
+	// framebuffer's raw pixel orientation and turned out not to be worth
+	// the risk of getting wrong on hardware this session can't test on).
+	// Returns false if the segment never crosses rect at all.
+	bool clipSegmentToRect(const ofVec2f & p0, const ofVec2f & p1, const ofRectangle & rect, ofVec2f & outA, ofVec2f & outB)
+	{
+		float dx = p1.x - p0.x;
+		float dy = p1.y - p0.y;
+		float tMin = 0.0f, tMax = 1.0f;
+
+		float p[4] = { -dx, dx, -dy, dy };
+		float q[4] = { p0.x - rect.getLeft(), rect.getRight() - p0.x, p0.y - rect.getTop(), rect.getBottom() - p0.y };
+
+		for (int i = 0; i < 4; i++) {
+			if (fabs(p[i]) < 1e-6f) {
+				if (q[i] < 0)
+					return false; // parallel to this edge and outside it
+			} else {
+				float t = q[i] / p[i];
+				if (p[i] < 0) {
+					if (t > tMax) return false;
+					if (t > tMin) tMin = t;
+				} else {
+					if (t < tMin) return false;
+					if (t < tMax) tMax = t;
+				}
+			}
+		}
+
+		outA = p0 + ofVec2f(dx, dy) * tMin;
+		outB = p0 + ofVec2f(dx, dy) * tMax;
+		return true;
+	}
 }
 
 void CSonicWaveController::setup(std::shared_ptr<KinectProjector> const& k, PuckTracker* tracker)
@@ -134,22 +170,8 @@ void CSonicWaveController::update()
 
 	fbo.begin();
 	ofClear(255, 255, 255, 0);
-
-	// Scissor-clip ring drawing to the calibrated play area - see
-	// ringClipRect's declaration. glScissor works in raw framebuffer
-	// pixels with a bottom-left origin, unlike oF's own top-left drawing
-	// coordinates, hence the y-flip against the fbo's actual height.
-	GLsizei clipW = (GLsizei)std::max(0.0f, ringClipRect.width);
-	GLsizei clipH = (GLsizei)std::max(0.0f, ringClipRect.height);
-	if (clipW > 0 && clipH > 0) {
-		glEnable(GL_SCISSOR_TEST);
-		glScissor((GLint)ringClipRect.x, (GLint)(fbo.getHeight() - ringClipRect.getBottom()), clipW, clipH);
-	}
 	for (auto & ring : rings)
 		drawRing(ring);
-	if (clipW > 0 && clipH > 0)
-		glDisable(GL_SCISSOR_TEST);
-
 	if (showPuckDebug) {
 		// Fixed-position thumbnail, not spatially registered to the sand.
 		puckTracker->draw(10, 10, 160, 120);
@@ -162,28 +184,40 @@ void CSonicWaveController::drawRing(const SonicRing & ring)
 	if (ring.points.size() < 3)
 		return;
 
-	ofPolyline line;
-	for (auto & p : ring.points) {
-		ofVec2f projectorCoord = kinectProjector->kinectCoordToProjCoord(p.getLocation().x, p.getLocation().y);
-		line.addVertex(projectorCoord.x, projectorCoord.y);
-	}
-	line.close();
+	std::vector<ofVec2f> projCoords;
+	projCoords.reserve(ring.points.size());
+	for (auto & p : ring.points)
+		projCoords.push_back(kinectProjector->kinectCoordToProjCoord(p.getLocation().x, p.getLocation().y));
 
 	ofPushStyle();
 	ofEnableBlendMode(OF_BLENDMODE_ADD);
 
-	// Soft outer glow: a few progressively wider, dimmer passes underneath
-	// a thin bright core - the standard cheap way to fake a neon bloom
-	// without a real post-process blur.
-	for (int pass = 4; pass >= 1; pass--) {
-		ofSetColor(ringColor, 35);
-		ofSetLineWidth(pass * 5.0f);
-		line.draw();
-	}
+	// Each edge of the ring is drawn (and clipped to ringClipRect) on its
+	// own rather than as one closed ofPolyline, so an edge that leaves the
+	// calibrated play area just isn't drawn past the boundary, instead of
+	// the whole ring inheriting whatever warped mapping applies out there.
+	size_t n = projCoords.size();
+	for (size_t i = 0; i < n; i++) {
+		ofVec2f a = projCoords[i];
+		ofVec2f b = projCoords[(i + 1) % n];
 
-	ofSetColor(255, 255, 255, 220);
-	ofSetLineWidth(1.5f);
-	line.draw();
+		ofVec2f clippedA, clippedB;
+		if (!clipSegmentToRect(a, b, ringClipRect, clippedA, clippedB))
+			continue;
+
+		// Soft outer glow: a few progressively wider, dimmer passes
+		// underneath a thin bright core - the standard cheap way to fake a
+		// neon bloom without a real post-process blur.
+		for (int pass = 4; pass >= 1; pass--) {
+			ofSetColor(ringColor, 35);
+			ofSetLineWidth(pass * 5.0f);
+			ofDrawLine(clippedA.x, clippedA.y, clippedB.x, clippedB.y);
+		}
+
+		ofSetColor(255, 255, 255, 220);
+		ofSetLineWidth(1.5f);
+		ofDrawLine(clippedA.x, clippedA.y, clippedB.x, clippedB.y);
+	}
 
 	ofDisableBlendMode();
 	ofPopStyle();
