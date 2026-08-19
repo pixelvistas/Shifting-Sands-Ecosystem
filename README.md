@@ -1,6 +1,6 @@
 # Shifting Sands - Ecosystem
 
-An augmented-reality sandbox for critical environmental engagement, built as a
+An augmented reality (AR) sandbox for critical environmental engagement, built as a
 modernized and extended fork of [Magic Sand](https://github.com/thomwolf/Magic-Sand).
 
 This project is part of a Digital Media MRP at York University (PiET Lab). It
