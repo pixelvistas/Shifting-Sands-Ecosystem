@@ -56,22 +56,13 @@ void CSonicWaveController::spawnRingAt(const ofPoint & origin)
 	if (playArea.width <= 0 || ringPointCount < 3)
 		return;
 
-	// Cap growth at the nearest boundary edge so the ring stops as a clean
-	// circle instead of reaching the edge and flattening onto it (see
-	// SonicParticle::clampToRingRadius).
-	float maxRadius = origin.x - playArea.getLeft();
-	maxRadius = std::min(maxRadius, playArea.getRight() - origin.x);
-	maxRadius = std::min(maxRadius, origin.y - playArea.getTop());
-	maxRadius = std::min(maxRadius, playArea.getBottom() - origin.y);
-	maxRadius = std::max(maxRadius, 0.0f);
-
 	SonicRing ring;
 	for (int i = 0; i < ringPointCount; i++) {
 		float angle = (TWO_PI * i) / ringPointCount;
 		ofVec2f dir(cos(angle), sin(angle));
 		ofVec2f initialVelocity = dir * wavePushSpeed;
 
-		SonicParticle p(kinectProjector, origin, playArea, maxRadius, initialVelocity);
+		SonicParticle p(kinectProjector, origin, playArea, initialVelocity);
 		p.setup(engine, HELD_RING_LIFETIME);
 		ring.points.push_back(p);
 	}

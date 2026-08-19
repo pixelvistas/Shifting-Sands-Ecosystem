@@ -15,13 +15,14 @@ SonicEngine voice for its lifetime, which the ring's controller extends
 indefinitely (see retire()) rather than letting it expire on a fixed
 timer - the ring is meant to persist until the puck moves, not pulse.
 
-Ring growth is capped by distance from the ring's own origin
-(maxRingRadius), not by clamping each point's x/y independently against
-the play area rectangle - that per-axis clamp is what made a ring flatten
-into a square near a corner, since points that would have crossed the
-corner diagonally got pulled onto the two straight edges instead. A
-radial cap keeps the ring a circle right up to the boundary regardless of
-which direction the puck is nearest to it.
+Ring growth is not clamped to the play area at all - points are free to
+travel past its edges, however far DAMPING lets them get before they
+settle. A boundary clamp was tried (first per-axis against the rectangle,
+then radial from the ring's origin) but even the radial version still
+visibly distorted near corners, so rather than keep chasing a clean
+boundary behavior, there's simply no boundary here: a ring near the edge
+just continues past it under its own decaying momentum like any other
+ring.
 
 Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 ***********************************************************************/
@@ -35,11 +36,9 @@ Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 
 class SonicParticle {
 public:
-	// sborders is used only for the pan (left-right/top-bottom) mapping,
-	// not for clamping position - see maxRingRadius for that. The ring's
-	// origin is slocation itself, since every point in a ring starts at
-	// the same spot.
-	SonicParticle(std::shared_ptr<KinectProjector> const& k, ofPoint slocation, ofRectangle sborders, float maxRingRadius, ofVec2f initialVelocity);
+	// sborders is used only for the pan (left-right/top-bottom) mapping -
+	// position is never clamped to it, see the header note.
+	SonicParticle(std::shared_ptr<KinectProjector> const& k, ofPoint slocation, ofRectangle sborders, ofVec2f initialVelocity);
 
 	// Allocates a voice. fixedLifetime > 0 overrides the usual randomized
 	// LIFETIME_MIN..LIFETIME_MAX draw - ring points share one explicit
@@ -82,8 +81,6 @@ public:
 	static float MAX_SPEED_FOR_PITCH; // speed at/above which pitch maxes out
 
 private:
-	void clampToRingRadius();
-
 	std::shared_ptr<KinectProjector> kinectProjector;
 
 	ofPoint location;
@@ -100,6 +97,4 @@ private:
 	int voiceIndex;
 
 	ofRectangle borders; // pan mapping only
-	ofPoint ringOrigin;
-	float maxRingRadius;
 };

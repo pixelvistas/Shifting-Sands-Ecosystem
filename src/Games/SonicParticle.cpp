@@ -8,13 +8,11 @@ float SonicParticle::HEIGHT_MAX = 50.0f;
 bool SonicParticle::INVERT_HEIGHT = false;
 float SonicParticle::MAX_SPEED_FOR_PITCH = 3.0f;
 
-SonicParticle::SonicParticle(std::shared_ptr<KinectProjector> const& k, ofPoint slocation, ofRectangle sborders, float maxRadius, ofVec2f initialVelocity)
+SonicParticle::SonicParticle(std::shared_ptr<KinectProjector> const& k, ofPoint slocation, ofRectangle sborders, ofVec2f initialVelocity)
 {
 	kinectProjector = k;
 	location = slocation;
 	borders = sborders;
-	ringOrigin = slocation;
-	maxRingRadius = maxRadius;
 	velocity = initialVelocity;
 	acceleration = ofVec2f(0);
 	age = 0.0f;
@@ -27,23 +25,6 @@ void SonicParticle::setup(SonicEngine & engine, float fixedLifetime)
 	mass = ofRandom(0.5f, 2.0f);
 	lifetime = (fixedLifetime > 0.0f) ? fixedLifetime : ofRandom(LIFETIME_MIN, LIFETIME_MAX);
 	voiceIndex = engine.allocateVoice();
-}
-
-void SonicParticle::clampToRingRadius()
-{
-	if (maxRingRadius <= 0.0f)
-		return;
-
-	ofVec2f fromOrigin = location - ringOrigin;
-	float dist = fromOrigin.length();
-	if (dist > maxRingRadius) {
-		location = ringOrigin + fromOrigin.getNormalized() * maxRingRadius;
-		// Stop dead rather than sliding along the radius limit - there's
-		// no "outward" velocity component to preserve once a point has
-		// hit the cap, and zeroing it also stops any residual drift from
-		// slowly nudging the point around the boundary circle.
-		velocity = ofVec2f(0);
-	}
 }
 
 bool SonicParticle::update(std::vector<Tangible> & tangibles, SonicEngine & engine)
@@ -81,8 +62,6 @@ bool SonicParticle::update(std::vector<Tangible> & tangibles, SonicEngine & engi
 	velocity += acceleration;
 	velocity *= DAMPING;
 	location += velocity;
-
-	clampToRingRadius();
 
 	projectorCoord = kinectProjector->kinectCoordToProjCoord(location.x, location.y);
 
