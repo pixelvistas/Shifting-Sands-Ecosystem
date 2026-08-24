@@ -108,7 +108,14 @@ void ofApp::draw()
 
 	if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING)
 	{
-		sandSurfaceRenderer->drawMainWindow(x, y, w, h);//400, 20, 400, 300);
+		// sandSurfaceRenderer->drawMainWindow() intentionally not called -
+		// the synthesizer wants a clean background, not the colored
+		// elevation map. Its update() below is left running untouched:
+		// the terrain physics critters/the puck/sonic rings react to comes
+		// entirely from KinectProjector's elevationAtKinectCoord/
+		// gradientAtKinectCoord, not from anything SandSurfaceRenderer
+		// computes for its own display, so skipping just its draw calls
+		// can't change how anything behaves.
 		boidGameController.drawMainWindow(x, y, w, h);
 		critterController.drawMainWindow(x, y, w, h);
 		sonicWaveController.drawMainWindow(x, y, w, h);
@@ -119,7 +126,8 @@ void ofApp::draw()
 	imgui.begin();
 		kinectProjector->drawGui();
 		if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING) {
-			sandSurfaceRenderer->drawGui();
+			// sandSurfaceRenderer->drawGui() (colormap/contour-line tuning)
+			// dropped too - those controls have nothing visible left to tune.
 			critterController.drawGui();
 			sonicWaveController.drawGui();
 		}
@@ -131,7 +139,8 @@ void ofApp::drawProjWindow(ofEventArgs &args)
 {
 	if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING)
 	{
-		sandSurfaceRenderer->drawProjectorWindow();
+		// See the matching note in draw() above - no sandSurfaceRenderer
+		// draw call here either, same reasoning.
 		mapGameController.drawProjectorWindow();
 		boidGameController.drawProjectorWindow();
 		critterController.drawProjectorWindow();
