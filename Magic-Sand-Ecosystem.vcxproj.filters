@@ -25,6 +25,9 @@
 		<ClCompile Include="src\Games\PuckTracker.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
+		<ClCompile Include="src\Games\MyceliumNetwork.cpp">
+			<Filter>src\Games</Filter>
+		</ClCompile>
 		<ClCompile Include="src\Games\ReferenceMapHandler.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
@@ -762,6 +765,9 @@
 			<Filter>src\Games</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Games\PuckTracker.h">
+			<Filter>src\Games</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Games\MyceliumNetwork.h">
 			<Filter>src\Games</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Games\ReferenceMapHandler.h">

@@ -45,6 +45,15 @@ uniform int drawContourLines;
 uniform float heightMapNumEntries; // depthfrag is in [0, heightMapNumEntries) texel space, not 0..1
 uniform float time;
 
+// Mycelium: see MyceliumNetwork.h. myceliumSampler is a coarse grid
+// texture (networkPattern x revealedAccum); myceliumGridOrigin/Step
+// convert texcoordfrag (kinect pixel space) into a texel lookup into it.
+uniform int hasMycelium;
+uniform sampler2DRect myceliumSampler;
+uniform vec2 myceliumGridOrigin;
+uniform float myceliumGridStep;
+uniform vec3 myceliumGlowColor;
+
 float hash(vec2 p)
 {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -102,6 +111,13 @@ void main()
     vec3 growthColor = mix(lowGrowthColor, highGrowthColor, elevationNorm);
 
     vec4 color = vec4(mix(rockColor, growthColor, growthAmount), 1.0);
+
+    if (hasMycelium == 1)
+    {
+        vec2 myceliumUV = (texcoordfrag - myceliumGridOrigin) / myceliumGridStep;
+        float myceliumIntensity = texture(myceliumSampler, myceliumUV).r;
+        color.rgb += myceliumGlowColor * myceliumIntensity;
+    }
 
     if (drawContourLines == 1)
     {

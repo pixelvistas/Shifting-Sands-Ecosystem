@@ -29,6 +29,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <iostream>
 #include "ofMain.h"
 #include "../KinectProjector/KinectProjector.h"
+#include "../Games/MyceliumNetwork.h"
 #include "ColorMap.h"
 
 /*
@@ -66,7 +67,14 @@ private:
 class SandSurfaceRenderer {
 public:
     SandSurfaceRenderer(std::shared_ptr<KinectProjector> const& k, std::shared_ptr<ofAppBaseWindow> const& p);
-    
+
+    // mycelium is owned by ofApp and shared here purely so drawSandbox()
+    // can bind its texture/grid transform as shader uniforms - the same
+    // query-only-pointer pattern used for PuckTracker elsewhere. Optional:
+    // if never set, the shader's mycelium sampler is simply never bound
+    // and the glow blend contributes nothing.
+    void setMyceliumNetwork(MyceliumNetwork* m) { myceliumNetwork = m; }
+
     // Main loop function
     void setup(bool sdisplayGui);
     void update();
@@ -100,6 +108,7 @@ private:
     // shared pointers
     std::shared_ptr<KinectProjector> kinectProjector;
     std::shared_ptr<ofAppBaseWindow> projWindow;
+    MyceliumNetwork* myceliumNetwork; // query-only, owned by ofApp - see setMyceliumNetwork()
     bool settingsLoaded;
     
     // Projector Resolution
