@@ -39,6 +39,7 @@ in vec2 texcoord;
 
 // this is something send to the fragment shader
 out float depthfrag;
+out vec2 texcoordfrag; // kinect depth-image pixel coord, for the organic-growth noise pattern
 
 uniform sampler2DRect tex0; // Sampler for the depth image-space elevation texture automatically set by binding
 
@@ -61,7 +62,9 @@ void main()
 
     pos.z = depth;
     pos.w = 1;
-    
+
+    texcoordfrag = texcoord;
+
     /* Transform the vertex from depth image space to world space: */
     vec4 vertexCc = kinectWorldMatrix * pos;  // Transposed multiplication (Row-major order VS col major order
     vec4 vertexCcx = vertexCc * depth;

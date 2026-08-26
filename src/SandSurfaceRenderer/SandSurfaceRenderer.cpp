@@ -38,7 +38,7 @@ void SandSurfaceRenderer::setup(bool sdisplayGui){
     ofAddListener(ofEvents().exit, this, &SandSurfaceRenderer::exit);
     
     // Sandbox contourlines
-    drawContourLines = true; // Flag if topographic contour lines are enabled
+    drawContourLines = false; // Flag if topographic contour lines are enabled - off by default, since black topo lines are as much a "generic AR sandbox" tell as the rainbow ramp was; still toggleable in the GUI
 	contourLineDistance = 10.0; // Elevation distance between adjacent topographic contour lines in millimiters
     
     // Initialize the fbos and images
@@ -246,6 +246,8 @@ void SandSurfaceRenderer::drawSandbox() {
     heightMapShader.setUniformTexture("pixelCornerElevationSampler", contourLineFramebufferObject.getTexture(), 3);
     heightMapShader.setUniform1f("contourLineFactor", contourLineFactor);
     heightMapShader.setUniform1i("drawContourLines", drawContourLines);
+    heightMapShader.setUniform1f("heightMapNumEntries", (float)heightMap.getNumEntries());
+    heightMapShader.setUniform1f("time", ofGetElapsedTimef());
     mesh.draw();
     heightMapShader.end();
     kinectProjector->unbind();
