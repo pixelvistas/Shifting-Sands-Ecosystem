@@ -371,16 +371,17 @@ Draw order for `render()` (§4 step 14), each a separate pass/draw call over
                         reads texSoil and texVeg alongside texHeight.
 2. hydrology linework  renderLinework.frag — flow streaks + moisture isolines
 3. vegetation stipple  renderPoints.frag — per-species point sprites from texVeg
-4. mycelium glow       existing MyceliumNetwork pass, unchanged
-5. fauna marks         existing Critter triangles + ring, unchanged
-6. elevation contours  existing black contour pass, kept as the coarse
+4. fauna marks         existing Critter triangles + ring, unchanged
+5. elevation contours  existing black contour pass, kept as the coarse
                         orientation reference — drawn last, thin, low-alpha
-7. interaction overlay planting cursor / puck ring / species ghost — screen-
+6. interaction overlay planting cursor / puck ring / species ghost — screen-
                         space, topmost — see 5.11.6
 ```
 
 Layers 2–3 and the extension folded into 1 are the new work; the rest of 1 and
-4–6 already exist and are reused as-is.
+4–5 already exist and are reused as-is. (The mycelium-glow layer this table
+once listed has been removed from the fork entirely — untested, and this
+module supersedes it as the thing revealed by/rewarding digging.)
 
 #### 5.11.2 Base ground — retiring the lichen pass gracefully
 

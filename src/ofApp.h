@@ -30,7 +30,6 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "Games/CritterController.h"
 #include "Games/SonicWaveController.h"
 #include "Games/PuckTracker.h"
-#include "Games/MyceliumNetwork.h"
 
 class ofApp : public ofBaseApp {
 
@@ -69,12 +68,7 @@ private:
 	PuckTracker puckTracker;
 	CCritterController critterController;
 	CSonicWaveController sonicWaveController;
-	// Buried network revealed by digging - see MyceliumNetwork.h. Shared
-	// with SandSurfaceRenderer (which binds its texture as a shader
-	// uniform) via setMyceliumNetwork(), same query-only-pointer pattern
-	// as PuckTracker.
-	MyceliumNetwork myceliumNetwork;
 
-	// Main window ROI 
+	// Main window ROI
 	ofRectangle mainWindowROI;
 };

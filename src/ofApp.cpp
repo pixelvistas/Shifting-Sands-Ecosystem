@@ -70,10 +70,6 @@ void ofApp::setup() {
 	sonicWaveController.setKinectRes(kinectRes);
 	sonicWaveController.setKinectROI(kinectROI);
 
-	myceliumNetwork.setup(kinectProjector);
-	myceliumNetwork.setKinectROI(kinectROI);
-	sandSurfaceRenderer->setMyceliumNetwork(&myceliumNetwork);
-
 	imgui.setup();
 
 }
@@ -92,11 +88,9 @@ void ofApp::update() {
 		boidGameController.setKinectROI(kinectROI);
 		critterController.setKinectROI(kinectROI);
 		sonicWaveController.setKinectROI(kinectROI);
-		myceliumNetwork.setKinectROI(kinectROI);
 	}
 
 	puckTracker.update();
-	myceliumNetwork.update();
 
 	mapGameController.update();
 	boidGameController.update();
@@ -132,7 +126,6 @@ void ofApp::draw()
 			sandSurfaceRenderer->drawGui();
 			critterController.drawGui();
 			sonicWaveController.drawGui();
-			myceliumNetwork.drawGui();
 		}
 	imgui.end();
 	imgui.draw();
