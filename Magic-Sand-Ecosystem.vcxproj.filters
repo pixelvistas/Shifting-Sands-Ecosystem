@@ -7,6 +7,15 @@
 		<ClCompile Include="src\main.cpp">
 			<Filter>src</Filter>
 		</ClCompile>
+		<ClCompile Include="src\Ecosystem\EcosystemManager.cpp">
+			<Filter>src\Ecosystem</Filter>
+		</ClCompile>
+		<ClCompile Include="src\Ecosystem\HydrologyLayer.cpp">
+			<Filter>src\Ecosystem</Filter>
+		</ClCompile>
+		<ClCompile Include="src\Ecosystem\HydrologyParticle.cpp">
+			<Filter>src\Ecosystem</Filter>
+		</ClCompile>
 		<ClCompile Include="src\Games\BoidGameController.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
@@ -242,6 +251,9 @@
 		</Filter>
 		<Filter Include="src\SandSurfaceRenderer">
 			<UniqueIdentifier>{57035B83--32B-9-41-CF-8-551-B67A5290622D}</UniqueIdentifier>
+		</Filter>
+		<Filter Include="src\Ecosystem">
+			<UniqueIdentifier>{4A1F4134-7DCE-4058-A6BA-FDFB2DC96782}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="addons">
 			<UniqueIdentifier>{DE7B42E9--1FB-6-4D-8D-8-5D2-81CD31AB075A}</UniqueIdentifier>
@@ -745,6 +757,15 @@
 	<ItemGroup>
 		<ClInclude Include="src\ofApp.h">
 			<Filter>src</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Ecosystem\EcosystemManager.h">
+			<Filter>src\Ecosystem</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Ecosystem\HydrologyLayer.h">
+			<Filter>src\Ecosystem</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Ecosystem\HydrologyParticle.h">
+			<Filter>src\Ecosystem</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Games\BoidGameController.h">
 			<Filter>src\Games</Filter>

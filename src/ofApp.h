@@ -30,6 +30,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "Games/CritterController.h"
 #include "Games/SonicWaveController.h"
 #include "Games/PuckTracker.h"
+#include "Ecosystem/EcosystemManager.h"
 
 class ofApp : public ofBaseApp {
 
@@ -68,6 +69,9 @@ private:
 	PuckTracker puckTracker;
 	CCritterController critterController;
 	CSonicWaveController sonicWaveController;
+	// Ecosystem simulation module - see ECOSIMSPEC.md. Shares puckTracker,
+	// same reasoning as critterController/sonicWaveController above.
+	EcosystemManager ecosystemManager;
 
 	// Main window ROI
 	ofRectangle mainWindowROI;

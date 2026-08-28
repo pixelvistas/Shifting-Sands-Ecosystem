@@ -70,6 +70,11 @@ void ofApp::setup() {
 	sonicWaveController.setKinectRes(kinectRes);
 	sonicWaveController.setKinectROI(kinectROI);
 
+	ecosystemManager.setup(kinectProjector, &puckTracker);
+	ecosystemManager.setProjectorRes(projRes);
+	ecosystemManager.setKinectRes(kinectRes);
+	ecosystemManager.setKinectROI(kinectROI);
+
 	imgui.setup();
 
 }
@@ -88,6 +93,7 @@ void ofApp::update() {
 		boidGameController.setKinectROI(kinectROI);
 		critterController.setKinectROI(kinectROI);
 		sonicWaveController.setKinectROI(kinectROI);
+		ecosystemManager.setKinectROI(kinectROI);
 	}
 
 	puckTracker.update();
@@ -96,6 +102,7 @@ void ofApp::update() {
 	boidGameController.update();
 	critterController.update();
 	sonicWaveController.update();
+	ecosystemManager.update();
 }
 
 
@@ -116,6 +123,7 @@ void ofApp::draw()
 		boidGameController.drawMainWindow(x, y, w, h);
 		critterController.drawMainWindow(x, y, w, h);
 		sonicWaveController.drawMainWindow(x, y, w, h);
+		ecosystemManager.drawMainWindow(x, y, w, h);
 	}
 
 	kinectProjector->drawMainWindow(x, y, w, h);
@@ -126,6 +134,7 @@ void ofApp::draw()
 			sandSurfaceRenderer->drawGui();
 			critterController.drawGui();
 			sonicWaveController.drawGui();
+			ecosystemManager.drawGui();
 		}
 	imgui.end();
 	imgui.draw();
@@ -140,6 +149,7 @@ void ofApp::drawProjWindow(ofEventArgs &args)
 		boidGameController.drawProjectorWindow();
 		critterController.drawProjectorWindow();
 		sonicWaveController.drawProjectorWindow();
+		ecosystemManager.drawProjectorWindow();
 	}
 	kinectProjector->drawProjectorWindow();
 }
