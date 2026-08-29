@@ -4,6 +4,12 @@
 
 float HydrologyLayer::SPAWN_RATE = 40.0f; // particles/s per active puck - see ECOSIMSPEC.md §6 spawn_rate (default 100, halved: a CPU vector of streak-drawn particles is the thing being proven out here, not the visual density)
 int HydrologyLayer::MAX_PARTICLES = 2000;
+float HydrologyLayer::MOISTURE_DEPOSIT_RATE = 0.5f;
+float HydrologyLayer::MOISTURE_DECAY_RATE = 0.08f;
+
+namespace {
+	const int MOISTURE_GRID_STEP = 12; // kinect px per cell - coarser than particle motion, fine enough for vegetation to read basins vs. slopes
+}
 
 void HydrologyLayer::setup(std::shared_ptr<KinectProjector> const& k, PuckTracker* tracker)
 {
@@ -12,7 +18,11 @@ void HydrologyLayer::setup(std::shared_ptr<KinectProjector> const& k, PuckTracke
 	puckTracker = tracker;
 	spawnAccumulator = 0.0f;
 	showHandDebug = false;
+	showMoistureDebug = false;
 	manualSpawnCount = 50;
+	moistureStep = MOISTURE_GRID_STEP;
+	moistureCols = 0;
+	moistureRows = 0;
 }
 
 void HydrologyLayer::setProjectorRes(ofVec2f & PR)
@@ -31,6 +41,51 @@ void HydrologyLayer::setKinectROI(ofRectangle & KROI)
 	kinectROI = KROI;
 	playArea = kinectROI;
 	playArea.scaleFromCenter(0.9f, 0.9f); // 5% margin, same convention as CritterController
+
+	if (kinectROI.width <= 0 || kinectROI.height <= 0)
+		return;
+
+	int newCols = std::max(1, (int)(kinectROI.width / moistureStep));
+	int newRows = std::max(1, (int)(kinectROI.height / moistureStep));
+	if (newCols == moistureCols && newRows == moistureRows)
+		return; // dimensions unchanged - keep accumulated moisture, same convention as MyceliumNetwork's pattern grid
+
+	moistureCols = newCols;
+	moistureRows = newRows;
+	moisture = cv::Mat::zeros(moistureRows, moistureCols, CV_32F);
+}
+
+bool HydrologyLayer::moistureGridCoordAt(float kinectX, float kinectY, int & gx, int & gy) const
+{
+	if (moisture.empty())
+		return false;
+	gx = (int)((kinectX - kinectROI.x) / moistureStep);
+	gy = (int)((kinectY - kinectROI.y) / moistureStep);
+	return gx >= 0 && gx < moistureCols && gy >= 0 && gy < moistureRows;
+}
+
+float HydrologyLayer::getMoistureAt(float kinectX, float kinectY) const
+{
+	int gx, gy;
+	if (!moistureGridCoordAt(kinectX, kinectY, gx, gy))
+		return 0.0f;
+	return moisture.at<float>(gy, gx);
+}
+
+void HydrologyLayer::updateMoistureGrid(float dt)
+{
+	if (moisture.empty())
+		return;
+
+	moisture *= std::max(0.0f, 1.0f - MOISTURE_DECAY_RATE * dt); // evaporation
+
+	for (auto & p : particles) {
+		int gx, gy;
+		if (!moistureGridCoordAt(p.getLocation().x, p.getLocation().y, gx, gy))
+			continue;
+		float & cell = moisture.at<float>(gy, gx);
+		cell = std::min(1.0f, cell + MOISTURE_DEPOSIT_RATE * dt);
+	}
 }
 
 void HydrologyLayer::spawnAt(const ofPoint & loc, int n)
@@ -71,8 +126,33 @@ void HydrologyLayer::update()
 			[&](HydrologyParticle & p) { return !p.update(handField); }),
 		particles.end());
 
+	updateMoistureGrid(ofGetLastFrameTime());
+
 	fbo.begin();
 	ofClear(255, 255, 255, 0);
+
+	if (showMoistureDebug && !moisture.empty()) {
+		// Rough visual sanity check that deposition/decay is doing
+		// something at all, independent of whether particle streaks
+		// themselves are visible - a blue-tinted square per cell, alpha
+		// by moisture value.
+		ofPushStyle();
+		ofFill();
+		for (int gy = 0; gy < moistureRows; gy++) {
+			for (int gx = 0; gx < moistureCols; gx++) {
+				float m = moisture.at<float>(gy, gx);
+				if (m <= 0.01f) continue;
+				float kx = kinectROI.x + gx * moistureStep;
+				float ky = kinectROI.y + gy * moistureStep;
+				ofVec2f p0 = kinectProjector->kinectCoordToProjCoord(kx, ky);
+				ofVec2f p1 = kinectProjector->kinectCoordToProjCoord(kx + moistureStep, ky + moistureStep);
+				ofSetColor(60, 120, 255, (int)(m * 150));
+				ofDrawRectangle(p0.x, p0.y, p1.x - p0.x, p1.y - p0.y);
+			}
+		}
+		ofPopStyle();
+	}
+
 	for (auto & p : particles)
 		p.draw();
 
@@ -118,6 +198,12 @@ void HydrologyLayer::drawGui()
 
 	ImGui::Text("Gradient sign and hand tuning are shared with Critters - see that panel.");
 	ImGui::Checkbox("Show hand mask", &showHandDebug);
+
+	ImGui::Separator();
+	ImGui::Text("Moisture (feeds VegetationLayer's SI_moist):");
+	ImGui::SliderFloat("Deposit rate", &MOISTURE_DEPOSIT_RATE, 0.0f, 3.0f);
+	ImGui::SliderFloat("Decay rate", &MOISTURE_DECAY_RATE, 0.0f, 1.0f);
+	ImGui::Checkbox("Show moisture overlay", &showMoistureDebug);
 
 	ImGui::Separator();
 	ImGui::SliderInt("Particles per spawn", &manualSpawnCount, 1, 500);

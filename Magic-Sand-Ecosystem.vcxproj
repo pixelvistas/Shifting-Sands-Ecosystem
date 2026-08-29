@@ -247,6 +247,7 @@
     <ClCompile Include="src\Ecosystem\EcosystemManager.cpp" />
     <ClCompile Include="src\Ecosystem\HydrologyLayer.cpp" />
     <ClCompile Include="src\Ecosystem\HydrologyParticle.cpp" />
+    <ClCompile Include="src\Ecosystem\VegetationLayer.cpp" />
     <ClCompile Include="src\Games\BoidGameController.cpp" />
     <ClCompile Include="src\Games\Critter.cpp" />
     <ClCompile Include="src\Games\CritterController.cpp" />
@@ -319,6 +320,7 @@
     <ClInclude Include="src\Ecosystem\EcosystemManager.h" />
     <ClInclude Include="src\Ecosystem\HydrologyLayer.h" />
     <ClInclude Include="src\Ecosystem\HydrologyParticle.h" />
+    <ClInclude Include="src\Ecosystem\VegetationLayer.h" />
     <ClInclude Include="src\Games\BoidGameController.h" />
     <ClInclude Include="src\Games\Critter.h" />
     <ClInclude Include="src\Games\CritterController.h" />

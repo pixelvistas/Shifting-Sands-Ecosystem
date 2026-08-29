@@ -16,6 +16,9 @@
 		<ClCompile Include="src\Ecosystem\HydrologyParticle.cpp">
 			<Filter>src\Ecosystem</Filter>
 		</ClCompile>
+		<ClCompile Include="src\Ecosystem\VegetationLayer.cpp">
+			<Filter>src\Ecosystem</Filter>
+		</ClCompile>
 		<ClCompile Include="src\Games\BoidGameController.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
@@ -765,6 +768,9 @@
 			<Filter>src\Ecosystem</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Ecosystem\HydrologyParticle.h">
+			<Filter>src\Ecosystem</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Ecosystem\VegetationLayer.h">
 			<Filter>src\Ecosystem</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Games\BoidGameController.h">

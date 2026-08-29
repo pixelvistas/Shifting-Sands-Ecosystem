@@ -1,16 +1,15 @@
 /***********************************************************************
 EcosystemManager.h - owns the ecosystem simulation layers and enforces
-the update order ECOSIMSPEC.md §4 specifies ("order matters"). Currently
-owns only HydrologyLayer (build order step 1, §9) - VegetationLayer,
-SoilLayer, and the seed bank/pedogenesis/disturbance steps that follow it
-in the build order slot in here later, in the fixed sequence §4 lays out,
-without ofApp needing to change anything beyond what it already calls.
+the update order ECOSIMSPEC.md §4 specifies ("order matters"). Owns
+HydrologyLayer (build order step 1) and VegetationLayer (step 4, single
+species) - SoilLayer and the rest of the build order slot in here later,
+in the fixed sequence §4 lays out, without ofApp needing to change
+anything beyond what it already calls.
 
-Thin on purpose at this stage: with a single layer there is nothing yet
-to actually order, but the seam is worth having now rather than
-retrofitting it once a second layer arrives needing to read this one's
-output (vegetation reads moisture the hydrology layer deposits, per
-§5.6) - see the module's own build order for what's still ahead.
+The ordering this class exists to enforce is now real, not hypothetical:
+update() must call hydrologyLayer.update() before vegetationLayer.update()
+every frame, since vegetation reads the moisture hydrology deposited -
+see VegetationLayer::update()'s HydrologyLayer& parameter.
 
 Ecosystem module, part of the Shifting Sands fork of Magic Sand.
 ***********************************************************************/
@@ -21,6 +20,7 @@ Ecosystem module, part of the Shifting Sands fork of Magic Sand.
 #include "../KinectProjector/KinectProjector.h"
 #include "../Games/PuckTracker.h"
 #include "HydrologyLayer.h"
+#include "VegetationLayer.h"
 
 class EcosystemManager {
 public:
@@ -38,4 +38,5 @@ public:
 
 private:
 	HydrologyLayer hydrologyLayer;
+	VegetationLayer vegetationLayer;
 };
