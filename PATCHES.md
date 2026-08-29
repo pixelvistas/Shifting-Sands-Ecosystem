@@ -84,6 +84,27 @@ libfreenect and Kinect udev rules instead.
 
 ---
 
+## 5. dll\x64\, dll\ARM64\, dll\ARM64EC\  (WINDOWS — NOT tracked in git, populate manually)
+
+PROBLEM: The project's post-build step (see the .vcxproj's PostBuildEvent for
+each platform) copies `*.dll` from `$(ProjectDir)dll\<platform>\` into
+`$(TargetDir)` after every build. That `dll\` folder is a local dependency
+drop (Kinect SDK and OpenCV redistributable DLLs, not source) and has never
+been committed to this repo — a fresh `git clone` has no `dll\` folder at
+all, so the build fails on its very last step with:
+    MSB3073: The command "... xcopy /Y /E "...\dll\x64\*.dll" "...\bin\" ..." exited with code 4.
+(xcopy exit code 4 here means the source folder is missing, not a real copy
+failure — easy to misread as something wrong with the build itself.)
+
+FIX: Copy the `dll\` folder from a working checkout (or directly from your
+Kinect SDK / OpenCV install) into the new checkout's project root before
+building:
+    xcopy /Y /E "<working-copy>\dll" "<new-checkout>\dll\" /I
+This is a one-time, per-checkout step, same as the addon patches above — it
+lives outside what a normal git commit can capture.
+
+---
+
 ## In-project changes (already tracked in this repo, listed for completeness)
 
 - src/main.cpp — ofWindowSettings width/height → setSize()/getWidth()/getHeight()
