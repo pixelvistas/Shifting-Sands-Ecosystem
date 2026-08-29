@@ -48,9 +48,16 @@ other agent in src/Games queries the same shared sensing:
   porting a GPU-shader-shaped formula verbatim into CPU code nobody here
   has run yet.
 
+A third departure from §5.2, alongside the two above: integration is
+per-frame (velocity += forces; location += velocity;), not scaled by dt -
+see the note at the top of update() in the .cpp. Matches Critter exactly;
+the spec's continuous-time formula is written for a GPU shader ticking at
+a fixed simulation rate, which this single-window 60fps CPU loop already
+effectively is.
+
 Ecosystem module, part of the Shifting Sands fork of Magic Sand. See
-ECOSIMSPEC.md §5.2 for the advection formula this implements and §9 for
-the build order.
+ECOSIMSPEC.md §5.2 for the general force composition this is based on
+(gravity + jitter + obstacle) and §9 for the build order.
 ***********************************************************************/
 
 #pragma once
@@ -77,25 +84,29 @@ public:
 	float getAge() const { return age; }
 	float getLifetime() const { return lifetime; }
 
-	// Physics tuning - see ECOSIMSPEC.md §6 "Hydrology (wall-clock)" for
-	// the published starting ranges these were seeded from.
-	static float GRAVITY_WEIGHT;   // w_grav
-	static float JITTER_WEIGHT;    // w_jitter
-	static float JITTER_TURN_RATE; // jitter_amp equivalent - see .cpp note on why this is a
+	// Physics tuning. Loosely modeled on ECOSIMSPEC.md §6 "Hydrology
+	// (wall-clock)" (w_grav/w_jitter/w_obs/drag_base/v_max), but NOT dt-
+	// scaled - see the per-frame integration note at the top of update()
+	// in the .cpp. These are frame-based, same convention as Critter's
+	// GRAVITY/DAMPING, and are NOT directly comparable to the spec's
+	// per-second values.
+	static float GRAVITY_WEIGHT;   // per-frame multiplier on the raw gradient (cf. Critter::GRAVITY = 0.05)
+	static float JITTER_WEIGHT;    // per-frame multiplier on the wander heading (cf. Critter::WANDER_STRENGTH = 0.03)
+	static float JITTER_TURN_RATE; // radians/frame the wander heading can turn - see .cpp note on why this is a
 	                                // persistent wandering heading (Critter/vehicle's idiom)
 	                                // rather than ECOSIMSPEC.md §5.2's per-frame noise2D sample
-	static float OBSTACLE_WEIGHT;  // w_obs
-	static float DRAG;             // drag_base, per second
-	static float MAX_SPEED;        // v_max, kinect px/s
+	static float OBSTACLE_WEIGHT;  // per-frame multiplier on hand push-out
+	static float DRAG;             // multiplicative per-frame damping, 0..1 (cf. Critter::DAMPING = 0.92)
+	static float MAX_SPEED;        // kinect px/frame, not px/s - see update()'s per-frame note
 
-	static float LIFETIME_MIN, LIFETIME_MAX; // seconds
+	static float LIFETIME_MIN, LIFETIME_MAX; // seconds - age/lifetime still use real dt, see update()
 
 	// Rendering - see ECOSIMSPEC.md §5.11.4 ("Flow"): a short streak along
 	// the velocity direction, not a round dot, so direction reads without
 	// a separate vector-field overlay. Tail = location - velocity *
-	// STREAK_LEN, so STREAK_LEN is a small time constant (seconds): how
-	// far back along the particle's own recent path the tail reaches,
-	// scaling naturally with how fast it's currently moving.
+	// STREAK_LEN; since velocity is now kinect px/frame (see above),
+	// STREAK_LEN is a small frame count, not a time constant - how many
+	// frames of recent travel the tail reaches back over.
 	static float STREAK_LEN;
 	static float STREAK_WIDTH;
 	static ofColor STREAK_COLOR;

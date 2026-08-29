@@ -1,17 +1,17 @@
 #include "HydrologyParticle.h"
 #include "../Games/Critter.h" // GRADIENT_SIGN only - see header note on why it's shared, not duplicated
 
-float HydrologyParticle::GRAVITY_WEIGHT = 2.0f;
-float HydrologyParticle::JITTER_WEIGHT = 0.6f;
+float HydrologyParticle::GRAVITY_WEIGHT = 0.12f;
+float HydrologyParticle::JITTER_WEIGHT = 0.08f;
 float HydrologyParticle::JITTER_TURN_RATE = 0.5f;
-float HydrologyParticle::OBSTACLE_WEIGHT = 4.0f;
-float HydrologyParticle::DRAG = 1.0f;
-float HydrologyParticle::MAX_SPEED = 90.0f;
+float HydrologyParticle::OBSTACLE_WEIGHT = 0.3f;
+float HydrologyParticle::DRAG = 0.95f;
+float HydrologyParticle::MAX_SPEED = 6.0f;
 
 float HydrologyParticle::LIFETIME_MIN = 3.0f;
 float HydrologyParticle::LIFETIME_MAX = 7.0f;
 
-float HydrologyParticle::STREAK_LEN = 0.12f;
+float HydrologyParticle::STREAK_LEN = 4.0f;
 float HydrologyParticle::STREAK_WIDTH = 1.5f;
 ofColor HydrologyParticle::STREAK_COLOR = ofColor(200, 225, 255);
 
@@ -32,6 +32,14 @@ void HydrologyParticle::setup()
 
 bool HydrologyParticle::update(HandField & handField)
 {
+	// Per-frame integration, deliberately NOT scaled by dt - matching
+	// Critter::update() exactly (velocity += acceleration; location +=
+	// velocity;, no dt anywhere), not ECOSIMSPEC.md §5.2's continuous-time
+	// formula. gradientAtKinectCoord()'s raw magnitude was empirically
+	// tuned against Critter's per-frame constants (GRAVITY = 0.05, no dt);
+	// reintroducing dt here would silently change what every weight below
+	// means relative to that tuning, for no benefit at 60fps.
+
 	// Steepest descent - the same field and the same empirically-tuned
 	// sign Critter's gravity already uses (see header note).
 	ofVec2f g = kinectProjector->gradientAtKinectCoord(location.x, location.y) * Critter::GRADIENT_SIGN;
@@ -52,17 +60,16 @@ bool HydrologyParticle::update(HandField & handField)
 			o = push.getNormalized();
 	}
 
-	ofVec2f force = g * GRAVITY_WEIGHT + j * JITTER_WEIGHT + o * OBSTACLE_WEIGHT;
-
-	float dt = ofGetLastFrameTime();
-	velocity += force * dt;
-	velocity *= (1.0f - DRAG * dt);
+	velocity += g * GRAVITY_WEIGHT + j * JITTER_WEIGHT + o * OBSTACLE_WEIGHT;
+	velocity *= DRAG; // multiplicative per-frame damping, same role as Critter::DAMPING
 	if (velocity.length() > MAX_SPEED)
 		velocity = velocity.getNormalized() * MAX_SPEED;
 
-	location += velocity * dt;
+	location += velocity;
 
-	age += dt;
+	// Age/lifetime stay in real seconds (via dt) - that's a framerate-
+	// independent duration, unrelated to the per-frame position update above.
+	age += ofGetLastFrameTime();
 	bool alive = age < lifetime && borders.inside(location);
 
 	projectorCoord = kinectProjector->kinectCoordToProjCoord(location.x, location.y);

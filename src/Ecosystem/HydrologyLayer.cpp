@@ -106,12 +106,13 @@ void HydrologyLayer::drawGui()
 	ImGui::SliderInt("Max particles", &MAX_PARTICLES, 100, 10000);
 
 	ImGui::Separator();
-	ImGui::SliderFloat("Gravity weight", &HydrologyParticle::GRAVITY_WEIGHT, 0.0f, 10.0f);
-	ImGui::SliderFloat("Jitter weight", &HydrologyParticle::JITTER_WEIGHT, 0.0f, 2.0f);
+	ImGui::Text("Per-frame physics (same convention as Critters, not dt-scaled):");
+	ImGui::SliderFloat("Gravity weight", &HydrologyParticle::GRAVITY_WEIGHT, 0.0f, 1.0f);
+	ImGui::SliderFloat("Jitter weight", &HydrologyParticle::JITTER_WEIGHT, 0.0f, 0.5f);
 	ImGui::SliderFloat("Jitter turn rate", &HydrologyParticle::JITTER_TURN_RATE, 0.0f, 2.0f);
-	ImGui::SliderFloat("Obstacle weight", &HydrologyParticle::OBSTACLE_WEIGHT, 0.0f, 20.0f);
-	ImGui::SliderFloat("Drag", &HydrologyParticle::DRAG, 0.0f, 5.0f);
-	ImGui::SliderFloat("Max speed", &HydrologyParticle::MAX_SPEED, 5.0f, 400.0f);
+	ImGui::SliderFloat("Obstacle weight", &HydrologyParticle::OBSTACLE_WEIGHT, 0.0f, 2.0f);
+	ImGui::SliderFloat("Drag (damping)", &HydrologyParticle::DRAG, 0.5f, 0.99f);
+	ImGui::SliderFloat("Max speed (px/frame)", &HydrologyParticle::MAX_SPEED, 0.5f, 30.0f);
 	ImGui::SliderFloat("Lifetime min (s)", &HydrologyParticle::LIFETIME_MIN, 0.5f, 20.0f);
 	ImGui::SliderFloat("Lifetime max (s)", &HydrologyParticle::LIFETIME_MAX, 0.5f, 20.0f);
 
