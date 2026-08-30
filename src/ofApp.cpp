@@ -74,6 +74,10 @@ void ofApp::setup() {
 	myceliumNetwork.setKinectROI(kinectROI);
 	sandSurfaceRenderer->setMyceliumNetwork(&myceliumNetwork);
 
+	vegetationField.setup(kinectProjector);
+	vegetationField.setKinectROI(kinectROI);
+	sandSurfaceRenderer->setVegetationField(&vegetationField);
+
 	imgui.setup();
 
 }
@@ -93,10 +97,12 @@ void ofApp::update() {
 		critterController.setKinectROI(kinectROI);
 		sonicWaveController.setKinectROI(kinectROI);
 		myceliumNetwork.setKinectROI(kinectROI);
+		vegetationField.setKinectROI(kinectROI);
 	}
 
 	puckTracker.update();
 	myceliumNetwork.update();
+	vegetationField.update();
 
 	mapGameController.update();
 	boidGameController.update();
@@ -115,9 +121,11 @@ void ofApp::draw()
 	if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING)
 	{
 		// Ecosystem fork: topology is back, but SandSurfaceRenderer now
-		// renders an organic growth/lichen look (see heightMapShader.frag)
-		// instead of the original rainbow height ramp, per direction to
-		// move away from the generic-AR-sandbox visual signature.
+		// renders an organic growth/lichen look with ELF-style vegetation
+		// patches blended on top (see heightMapShader.frag and
+		// VegetationField.h) instead of the original rainbow height ramp,
+		// per direction to move away from the generic-AR-sandbox visual
+		// signature.
 		sandSurfaceRenderer->drawMainWindow(x, y, w, h);
 		boidGameController.drawMainWindow(x, y, w, h);
 		critterController.drawMainWindow(x, y, w, h);
@@ -133,6 +141,7 @@ void ofApp::draw()
 			critterController.drawGui();
 			sonicWaveController.drawGui();
 			myceliumNetwork.drawGui();
+			vegetationField.drawGui();
 		}
 	imgui.end();
 	imgui.draw();

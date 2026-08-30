@@ -33,6 +33,7 @@ editColorMap(false){
     kinectProjector = k;
     projWindow = p;
     myceliumNetwork = nullptr;
+    vegetationField = nullptr;
 }
 
 void SandSurfaceRenderer::setup(bool sdisplayGui){
@@ -258,6 +259,14 @@ void SandSurfaceRenderer::drawSandbox() {
         heightMapShader.setUniform1f("myceliumGridStep", myceliumNetwork->getGridStep());
         ofColor glow = MyceliumNetwork::GLOW_COLOR;
         heightMapShader.setUniform3f("myceliumGlowColor", ofVec3f(glow.r / 255.0f, glow.g / 255.0f, glow.b / 255.0f));
+    }
+
+    bool hasVegetation = vegetationField && vegetationField->getTexture().isAllocated();
+    heightMapShader.setUniform1i("hasVegetation", hasVegetation);
+    if (hasVegetation) {
+        heightMapShader.setUniformTexture("vegetationSampler", vegetationField->getTexture(), 5);
+        heightMapShader.setUniform2f("vegetationGridOrigin", vegetationField->getGridOrigin());
+        heightMapShader.setUniform1f("vegetationGridStep", vegetationField->getGridStep());
     }
 
     mesh.draw();

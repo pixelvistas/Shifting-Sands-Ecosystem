@@ -21,10 +21,11 @@ You should have received a copy of the GNU General Public License along
 with the Magic Sand; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
---- Ecosystem fork: same organic-growth base color as shadersGL3's
-version of this file - see that file's header note for the full
-rationale. Kept in sync so behavior doesn't depend on which renderer
-path ofIsGLProgrammableRenderer() picks at runtime.
+--- Ecosystem fork: same organic-growth base color and ELF-style
+vegetation-patch blending as shadersGL3's version of this file - see that
+file's header note for the full rationale. Kept in sync so behavior
+doesn't depend on which renderer path ofIsGLProgrammableRenderer() picks
+at runtime.
 ***********************************************************************/
 
 #version 120
@@ -45,6 +46,12 @@ uniform sampler2DRect myceliumSampler;
 uniform vec2 myceliumGridOrigin;
 uniform float myceliumGridStep;
 uniform vec3 myceliumGlowColor;
+
+// Vegetation: see VegetationField.h / the matching GL3 shader for the full note.
+uniform int hasVegetation;
+uniform sampler2DRect vegetationSampler;
+uniform vec2 vegetationGridOrigin;
+uniform float vegetationGridStep;
 
 float hash(vec2 p)
 {
@@ -94,6 +101,34 @@ void main()
     vec3 growthColor = mix(lowGrowthColor, highGrowthColor, elevationNorm);
 
     vec4 color = vec4(mix(rockColor, growthColor, growthAmount), 1.0);
+
+    if (hasVegetation == 1)
+    {
+        vec2 vegUV = (texcoordfrag - vegetationGridOrigin) / vegetationGridStep;
+        vec4 veg = texture2DRect(vegetationSampler, vegUV);
+
+        float edgeJitter = (hash(texcoordfrag * 3.7) - 0.5) * 0.35;
+
+        if (veg.a > 0.75)
+        {
+            color.rgb = mix(color.rgb, vec3(0.0, 0.04, 0.16), 0.9);
+        }
+        else if (veg.a > 0.25)
+        {
+            color.rgb = mix(color.rgb, vec3(0.96, 0.97, 1.0), 0.9);
+        }
+        else
+        {
+            vec3 shrubColor = vec3(0.25, 0.85, 0.35);
+            vec3 fruitColor = vec3(0.95, 0.35, 0.55);
+            vec3 nutColor   = vec3(0.15, 0.55, 0.60);
+
+            float total = veg.r + veg.g + veg.b;
+            vec3 patchColor = (veg.r * shrubColor + veg.g * fruitColor + veg.b * nutColor) / max(total, 0.0001);
+            float coverage = clamp(total + edgeJitter, 0.0, 1.0);
+            color.rgb = mix(color.rgb, patchColor, coverage);
+        }
+    }
 
     if (hasMycelium == 1)
     {

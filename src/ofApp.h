@@ -31,6 +31,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "Games/SonicWaveController.h"
 #include "Games/PuckTracker.h"
 #include "Games/MyceliumNetwork.h"
+#include "Games/VegetationField.h"
 
 class ofApp : public ofBaseApp {
 
@@ -74,7 +75,11 @@ private:
 	// uniform) via setMyceliumNetwork(), same query-only-pointer pattern
 	// as PuckTracker.
 	MyceliumNetwork myceliumNetwork;
+	// ELF-style flora grid rendered as colored ground patches - see
+	// VegetationField.h. Shared with SandSurfaceRenderer the same way as
+	// myceliumNetwork above.
+	VegetationField vegetationField;
 
-	// Main window ROI 
+	// Main window ROI
 	ofRectangle mainWindowROI;
 };

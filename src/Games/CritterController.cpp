@@ -11,6 +11,9 @@ void CCritterController::setup(std::shared_ptr<KinectProjector> const& k, PuckTr
 	showHandDebug = false;
 	gradientFlipped = false;
 	critterSpawnCount = 5;
+	bodyColorRGB[0] = Critter::BODY_COLOR.r / 255.0f;
+	bodyColorRGB[1] = Critter::BODY_COLOR.g / 255.0f;
+	bodyColorRGB[2] = Critter::BODY_COLOR.b / 255.0f;
 }
 
 void CCritterController::setProjectorRes(ofVec2f & PR)
@@ -137,6 +140,9 @@ void CCritterController::drawGui()
 	else
 		ImGui::Text("Puck: not detected (tune detection in the Sonic Wave panel)");
 
+	if (ImGui::ColorEdit3("Body color", bodyColorRGB)) {
+		Critter::BODY_COLOR = ofColor(bodyColorRGB[0] * 255.0f, bodyColorRGB[1] * 255.0f, bodyColorRGB[2] * 255.0f);
+	}
 	ImGui::SliderFloat("Gravity", &Critter::GRAVITY, 0.0f, 0.3f);
 	ImGui::SliderFloat("Damping", &Critter::DAMPING, 0.5f, 0.99f);
 	ImGui::SliderFloat("Sleep speed", &Critter::SLEEP_SPEED, 0.0f, 0.5f);

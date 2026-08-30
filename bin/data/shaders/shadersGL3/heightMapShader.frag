@@ -29,6 +29,12 @@ lookup, since that ramp is the single most recognizable "generic AR
 sandbox" visual signature. heightColorMapSampler is left bound but
 unused below, kept only so the existing colormap-editing GUI machinery
 doesn't need to be torn out to keep this compiling.
+
+--- Vegetation layer: on top of that base, VegetationField.h's ELF-style
+flora grid is blended in as flat-colored patches (water/snow/three plant
+types), the same cellular, patchy-blob look documented in Murgatroyd et
+al.'s ELF AR sandbox paper and matched against a real photo of it - see
+vegetationSampler below and the blend logic near the end of main().
 ***********************************************************************/
 
 #version 150
@@ -53,6 +59,15 @@ uniform sampler2DRect myceliumSampler;
 uniform vec2 myceliumGridOrigin;
 uniform float myceliumGridStep;
 uniform vec3 myceliumGlowColor;
+
+// Vegetation: see VegetationField.h. vegetationSampler packs three plant
+// densities (RGB) plus a water/snow flag (A) per grid cell;
+// vegetationGridOrigin/Step convert texcoordfrag (kinect pixel space)
+// into a texel lookup into it, same convention as the mycelium sampler.
+uniform int hasVegetation;
+uniform sampler2DRect vegetationSampler;
+uniform vec2 vegetationGridOrigin;
+uniform float vegetationGridStep;
 
 float hash(vec2 p)
 {
@@ -111,6 +126,43 @@ void main()
     vec3 growthColor = mix(lowGrowthColor, highGrowthColor, elevationNorm);
 
     vec4 color = vec4(mix(rockColor, growthColor, growthAmount), 1.0);
+
+    if (hasVegetation == 1)
+    {
+        vec2 vegUV = (texcoordfrag - vegetationGridOrigin) / vegetationGridStep;
+        vec4 veg = texture(vegetationSampler, vegUV);
+
+        // A touch of per-pixel jitter on the patch edges so cell
+        // boundaries read as a frayed, organic edge instead of a hard
+        // pixel grid - the blocky, speckled look of the real ELF sandbox
+        // comes from exactly this kind of noise at cell boundaries.
+        float edgeJitter = (hash(texcoordfrag * 3.7) - 0.5) * 0.35;
+
+        if (veg.a > 0.75)
+        {
+            // Water - flat dark blue-black, per BDlocation::getCellColor.
+            color.rgb = mix(color.rgb, vec3(0.0, 0.04, 0.16), 0.9);
+        }
+        else if (veg.a > 0.25)
+        {
+            // Snow - flat white.
+            color.rgb = mix(color.rgb, vec3(0.96, 0.97, 1.0), 0.9);
+        }
+        else
+        {
+            // Bright green / reddish-pink / dark teal, matching the three
+            // predominant-plant-type colors described for the ELF Dynamic
+            // System (shrub/fruit/nut in BDlocation.getCellColor terms).
+            vec3 shrubColor = vec3(0.25, 0.85, 0.35);
+            vec3 fruitColor = vec3(0.95, 0.35, 0.55);
+            vec3 nutColor   = vec3(0.15, 0.55, 0.60);
+
+            float total = veg.r + veg.g + veg.b;
+            vec3 patchColor = (veg.r * shrubColor + veg.g * fruitColor + veg.b * nutColor) / max(total, 0.0001);
+            float coverage = clamp(total + edgeJitter, 0.0, 1.0);
+            color.rgb = mix(color.rgb, patchColor, coverage);
+        }
+    }
 
     if (hasMycelium == 1)
     {

@@ -68,4 +68,5 @@ private:
 	bool showHandDebug;
 	bool gradientFlipped;
 	int critterSpawnCount; // tunable in the GUI - how many addCritters() adds per click/keypress
+	float bodyColorRGB[3]; // 0..1 mirror of Critter::BODY_COLOR, kept in sync - ImGui::ColorEdit3 needs float components
 };

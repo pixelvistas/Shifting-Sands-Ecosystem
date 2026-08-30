@@ -102,6 +102,7 @@ public:
 	static float WANDER_STRENGTH;
 	static float WANDER_TURN_RATE; // max heading change per frame, radians
 	static float WANDER_SLOPE_FALLOFF; // higher = wander dies out faster as slope steepens
+	static ofColor BODY_COLOR; // default draw color - pale blue, reading as fauna per ELF's deer convention
 	static ofColor IN_RING_COLOR; // draw color while inside a sonic wave ring
 
 private:

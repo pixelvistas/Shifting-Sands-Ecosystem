@@ -10,6 +10,7 @@ float Critter::HERD_STRENGTH = 0.15f;
 float Critter::WANDER_STRENGTH = 0.03f;
 float Critter::WANDER_TURN_RATE = 0.3f;
 float Critter::WANDER_SLOPE_FALLOFF = 10.0f;
+ofColor Critter::BODY_COLOR = ofColor(150, 210, 255); // pale blue, per the ELF paper's "individual dots of pale blue represent deer"
 ofColor Critter::IN_RING_COLOR = ofColor(60, 170, 255); // glowing neon blue
 bool Critter::DrawFlipped = false;
 
@@ -178,7 +179,7 @@ void Critter::draw()
 		ofDisableBlendMode();
 		ofSetColor(IN_RING_COLOR);
 	} else {
-		ofSetColor(255);
+		ofSetColor(BODY_COLOR);
 	}
 
 	ofFill();

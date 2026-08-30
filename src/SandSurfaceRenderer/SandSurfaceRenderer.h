@@ -30,6 +30,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "ofMain.h"
 #include "../KinectProjector/KinectProjector.h"
 #include "../Games/MyceliumNetwork.h"
+#include "../Games/VegetationField.h"
 #include "ColorMap.h"
 
 /*
@@ -74,6 +75,9 @@ public:
     // if never set, the shader's mycelium sampler is simply never bound
     // and the glow blend contributes nothing.
     void setMyceliumNetwork(MyceliumNetwork* m) { myceliumNetwork = m; }
+    // Same query-only-pointer pattern as setMyceliumNetwork() above, for
+    // the ELF-style flora layer's density/water/snow texture.
+    void setVegetationField(VegetationField* v) { vegetationField = v; }
 
     // Main loop function
     void setup(bool sdisplayGui);
@@ -109,6 +113,7 @@ private:
     std::shared_ptr<KinectProjector> kinectProjector;
     std::shared_ptr<ofAppBaseWindow> projWindow;
     MyceliumNetwork* myceliumNetwork; // query-only, owned by ofApp - see setMyceliumNetwork()
+    VegetationField* vegetationField; // query-only, owned by ofApp - see setVegetationField()
     bool settingsLoaded;
     
     // Projector Resolution
