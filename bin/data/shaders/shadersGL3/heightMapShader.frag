@@ -21,17 +21,17 @@ You should have received a copy of the GNU General Public License along
 with the Magic Sand; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
---- Ecosystem fork: base color is now a procedural organic-growth look
-(informed by Ji & Wakefield's "Inhabitat", Leonardo 51:4, 2018 - lichen-
-like biomass that thickens and brightens toward ridgelines/peaks, dark
-and sparse in valleys) instead of the original 1D rainbow height-ramp
-lookup, since that ramp is the single most recognizable "generic AR
-sandbox" visual signature. heightColorMapSampler is left bound but
-unused below, kept only so the existing colormap-editing GUI machinery
-doesn't need to be torn out to keep this compiling.
+--- Ecosystem fork: base color is a flat, neutral "bare sand" tone - no
+procedural rock/lichen texture. That noise-driven look (and the rainbow
+height-ramp before it) never appeared in any reference material (the ELF
+photo, the ELF paper, the sound-sandbox/fluvial papers): ELF's own
+renderer is flat categorical color, nothing else, and this now matches
+that directly. heightColorMapSampler is left bound but unused below,
+kept only so the existing colormap-editing GUI machinery doesn't need to
+be torn out to keep this compiling.
 
---- Vegetation layer: on top of that base, VegetationField.h's ELF-style
-flora grid is blended in as flat-colored patches (water/snow/three plant
+--- Vegetation layer: VegetationField.h's ELF-style flora grid is blended
+over that flat base as flat-colored patches (water/snow/three plant
 types), the same cellular, patchy-blob look documented in Murgatroyd et
 al.'s ELF AR sandbox paper and matched against a real photo of it - see
 vegetationSampler below and the blend logic near the end of main().
@@ -48,8 +48,8 @@ uniform sampler2DRect heightColorMapSampler;
 uniform sampler2DRect pixelCornerElevationSampler; // Sampler for the half pixel texture
 uniform float contourLineFactor;
 uniform int drawContourLines;
-uniform float heightMapNumEntries; // depthfrag is in [0, heightMapNumEntries) texel space, not 0..1
-uniform float time;
+uniform float heightMapNumEntries; // depthfrag is in [0, heightMapNumEntries) texel space, not 0..1 - unused now that the base color no longer varies with elevation, left bound alongside heightColorMapSampler above
+uniform float time; // unused now that the base color no longer pulses, same reasoning
 
 // Mycelium: see MyceliumNetwork.h. myceliumSampler is a coarse grid
 // texture (networkPattern x revealedAccum); myceliumGridOrigin/Step
@@ -69,63 +69,19 @@ uniform sampler2DRect vegetationSampler;
 uniform vec2 vegetationGridOrigin;
 uniform float vegetationGridStep;
 
+// Still used below for the vegetation patch edge jitter (see hasVegetation).
 float hash(vec2 p)
 {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
 }
 
-float valueNoise(vec2 p)
-{
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    float a = hash(i);
-    float b = hash(i + vec2(1.0, 0.0));
-    float c = hash(i + vec2(0.0, 1.0));
-    float d = hash(i + vec2(1.0, 1.0));
-    vec2 u = f * f * (3.0 - 2.0 * f);
-    return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
-}
-
-float fbm(vec2 p)
-{
-    float value = 0.0;
-    float amplitude = 0.5;
-    for (int i = 0; i < 4; i++)
-    {
-        value += amplitude * valueNoise(p);
-        p *= 2.0;
-        amplitude *= 0.5;
-    }
-    return value;
-}
-
 void main()
 {
-    float elevationNorm = clamp(depthfrag / heightMapNumEntries, 0.0, 1.0);
-
-    // texcoordfrag is the kinect depth-image pixel coordinate (see the
-    // vertex shader), so this pattern stays locked to the physical sand
-    // rather than drifting with the screen/projector.
-    float growth = fbm(texcoordfrag * 0.06);
-
-    // Subtle breathing rather than a hard on/off flicker - "pulsating
-    // while it grows," per the reference this look is modeled on.
-    float pulse = 0.5 + 0.5 * sin(time * 0.4 + growth * 6.2831853);
-
-    // Growth patches are rarer and dimmer in low valleys, denser and
-    // brighter at ridgelines/peaks - elevation sets the *tendency*, noise
-    // sets the blotchy, irregular patch shapes, so it reads as organic
-    // biomass coverage rather than a smooth height-banded gradient.
-    float growthThreshold = mix(0.8, 0.15, elevationNorm);
-    float growthAmount = smoothstep(growthThreshold - 0.18, growthThreshold + 0.18, growth);
-    growthAmount *= mix(0.8, 1.0, pulse);
-
-    vec3 rockColor = mix(vec3(0.04, 0.04, 0.06), vec3(0.22, 0.19, 0.15), elevationNorm);
-    vec3 lowGrowthColor = vec3(0.04, 0.30, 0.16);
-    vec3 highGrowthColor = vec3(0.85, 0.95, 0.85);
-    vec3 growthColor = mix(lowGrowthColor, highGrowthColor, elevationNorm);
-
-    vec4 color = vec4(mix(rockColor, growthColor, growthAmount), 1.0);
+    // Flat bare-sand color - what shows through before any vegetation has
+    // grown on a cell, or permanently on any part of the mesh with
+    // vegetation disabled. Deliberately plain: ELF's own "nothing growing
+    // here yet" cells are just flat color too.
+    vec4 color = vec4(0.88, 0.85, 0.76, 1.0);
 
     if (hasVegetation == 1)
     {

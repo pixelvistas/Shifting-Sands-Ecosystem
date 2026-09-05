@@ -121,11 +121,10 @@ void ofApp::draw()
 	if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING)
 	{
 		// Ecosystem fork: topology is back, but SandSurfaceRenderer now
-		// renders an organic growth/lichen look with ELF-style vegetation
-		// patches blended on top (see heightMapShader.frag and
-		// VegetationField.h) instead of the original rainbow height ramp,
-		// per direction to move away from the generic-AR-sandbox visual
-		// signature.
+		// renders a flat bare-sand base with ELF-style vegetation patches
+		// blended on top (see heightMapShader.frag and VegetationField.h)
+		// instead of the original rainbow height ramp, per direction to
+		// move away from the generic-AR-sandbox visual signature.
 		sandSurfaceRenderer->drawMainWindow(x, y, w, h);
 		boidGameController.drawMainWindow(x, y, w, h);
 		critterController.drawMainWindow(x, y, w, h);

@@ -21,7 +21,7 @@ You should have received a copy of the GNU General Public License along
 with the Magic Sand; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
---- Ecosystem fork: same organic-growth base color and ELF-style
+--- Ecosystem fork: same flat bare-sand base color and ELF-style
 vegetation-patch blending as shadersGL3's version of this file - see that
 file's header note for the full rationale. Kept in sync so behavior
 doesn't depend on which renderer path ofIsGLProgrammableRenderer() picks
@@ -37,8 +37,8 @@ uniform sampler2DRect heightColorMapSampler;
 uniform sampler2DRect pixelCornerElevationSampler; // Sampler for the half pixel texture
 uniform float contourLineFactor;
 uniform int drawContourLines;
-uniform float heightMapNumEntries; // depthfrag is in [0, heightMapNumEntries) texel space, not 0..1
-uniform float time;
+uniform float heightMapNumEntries; // unused now that the base color no longer varies with elevation - see the GL3 shader's header note
+uniform float time; // unused now that the base color no longer pulses, same reasoning
 
 // Mycelium: see MyceliumNetwork.h / the matching GL3 shader for the full note.
 uniform int hasMycelium;
@@ -53,54 +53,16 @@ uniform sampler2DRect vegetationSampler;
 uniform vec2 vegetationGridOrigin;
 uniform float vegetationGridStep;
 
+// Still used below for the vegetation patch edge jitter (see hasVegetation).
 float hash(vec2 p)
 {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
 }
 
-float valueNoise(vec2 p)
-{
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    float a = hash(i);
-    float b = hash(i + vec2(1.0, 0.0));
-    float c = hash(i + vec2(0.0, 1.0));
-    float d = hash(i + vec2(1.0, 1.0));
-    vec2 u = f * f * (3.0 - 2.0 * f);
-    return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
-}
-
-float fbm(vec2 p)
-{
-    float value = 0.0;
-    float amplitude = 0.5;
-    for (int i = 0; i < 4; i++)
-    {
-        value += amplitude * valueNoise(p);
-        p *= 2.0;
-        amplitude *= 0.5;
-    }
-    return value;
-}
-
 void main()
 {
-    float elevationNorm = clamp(depthfrag / heightMapNumEntries, 0.0, 1.0);
-
-    float growth = fbm(texcoordfrag * 0.06);
-
-    float pulse = 0.5 + 0.5 * sin(time * 0.4 + growth * 6.2831853);
-
-    float growthThreshold = mix(0.8, 0.15, elevationNorm);
-    float growthAmount = smoothstep(growthThreshold - 0.18, growthThreshold + 0.18, growth);
-    growthAmount *= mix(0.8, 1.0, pulse);
-
-    vec3 rockColor = mix(vec3(0.04, 0.04, 0.06), vec3(0.22, 0.19, 0.15), elevationNorm);
-    vec3 lowGrowthColor = vec3(0.04, 0.30, 0.16);
-    vec3 highGrowthColor = vec3(0.85, 0.95, 0.85);
-    vec3 growthColor = mix(lowGrowthColor, highGrowthColor, elevationNorm);
-
-    vec4 color = vec4(mix(rockColor, growthColor, growthAmount), 1.0);
+    // Flat bare-sand color - see the GL3 shader's header note.
+    vec4 color = vec4(0.88, 0.85, 0.76, 1.0);
 
     if (hasVegetation == 1)
     {
