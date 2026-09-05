@@ -1,8 +1,18 @@
 /***********************************************************************
-CritterController.h - owns the Critter/Tangible/HandField population:
-spawning, the per-frame update, drawing into the projector and main
-windows, and a debug GUI for the parameters the physics depends on
-(GRADIENT_SIGN above all - see Critter.h).
+CritterController.h - the ELF population controller: owns both species
+(Critter = BDdeer, HumanAgent = BDagent), the per-tick update including
+spawn/death bookkeeping (BDenvironment.stepDeer()/stepAgents()'s
+newlist/it.remove() pattern), drawing into the projector and main
+windows, and a debug GUI for both species' economies.
+
+No HandField, Tangible, PuckTracker, or CSonicWaveController here anymore
+- those belonged to this fork's earlier slope-gravity critter, which had
+no ELF equivalent and has been retired (see Critter.h's header note).
+Deer and humans interact with the sand only through VegetationField
+(what's grown where, water/snow, grid size) exactly as BDenvironment's
+agents interact only with its BDlocation grid - not with a hand, a
+dragged prop, a physical puck, or a sonic ring, none of which exist in
+ELF.
 
 Deliberately not a CBoidGameController-style state machine (splash
 screen / countdown / scores): this is a persistent ecosystem layer, not
@@ -16,23 +26,17 @@ Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 
 #include "../KinectProjector/KinectProjector.h"
 #include "Critter.h"
-#include "Tangible.h"
-#include "HandField.h"
-#include "PuckTracker.h"
-#include "SonicWaveController.h"
+#include "HumanAgent.h"
+#include "VegetationField.h"
 
 class CCritterController
 {
 public:
-	// tracker is owned by ofApp and shared with CSonicWaveController, so
-	// both layers see one consistent puck rather than running detection
-	// twice with independently-tunable/potentially-disagreeing state.
-	// sonicWave is also owned by ofApp and queried (not owned) here, purely
-	// to tint critters that fall inside a sonic wave ring - see
-	// CSonicWaveController::isInsideAnyRing.
-	void setup(std::shared_ptr<KinectProjector> const& k, PuckTracker* tracker, CSonicWaveController* sonicWave);
+	// vegetationField is owned by ofApp and shared here (and with
+	// SandSurfaceRenderer) - same query-only-pointer pattern used
+	// elsewhere in this codebase (see PuckTracker's use by two layers).
+	void setup(std::shared_ptr<KinectProjector> const& k, VegetationField* vegetationField);
 	void setProjectorRes(ofVec2f & PR);
-	void setKinectRes(ofVec2f & KR);
 	void setKinectROI(ofRectangle & KROI);
 
 	void update();
@@ -40,33 +44,29 @@ public:
 	void drawProjectorWindow();
 	void drawGui();
 
-	void addCritters(int n);
-	void addTangible();
-	int getCritterSpawnCount() const { return critterSpawnCount; }
-
-	void mousePressed(int x, int y, int button);
-	void mouseDragged(int x, int y, int button);
-	void mouseReleased(int x, int y, int button);
+	void addDeer(int n);
+	void addHumans(int n);
+	int getDeerSpawnCount() const { return deerSpawnCount; }
+	int getHumanSpawnCount() const { return humanSpawnCount; }
 
 private:
-	ofPoint randomLocationInROI();
+	ofPoint gridToProjCoord(int gx, int gy) const;
+	int randomCol() const;
+	int randomRow() const;
 
 	std::shared_ptr<KinectProjector> kinectProjector;
+	VegetationField* vegetationField; // query-only, owned by ofApp - see setup()
 	ofRectangle kinectROI;
-	ofRectangle playArea; // so critters never reach the true edge
-	ofVec2f projRes, kinectRes;
+	ofVec2f projRes;
 
-	HandField handField;
-	PuckTracker* puckTracker;
-	CSonicWaveController* sonicWaveController;
-	std::vector<Critter> critters;
-	std::vector<Tangible> tangibles;
+	std::vector<Critter> deer;
+	std::vector<HumanAgent> humans;
 
 	ofFbo fbo;
 
-	int draggedTangible; // index into tangibles, -1 if not dragging
-	bool showHandDebug;
-	bool gradientFlipped;
-	int critterSpawnCount; // tunable in the GUI - how many addCritters() adds per click/keypress
-	float bodyColorRGB[3]; // 0..1 mirror of Critter::BODY_COLOR, kept in sync - ImGui::ColorEdit3 needs float components
+	int deerSpawnCount;    // tunable in the GUI - how many addDeer() adds per click
+	int humanSpawnCount;   // tunable in the GUI - how many addHumans() adds per click
+	int maxDeerPopulation;  // adapted from ELF's literal MAXDEERS=1000, which assumes no per-pair
+	int maxHumanPopulation; // collision/rendering cost - see drawGui()'s note
+	float deerColorRGB[3];   // 0..1 mirror of Critter::BODY_COLOR, kept in sync for ImGui::ColorEdit3
 };

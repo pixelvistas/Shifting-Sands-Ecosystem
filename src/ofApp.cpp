@@ -60,11 +60,6 @@ void ofApp::setup() {
 
 	puckTracker.setup(kinectProjector);
 
-	critterController.setup(kinectProjector, &puckTracker, &sonicWaveController);
-	critterController.setProjectorRes(projRes);
-	critterController.setKinectRes(kinectRes);
-	critterController.setKinectROI(kinectROI);
-
 	sonicWaveController.setup(kinectProjector, &puckTracker);
 	sonicWaveController.setProjectorRes(projRes);
 	sonicWaveController.setKinectRes(kinectRes);
@@ -74,9 +69,17 @@ void ofApp::setup() {
 	myceliumNetwork.setKinectROI(kinectROI);
 	sandSurfaceRenderer->setMyceliumNetwork(&myceliumNetwork);
 
+	// vegetationField must be ready (its grid allocated) before
+	// critterController's setKinectROI() below, since that's what
+	// triggers the population's first spawn - see CCritterController::
+	// setKinectROI()/addDeer()/addHumans().
 	vegetationField.setup(kinectProjector);
 	vegetationField.setKinectROI(kinectROI);
 	sandSurfaceRenderer->setVegetationField(&vegetationField);
+
+	critterController.setup(kinectProjector, &vegetationField);
+	critterController.setProjectorRes(projRes);
+	critterController.setKinectROI(kinectROI);
 
 	imgui.setup();
 
@@ -94,10 +97,11 @@ void ofApp::update() {
 		ofRectangle kinectROI = kinectProjector->getKinectROI();
 		mapGameController.setKinectROI(kinectROI);
 		boidGameController.setKinectROI(kinectROI);
-		critterController.setKinectROI(kinectROI);
 		sonicWaveController.setKinectROI(kinectROI);
 		myceliumNetwork.setKinectROI(kinectROI);
+		// vegetationField before critterController - see the setup() note.
 		vegetationField.setKinectROI(kinectROI);
+		critterController.setKinectROI(kinectROI);
 	}
 
 	puckTracker.update();
@@ -259,7 +263,7 @@ void ofApp::keyPressed(int key)
 	{
 		if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING)
 		{
-			critterController.addCritters(critterController.getCritterSpawnCount());
+			critterController.addDeer(critterController.getDeerSpawnCount());
 		}
 	}
 	else if (key == 'w')
@@ -281,11 +285,6 @@ void ofApp::mouseDragged(int x, int y, int button) {
 
 	// We assume that we only use this during ROI annotation
 	kinectProjector->mouseDragged(x - mainWindowROI.x, y - mainWindowROI.y, button);
-
-	if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING)
-	{
-		critterController.mouseDragged(x - mainWindowROI.x, y - mainWindowROI.y, button);
-	}
 }
 
 void ofApp::mousePressed(int x, int y, int button)
@@ -293,22 +292,12 @@ void ofApp::mousePressed(int x, int y, int button)
 	if (mainWindowROI.inside((float)x, (float)y))
 	{
 		kinectProjector->mousePressed(x-mainWindowROI.x, y-mainWindowROI.y, button);
-
-		if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING)
-		{
-			critterController.mousePressed(x - mainWindowROI.x, y - mainWindowROI.y, button);
-		}
 	}
 }
 
 void ofApp::mouseReleased(int x, int y, int button) {
 	// We assume that we only use this during ROI annotation
 	kinectProjector->mouseReleased(x - mainWindowROI.x, y - mainWindowROI.y, button);
-
-	if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING)
-	{
-		critterController.mouseReleased(x - mainWindowROI.x, y - mainWindowROI.y, button);
-	}
 }
 
 void ofApp::mouseEntered(int x, int y) {

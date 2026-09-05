@@ -76,6 +76,42 @@ public:
 	ofVec2f getGridOrigin() const { return ofVec2f(kinectROI.x, kinectROI.y); }
 	float getGridStep() const { return (float)step; }
 
+	// Agent interaction: Critter ("deer") and HumanAgent query/consume
+	// vegetation at their own location, mirroring BDdeer/BDagent reading
+	// and zeroing cells[myX][myY]'s shrubs/fruits/nuts directly in
+	// BDenvironment.stepDeer()/stepAgents(). kx/ky are kinect pixel
+	// coordinates, same space as the rest of this class.
+
+	// Deer eat shrub if present, else fruit, else nothing - matches
+	// stepDeer()'s "if (theseshrubs>0) ... else if (thesefruit>0) ..."
+	// order. Returns food gained (0 if neither was present) and zeros
+	// whichever channel was eaten at that cell.
+	float eatShrubOrFruit(float kx, float ky);
+
+	// Humans try their less-taken type first (preferNut selects which),
+	// falling back to the other - matches stepAgents()'s
+	// fruittaken<nutstaken/nutstaken<fruittaken preference chain exactly
+	// (that four-branch chain collapses to this try-one-then-the-other
+	// shape since its two preference branches are mutually exclusive and
+	// its two fallback branches only re-check the same two channels).
+	// Returns food gained (0 if neither channel had any density) and sets
+	// ateNut to say which channel was actually eaten, so the caller knows
+	// whether to credit fruittaken or nutstaken.
+	float eatFruitOrNut(float kx, float ky, bool preferNut, bool & ateNut);
+
+	// For agent movement/fishing checks - matches BDlocation.getWater()/getSnow().
+	bool isWaterAt(float kx, float ky) const;
+	bool isSnowAt(float kx, float ky) const;
+
+	// Grid dimensions, for Critter/HumanAgent's pickX()/pickY() equivalents
+	// and to convert their own grid coordinates back to kinect pixel space.
+	int getCols() const { return cols; }
+	int getRows() const { return rows; }
+
+	// Scales a full (1.0) density's worth of eaten plant into food -
+	// matches ELF's counts being added to food directly on a 0..255 scale.
+	static float FOOD_PER_FULL_CELL;
+
 	// Tunable in the debug GUI.
 	static float TEMPERATURE;            // mm, shifts both water and snow lines together
 	static float WATER_LEVEL_BASE;       // mm, elevation below which a cell is water at TEMPERATURE == 0
@@ -92,6 +128,10 @@ public:
 	static float NUT_GROWTH_RATE;
 
 private:
+	// Shared by the eat*() helpers above - converts a kinect pixel
+	// coordinate into grid indices, false if outside the grid.
+	bool cellIndexAt(float kx, float ky, int & gx, int & gy) const;
+
 	std::shared_ptr<KinectProjector> kinectProjector;
 	ofRectangle kinectROI;
 	int step, cols, rows;

@@ -1,191 +1,109 @@
 #include "Critter.h"
 
-float Critter::GRAVITY = 0.05f;
-float Critter::DAMPING = 0.92f;
-float Critter::SLEEP_SPEED = 0.05f;
-int Critter::SLEEP_FRAME_THRESHOLD = 15;
-float Critter::GRADIENT_SIGN = 1.0f;
-float Critter::HAND_PUSH_STRENGTH = 2.0f;
-float Critter::HERD_STRENGTH = 0.15f;
-float Critter::WANDER_STRENGTH = 0.03f;
-float Critter::WANDER_TURN_RATE = 0.3f;
-float Critter::WANDER_SLOPE_FALLOFF = 10.0f;
-ofColor Critter::BODY_COLOR = ofColor(0, 255, 255); // cyan, matching BDdeer.LIVE exactly (the paper's prose loosely calls this "pale blue")
-ofColor Critter::IN_RING_COLOR = ofColor(60, 170, 255); // glowing neon blue
-bool Critter::DrawFlipped = false;
+float Critter::START_FOOD = 50.0f;
+float Critter::MAX_FOOD = 255.0f;
+float Critter::FOOD_DRAIN_PER_TICK = 1.0f;
+float Critter::LIFE_OF_CORPSE = 500.0f;
+float Critter::SPAWN_CHANCE_PER_TICK = 1.0f;
+ofColor Critter::BODY_COLOR = ofColor(0, 255, 255);   // cyan, matching BDdeer.LIVE
+ofColor Critter::DEAD_COLOR = ofColor(64, 64, 64);    // matching java.awt.Color.DARK_GRAY
+float Critter::DOT_SIZE = 8.0f;
 
-Critter::Critter(std::shared_ptr<KinectProjector> const& k, ofPoint slocation, ofRectangle sborders)
+Critter::Critter(int startGX, int startGY)
 {
-	kinectProjector = k;
-	location = slocation;
-	borders = sborders;
-	velocity = ofVec2f(0);
-	acceleration = ofVec2f(0);
-	angle = ofRandom(360);
-	wanderAngle = ofRandom(TWO_PI);
-	asleep = false;
-	sleepFrames = 0;
-	inRing = false;
+	gx = startGX;
+	gy = startGY;
+	destGX = destGY = 0;
+	hasDestination = false;
+	food = START_FOOD;
+	dead = false;
+	deadTimer = 0.0f;
+	pendingSpawn = false;
 }
 
-void Critter::setup()
+ofPoint Critter::cellCenterKinectCoord(int cellGX, int cellGY, VegetationField & vegetationField)
 {
-	radius = ofRandom(10.0f, 20.0f); // 5x the original insect-sized 2-4
-	mass = ofRandom(0.5f, 2.0f);
+	ofVec2f origin = vegetationField.getGridOrigin();
+	float step = vegetationField.getGridStep();
+	return ofPoint(origin.x + cellGX * step + step / 2.0f, origin.y + cellGY * step + step / 2.0f);
 }
 
-void Critter::clampToBorders()
+void Critter::pickNewDestination(int cols, int rows)
 {
-	if (location.x < borders.getLeft())   { location.x = borders.getLeft();   velocity.x = 0; }
-	if (location.x > borders.getRight())  { location.x = borders.getRight();  velocity.x = 0; }
-	if (location.y < borders.getTop())    { location.y = borders.getTop();    velocity.y = 0; }
-	if (location.y > borders.getBottom()) { location.y = borders.getBottom(); velocity.y = 0; }
+	destGX = (int)ofRandom((float)cols);
+	destGY = (int)ofRandom((float)rows);
+	hasDestination = true;
 }
 
-void Critter::update(HandField & handField, std::vector<Tangible> & tangibles,
-	bool puckPresent, const ofPoint & puckLocation, float puckRadius, bool insideRing)
+void Critter::stepMovement(VegetationField & vegetationField)
 {
-	inRing = insideRing;
+	int cols = vegetationField.getCols();
+	int rows = vegetationField.getRows();
+	if (cols <= 0 || rows <= 0)
+		return;
 
-	// Slope-tangential gravity: mass-independent by design, so mass is free
-	// to mean something else - see the header note on the gravity/mass split.
-	ofVec2f grad = kinectProjector->gradientAtKinectCoord(location.x, location.y);
-	acceleration = grad * GRAVITY * GRADIENT_SIGN;
+	if (hasDestination) {
+		int targetGX = (gx > destGX) ? gx - 1 : (gx < destGX ? gx + 1 : gx);
+		int targetGY = (gy > destGY) ? gy - 1 : (gy < destGY ? gy + 1 : gy);
 
-	// Smooth wander: heading drifts slowly rather than resampling a random
-	// direction every frame, and fades out as the real slope steepens, so
-	// flat ground gets exploration while a real pit or hillside still lets
-	// gravity win and trap the critter.
-	wanderAngle += ofRandom(-WANDER_TURN_RATE, WANDER_TURN_RATE);
-	float wanderScale = 1.0f / (1.0f + grad.length() * WANDER_SLOPE_FALLOFF);
-	acceleration += ofVec2f(cos(wanderAngle), sin(wanderAngle)) * WANDER_STRENGTH * wanderScale;
+		ofPoint targetKinect = cellCenterKinectCoord(targetGX, targetGY, vegetationField);
+		ofPoint destKinect = cellCenterKinectCoord(destGX, destGY, vegetationField);
+		bool targetBlocked = vegetationField.isWaterAt(targetKinect.x, targetKinect.y) || vegetationField.isSnowAt(targetKinect.x, targetKinect.y);
+		bool destBlocked = vegetationField.isWaterAt(destKinect.x, destKinect.y) || vegetationField.isSnowAt(destKinect.x, destKinect.y);
 
-	// A moving hand guides nearby critters along with it (herdForce already
-	// saturates to full strength right at the hand's own footprint, so this
-	// covers direct contact too). Fed into acceleration rather than a raw
-	// impulse so it goes through the same damped integration as gravity and
-	// wander below - applying it as a fresh full-strength impulse every
-	// single frame a critter stayed in range had nothing to damp between
-	// additions and read as critters flinging themselves away. Only once
-	// the hand is genuinely held still (isHandStill(), not just "velocity
-	// isn't exactly zero") does direct contact fall back to the old hard
-	// push-out, so a cupped, held hand still traps.
-	if (!handField.isHandStill()) {
-		ofVec2f herd = handField.herdForce(location.x, location.y);
-		if (herd.lengthSquared() > 0)
-			acceleration += herd * HERD_STRENGTH;
-	} else if (handField.isInHand(location.x, location.y)) {
-		ofVec2f push = handField.pushDirection(location.x, location.y);
-		if (push.lengthSquared() > 0)
-			applyImpulse(push.getNormalized() * HAND_PUSH_STRENGTH);
-	}
-
-	for (auto & t : tangibles) {
-		ofVec2f delta = location - t.getLocation();
-		float dist = delta.length();
-		float minDist = radius + t.getRadius();
-		if (dist > 0 && dist < minDist) {
-			ofVec2f normal = delta / dist;
-			float overlap = minDist - dist;
-			float totalMass = mass + t.getMass();
-
-			// De-penetration split by inverse mass: the lighter body (almost
-			// always the critter) gives up most of the overlap.
-			location += normal * overlap * (t.getMass() / totalMass);
-
-			// Standard unequal-mass collision impulse along the contact normal.
-			ofVec2f relativeVelocity = velocity - t.getVelocity();
-			float vAlongNormal = relativeVelocity.dot(normal);
-			if (vAlongNormal < 0) {
-				const float restitution = 0.3f;
-				float invMassSum = 1.0f / mass + 1.0f / t.getMass();
-				float j = -(1.0f + restitution) * vAlongNormal / invMassSum;
-				ofVec2f impulse = normal * j;
-				applyImpulse(impulse);
-				t.applyImpulse(-impulse);
-			}
+		// stepDeer(): moves if EITHER the immediate step or the final
+		// destination is clear - a permissive OR, not "both must be clear."
+		if (!targetBlocked || !destBlocked) {
+			gx = targetGX;
+			gy = targetGY;
+		} else {
+			pickNewDestination(cols, rows);
 		}
-	}
-
-	if (puckPresent) {
-		ofVec2f delta = location - puckLocation;
-		float dist = delta.length();
-		float minDist = radius + puckRadius;
-		if (dist > 0 && dist < minDist) {
-			ofVec2f normal = delta / dist;
-
-			// The puck's position is sensed, not simulated - it doesn't
-			// move in response to critters, so unlike the Tangible loop
-			// above there's no reciprocal impulse and the critter absorbs
-			// all of the de-penetration itself.
-			location += normal * (minDist - dist);
-
-			// Same restitution formula as the Tangible case in the limit
-			// of infinite obstacle mass: reflect the velocity component
-			// along the contact normal rather than computing an impulse/mass
-			// split that would converge to this anyway.
-			float vAlongNormal = velocity.dot(normal);
-			if (vAlongNormal < 0) {
-				const float restitution = 0.3f;
-				velocity -= normal * ((1.0f + restitution) * vAlongNormal);
-			}
-		}
-	}
-
-	// Always integrate - wander guarantees flat ground never truly goes
-	// still, and damping is what keeps a real pit from oscillating, so
-	// there's no need to hard-freeze movement the way a "sleep" gate would.
-	velocity += acceleration;
-	velocity *= DAMPING;
-	location += velocity;
-
-	if (velocity.length() < SLEEP_SPEED) {
-		sleepFrames++;
-		asleep = sleepFrames > SLEEP_FRAME_THRESHOLD;
 	} else {
-		sleepFrames = 0;
-		asleep = false;
+		pickNewDestination(cols, rows);
 	}
 
-	clampToBorders();
-
-	if (velocity.lengthSquared() > 0.0001f)
-		angle = ofRadToDeg(atan2(velocity.y, velocity.x));
-
-	projectorCoord = kinectProjector->kinectCoordToProjCoord(location.x, location.y);
+	if (gx == destGX && gy == destGY)
+		pickNewDestination(cols, rows);
 }
 
-void Critter::draw()
+void Critter::update(VegetationField & vegetationField)
 {
-	ofPushMatrix();
+	if (dead) {
+		// stepDeer()'s dead branch: only the removal timer advances.
+		deadTimer += 1.0f;
+		return;
+	}
+
+	stepMovement(vegetationField);
+
+	// Eat shrub-or-fruit at the current cell - matches stepDeer()'s
+	// "if (food < MAXFOOD) { eat }" guard.
+	if (food < MAX_FOOD) {
+		ofPoint here = cellCenterKinectCoord(gx, gy, vegetationField);
+		float gained = vegetationField.eatShrubOrFruit(here.x, here.y);
+		food = std::min(MAX_FOOD, food + gained);
+	}
+
+	// Spawn - matches stepDeer()'s "if (food==MAXFOOD) roll DEERSPAWNCHANCE".
+	// Population cap/spawn placement is the controller's job.
+	if (food >= MAX_FOOD && ofRandom(100.0f) < SPAWN_CHANCE_PER_TICK)
+		pendingSpawn = true;
+
+	food -= FOOD_DRAIN_PER_TICK;
+	if (food <= 0.0f) {
+		food = 0.0f;
+		dead = true;
+	}
+}
+
+void Critter::draw(ofVec2f const& projCoord) const
+{
 	ofPushStyle();
-	ofTranslate(projectorCoord);
-	if (DrawFlipped)
-		ofRotate(180 + angle);
-	else
-		ofRotate(angle);
-
-	float len = radius * 2.0f;
-	float wid = radius * 1.2f;
-
-	if (inRing) {
-		// Cheap glow halo behind the body, same additive-blend trick the
-		// sonic ring itself uses (see SonicWaveController::drawRing).
-		ofEnableBlendMode(OF_BLENDMODE_ADD);
-		for (int pass = 3; pass >= 1; pass--) {
-			ofSetColor(IN_RING_COLOR, 60);
-			ofDrawCircle(0, 0, radius * (1.0f + pass * 0.5f));
-		}
-		ofDisableBlendMode();
-		ofSetColor(IN_RING_COLOR);
-	} else {
-		ofSetColor(BODY_COLOR);
-	}
-
+	ofSetColor(dead ? DEAD_COLOR : BODY_COLOR);
 	ofFill();
-	ofDrawTriangle(len * 0.6f, 0, -len * 0.4f, -wid * 0.5f, -len * 0.4f, wid * 0.5f);
-	ofNoFill();
-
+	// Flat square, no heading indicator - matches BDframe's
+	// fillRect(x*CELLWIDTH, y*CELLHEIGHT, CELLWIDTH, CELLHEIGHT).
+	ofDrawRectangle(projCoord.x - DOT_SIZE / 2.0f, projCoord.y - DOT_SIZE / 2.0f, DOT_SIZE, DOT_SIZE);
 	ofPopStyle();
-	ofPopMatrix();
 }

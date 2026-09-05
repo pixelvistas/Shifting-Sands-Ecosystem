@@ -252,6 +252,7 @@
     <ClCompile Include="src\Games\PuckTracker.cpp" />
     <ClCompile Include="src\Games\MyceliumNetwork.cpp" />
     <ClCompile Include="src\Games\VegetationField.cpp" />
+    <ClCompile Include="src\Games\HumanAgent.cpp" />
     <ClCompile Include="src\Games\ReferenceMapHandler.cpp" />
     <ClCompile Include="src\Games\SandboxScoreTracker.cpp" />
     <ClCompile Include="src\Games\SonicEngine.cpp" />
@@ -323,6 +324,7 @@
     <ClInclude Include="src\Games\PuckTracker.h" />
     <ClInclude Include="src\Games\MyceliumNetwork.h" />
     <ClInclude Include="src\Games\VegetationField.h" />
+    <ClInclude Include="src\Games\HumanAgent.h" />
     <ClInclude Include="src\Games\ReferenceMapHandler.h" />
     <ClInclude Include="src\Games\SandboxScoreTracker.h" />
     <ClInclude Include="src\Games\SonicEngine.h" />

@@ -1,58 +1,54 @@
 /***********************************************************************
-Critter.h - insect-sized agent obeying slope-tangential gravity rather
-than Reynolds steering. Forked from Vehicle (vehicle.h): keeps the
-location/velocity/acceleration shape, the ofApp-side spawn/ROI pattern,
-and the gradientAtKinectCoord()/elevationAtKinectCoord() queries, but
-drops the desired-velocity/maxSpeed steering machinery entirely - that
-architecture exists to hold speed constant regardless of terrain, which
-is the opposite of what a rolling body needs.
+Critter.h - ELF's deer (BDdeer/BDenvironment.stepDeer()), ported directly
+rather than adapted onto this fork's earlier slope-gravity/hand-interaction
+creature. That earlier version (forked from vehicle.h's boid steering, its
+own thing predating this ELF comparison) has been removed entirely -
+gravity, wander, HandField interaction, Tangible/puck collision, and the
+sonic-ring color tint are all gone, because none of that exists in ELF.
+The plan is to recreate ELF's actual structure first; any of that earlier
+behavior can come back later as a deliberate addition, not as inherited
+baggage.
 
-Physics: a = GRAVITY * gradientAtKinectCoord(location), mass-independent
-(free acceleration downhill, deceleration uphill from one line). Mass
-only governs how hard a hand or a Tangible has to push to move a Critter.
-Damping is what keeps a pit a trap rather than a critter oscillating in
-a basin forever. GRADIENT_SIGN exists because the sign of
-gradientAtKinectCoord relative to true "downhill" depends on Kinect
-mount and calibration and is meant to be verified empirically (spawn
-~20 critters on a slope and watch which way they go), not derived from
-the transform chain.
+Movement is ELF's grid-stepping-toward-a-random-destination, not
+continuous physics: a deer holds an integer grid cell (gx, gy) into the
+same per-kinect-pixel grid VegetationField uses, picks a random
+destination cell, and each update() steps at most one cell closer to it
+along each axis independently - see stepMovement(), a direct port of
+stepDeer()'s movement block including its permissive OR check (move if
+EITHER the immediate step OR the final destination is clear of snow/
+water, not requiring both). One deviation: ELF uses "destX > 0" as its
+own "no destination yet" sentinel (a minor quirk, since a legitimately
+picked destX of exactly 0 gets misread the same way) - this uses an
+explicit hasDestination flag instead, which changes nothing about the
+visible walk-to-a-random-point-and-repick behavior. All water/snow/
+grid-size queries go through VegetationField, so this class needs no
+KinectProjector reference of its own at all.
 
-A small wander force is added on top of gravity, smoothly turning via a
-persistent per-critter heading rather than resampling a random direction
-every frame (that resampling is exactly what produced a "spinning in
-place" artifact at true peaks/valleys, where the real gradient is near
-zero and sensor noise dominated the facing angle instead). Wander is
-scaled down by local slope steepness, so it dominates on flat ground
-(critters roam and actually encounter the terrain and the Tangible
-instead of freezing at spawn) but fades out on a real slope or pit wall,
-where gravity should win and trapping should still hold.
+Lifecycle is BDdeer's food economy: eats shrub-or-fruit at its own cell
+(VegetationField::eatShrubOrFruit(), same preference order as
+stepDeer()), drains food by a flat amount every update() call, dies at 0
+and freezes in place as a dark corpse for LIFE_OF_CORPSE ticks before the
+controller removes it, and has a flat percent chance per tick to request
+a spawn while at max food. These constants (START_FOOD, MAX_FOOD,
+FOOD_DRAIN_PER_TICK, LIFE_OF_CORPSE, SPAWN_CHANCE_PER_TICK) are ELF's own
+literal magnitudes: one update() call is being treated as one ELF tick,
+so unlike the elevation bands (a genuine unit mismatch that needed
+rescaling) there's nothing to convert here, only a tick-rate difference
+(this runs once per rendered frame; ELF's ran once per processed Kinect
+frame) that's left as an acknowledged, GUI-tunable approximation.
 
-The physical puck (PuckTracker) is treated as a solid obstacle, not
-terrain: it collides like a Tangible (see update()'s puck params) rather
-than being climbable via gravity/wander. The Kinect genuinely sees it as
-raised sand, so gradientAtKinectCoord() still reports a bump there, but
-without a hard collision boundary a critter could wander onto its low-
-slope top and get stuck the same way it would in a shallow pit - the
-puck is a recognized object, not scenery, so it needs to physically block
-critters rather than merely being sloped terrain they happen to roll off
-of most of the time.
+Drawn as a small flat square with no heading indicator, matching
+BDframe's fillRect(x*CELLWIDTH, y*CELLHEIGHT, CELLWIDTH, CELLHEIGHT) -
+color is BODY_COLOR (cyan, matching BDdeer.LIVE) while alive, DEAD_COLOR
+(matching BDdeer.DEAD = Color.DARK_GRAY) once dead. draw() takes the
+already-computed projector coordinate rather than holding a
+KinectProjector itself - the controller computes it from getGX()/getGY()
+the same way for both Critter and HumanAgent.
 
-A critter tints from white to IN_RING_COLOR while its location falls
-inside a sonic wave ring (see CSonicWaveController::isInsideAnyRing),
-reverting to white the moment it crosses back out - purely a draw-time
-color choice driven by a bool the controller queries and passes into
-update() each frame, not something Critter tracks or owns any ring state
-for itself.
-
-Hand interaction is motion-aware, not just contact-aware: while the hand
-is moving, nearby critters get carried along in its direction of travel
-(HandField::herdForce - "guide"), which also covers direct contact since
-the field saturates to full strength right at the hand's own footprint.
-Only once the hand holds still does direct contact fall back to the old
-hard push-out (HandField::pushDirection), so a cupped, held hand still
-traps rather than letting critters drift right through it. This is what
-keeps ordinary sculpting - which is mostly hand motion - from reading as
-the critters fleeing outward the moment your hand nears the sand.
+The controller (not Critter) owns the population vector and is
+responsible for collecting consumeSpawnRequest() results into new
+Critters and erasing ones where isDeadForRemoval() is true, mirroring
+BDenvironment.stepDeer()'s newdeerlist/it.remove() pattern.
 
 Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 ***********************************************************************/
@@ -60,72 +56,49 @@ Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 #pragma once
 #include "ofMain.h"
 
-#include "../KinectProjector/KinectProjector.h"
-#include "HandField.h"
-#include "Tangible.h"
+#include "VegetationField.h"
 
 class Critter {
 public:
-	Critter(std::shared_ptr<KinectProjector> const& k, ofPoint slocation, ofRectangle sborders);
+	Critter(int startGX, int startGY);
 
-	void setup();
-	// puckPresent/puckLocation/puckRadius describe the real, physical puck
-	// (see PuckTracker) as a solid, immovable obstacle in kinect-pixel
-	// space - separate from the simulated tangibles vector, since the
-	// puck's position is ground truth from sensing, not physics. Defaults
-	// to "no puck" so existing call sites don't need to change.
-	void update(HandField & handField, std::vector<Tangible> & tangibles,
-		bool puckPresent = false, const ofPoint & puckLocation = ofPoint(), float puckRadius = 0.0f,
-		bool insideRing = false);
-	void draw();
+	void update(VegetationField & vegetationField);
+	void draw(ofVec2f const& projCoord) const;
 
-	const ofPoint & getLocation() const { return location; }
-	const ofVec2f & getVelocity() const { return velocity; }
-	float getMass() const { return mass; }
-	float getRadius() const { return radius; }
-	// Reporting only - a critter below SLEEP_SPEED for a while. Does not
-	// gate movement; wander and real forces are always integrated.
-	bool isAsleep() const { return asleep; }
+	int getGX() const { return gx; }
+	int getGY() const { return gy; }
+	bool isDead() const { return dead; }
+	// Matches BDdeer.makeDead() - used by a successful HumanAgent hunt.
+	void makeDead() { dead = true; food = 0.0f; }
 
-	void applyImpulse(const ofVec2f & impulse) { velocity += impulse / mass; asleep = false; sleepFrames = 0; }
+	// Lifecycle - see the header note. The controller polls these after
+	// update() to do the vector bookkeeping ELF does with
+	// newdeerlist/it.remove() in BDenvironment.stepDeer().
+	bool isDeadForRemoval() const { return dead && deadTimer > LIFE_OF_CORPSE; }
+	bool consumeSpawnRequest() { bool s = pendingSpawn; pendingSpawn = false; return s; }
 
-	static void setDrawFlipped(bool df) { DrawFlipped = df; }
-
-	// Tunable in the controller's debug GUI - see the tuning-order note above.
-	static float GRAVITY;
-	static float DAMPING;
-	static float SLEEP_SPEED;
-	static int SLEEP_FRAME_THRESHOLD;
-	static float GRADIENT_SIGN; // +1.0 or -1.0, flip while watching critters on a slope
-	static float HAND_PUSH_STRENGTH; // hard push-out when a still hand sits directly on a critter
-	static float HERD_STRENGTH; // carried along by a moving hand's direction of travel
-	static float WANDER_STRENGTH;
-	static float WANDER_TURN_RATE; // max heading change per frame, radians
-	static float WANDER_SLOPE_FALLOFF; // higher = wander dies out faster as slope steepens
-	static ofColor BODY_COLOR; // default draw color - pale blue, reading as fauna per ELF's deer convention
-	static ofColor IN_RING_COLOR; // draw color while inside a sonic wave ring
+	// One update() call == one ELF tick - see the header note on why
+	// these are literal ELF magnitudes, not rescaled.
+	static float START_FOOD;
+	static float MAX_FOOD;
+	static float FOOD_DRAIN_PER_TICK;
+	static float LIFE_OF_CORPSE;          // ticks a corpse lingers before the controller removes it
+	static float SPAWN_CHANCE_PER_TICK;   // percent chance per tick to request a spawn while at MAX_FOOD
+	static ofColor BODY_COLOR;            // cyan, matching BDdeer.LIVE
+	static ofColor DEAD_COLOR;            // matching BDdeer.DEAD = Color.DARK_GRAY
+	static float DOT_SIZE;                // projector pixels - visual only, ELF's literal 4px doesn't translate across projector resolutions
 
 private:
-	void clampToBorders();
+	void stepMovement(VegetationField & vegetationField);
+	void pickNewDestination(int cols, int rows);
+	static ofPoint cellCenterKinectCoord(int cellGX, int cellGY, VegetationField & vegetationField);
 
-	std::shared_ptr<KinectProjector> kinectProjector;
+	int gx, gy;             // ELF's myX/myY
+	int destGX, destGY;     // ELF's destX/destY
+	bool hasDestination;    // see header note replacing ELF's destX>0 sentinel
 
-	ofPoint location;
-	ofVec2f velocity;
-	ofVec2f acceleration;
-	ofVec2f projectorCoord;
-	float angle;
-
-	float mass;
-	float radius;
-
-	float wanderAngle;
-	bool inRing;
-
-	bool asleep;
-	int sleepFrames;
-
-	ofRectangle borders;
-
-	static bool DrawFlipped;
+	float food;
+	bool dead;
+	float deadTimer;
+	bool pendingSpawn;
 };

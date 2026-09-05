@@ -13,6 +13,7 @@ float VegetationField::NUT_MAX_BELOW_SNOW = 11.0f;
 float VegetationField::SHRUB_GROWTH_RATE = 0.2f;
 float VegetationField::FRUIT_GROWTH_RATE = 0.6f;
 float VegetationField::NUT_GROWTH_RATE = 0.4f;
+float VegetationField::FOOD_PER_FULL_CELL = 255.0f;
 
 namespace {
 	// One cell per kinect pixel - see the header note on why this doesn't
@@ -111,6 +112,77 @@ void VegetationField::update()
 	// lookup exact rather than blurring across the winner-take-all color
 	// boundaries computed there.
 	combinedTex.setTextureMinMagFilter(GL_NEAREST, GL_NEAREST);
+}
+
+bool VegetationField::cellIndexAt(float kx, float ky, int & gx, int & gy) const
+{
+	if (!gridReady)
+		return false;
+	gx = (int)((kx - kinectROI.x) / step);
+	gy = (int)((ky - kinectROI.y) / step);
+	return gx >= 0 && gx < cols && gy >= 0 && gy < rows;
+}
+
+float VegetationField::eatShrubOrFruit(float kx, float ky)
+{
+	int gx, gy;
+	if (!cellIndexAt(kx, ky, gx, gy))
+		return 0.0f;
+
+	float & shrub = shrubDensity.at<float>(gy, gx);
+	float & fruit = fruitDensity.at<float>(gy, gx);
+	if (shrub > 0.0f) {
+		float gained = shrub * FOOD_PER_FULL_CELL;
+		shrub = 0.0f;
+		return gained;
+	}
+	if (fruit > 0.0f) {
+		float gained = fruit * FOOD_PER_FULL_CELL;
+		fruit = 0.0f;
+		return gained;
+	}
+	return 0.0f;
+}
+
+float VegetationField::eatFruitOrNut(float kx, float ky, bool preferNut, bool & ateNut)
+{
+	int gx, gy;
+	if (!cellIndexAt(kx, ky, gx, gy))
+		return 0.0f;
+
+	float & fruit = fruitDensity.at<float>(gy, gx);
+	float & nut = nutDensity.at<float>(gy, gx);
+	float & first = preferNut ? nut : fruit;
+	float & second = preferNut ? fruit : nut;
+	if (first > 0.0f) {
+		float gained = first * FOOD_PER_FULL_CELL;
+		first = 0.0f;
+		ateNut = preferNut;
+		return gained;
+	}
+	if (second > 0.0f) {
+		float gained = second * FOOD_PER_FULL_CELL;
+		second = 0.0f;
+		ateNut = !preferNut;
+		return gained;
+	}
+	return 0.0f;
+}
+
+bool VegetationField::isWaterAt(float kx, float ky) const
+{
+	if (!kinectProjector)
+		return false;
+	float elevation = kinectProjector->elevationAtKinectCoord(kx, ky);
+	return elevation < (WATER_LEVEL_BASE + TEMPERATURE);
+}
+
+bool VegetationField::isSnowAt(float kx, float ky) const
+{
+	if (!kinectProjector)
+		return false;
+	float elevation = kinectProjector->elevationAtKinectCoord(kx, ky);
+	return elevation >= (WATER_LEVEL_BASE + TEMPERATURE) && elevation > (SNOW_LEVEL_BASE + TEMPERATURE);
 }
 
 void VegetationField::drawGui()
