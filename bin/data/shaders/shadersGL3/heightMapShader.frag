@@ -21,25 +21,30 @@ You should have received a copy of the GNU General Public License along
 with the Magic Sand; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
---- Ecosystem fork: base color is plain white - no colour cast at all,
-and no procedural rock/lichen texture. Neither that noise-driven look
-nor the rainbow height-ramp before it ever appeared in any reference
-material (the ELF photo, the ELF paper, the sound-sandbox/fluvial
-papers). ELF's own renderer (BDlocation.getCellColor()/BDframe) does
-technically paint every cell every frame rather than leaving any of them
-untouched, but the white/pale areas that dominate a real photo of it are
-its own snow-white cells, not a designed "idle" tint - so white is also
-the closest a projector can get to "no augmentation, sand's real color
-shows through" for cells this fork hasn't classified as water, snow, or
-vegetated yet. heightColorMapSampler is left bound but unused below,
-kept only so the existing colormap-editing GUI machinery doesn't need to
-be torn out to keep this compiling.
+--- Ecosystem fork: no procedural rock/lichen texture and no rainbow
+height-ramp - neither ever appeared in any reference material (the ELF
+photo, the ELF paper, the sound-sandbox/fluvial papers). Color here is a
+direct GLSL port of BDlocation.getCellColor(): water/snow/land are still
+picked on the CPU side (VegetationField.h), but this shader reproduces
+ELF's exact color logic and formulas rather than an approximation of
+them:
 
---- Vegetation layer: VegetationField.h's ELF-style flora grid is blended
-over that white base as flat-colored patches (water/snow/three plant
-types), the same cellular, patchy-blob look documented in Murgatroyd et
-al.'s ELF AR sandbox paper and matched against a real photo of it - see
-vegetationSampler below and the blend logic near the end of main().
+- Land: strictly-dominant-channel comparison, same as
+  getCellColor()'s shrubs>fruits&&shrubs>nuts chain, with a tie
+  (including the initial all-zero state) rendering as ELF's flat
+  Color.PINK fallback - no blending between types, ever.
+- Each winning type's color is modulated by elevationNorm exactly as
+  ELF's colors are modulated by cellheight (0..255 there, 0..1 here):
+  shrub = (h, 1, h), fruit = (1, h, h), nut = (0, h, h). PINK is NOT
+  modulated, matching getCellColor() returning the flat Color.PINK
+  constant on a tie.
+- Water = (0, 0, h), also cellheight-modulated (a bathymetric gradient,
+  darker in deeper water) - not the flat color this used to be.
+- Snow = flat white, unmodulated, matching Color.WHITE exactly.
+
+heightColorMapSampler is left bound but unused below, kept only so the
+existing colormap-editing GUI machinery doesn't need to be torn out to
+keep this compiling.
 ***********************************************************************/
 
 #version 150
@@ -53,8 +58,8 @@ uniform sampler2DRect heightColorMapSampler;
 uniform sampler2DRect pixelCornerElevationSampler; // Sampler for the half pixel texture
 uniform float contourLineFactor;
 uniform int drawContourLines;
-uniform float heightMapNumEntries; // depthfrag is in [0, heightMapNumEntries) texel space, not 0..1 - unused now that the base color no longer varies with elevation, left bound alongside heightColorMapSampler above
-uniform float time; // unused now that the base color no longer pulses, same reasoning
+uniform float heightMapNumEntries; // depthfrag is in [0, heightMapNumEntries) texel space, not 0..1 - see elevationNorm below
+uniform float time; // unused - kept bound alongside heightColorMapSampler above
 
 // Mycelium: see MyceliumNetwork.h. myceliumSampler is a coarse grid
 // texture (networkPattern x revealedAccum); myceliumGridOrigin/Step
@@ -74,21 +79,19 @@ uniform sampler2DRect vegetationSampler;
 uniform vec2 vegetationGridOrigin;
 uniform float vegetationGridStep;
 
-// Still used below for the vegetation patch edge jitter (see hasVegetation).
-float hash(vec2 p)
-{
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-}
-
 void main()
 {
-    // No colour cast at all - full-brightness white, the standard
-    // "no augmentation" convention for a projector (it can't literally
-    // withhold light from a spot without going black, so white is what
-    // lets the sand's own true material color read through unaltered).
-    // This is what shows before any vegetation has grown on a cell, or
-    // permanently if vegetation is disabled - true bare sand, not an
-    // invented tint.
+    // ELF's "cellheight" analog: a full-sensor-range normalized
+    // elevation (0..1), independent of VegetationField's own
+    // temperature-relative water/snow thresholds - exactly how ELF keeps
+    // its MINDEPTH/MAXDEPTH-derived cellheight separate from
+    // BDenvironment's LIVINGRANGE/temperature bands operating on it.
+    float elevationNorm = clamp(depthfrag / heightMapNumEntries, 0.0, 1.0);
+
+    // No colour cast before classification - full-brightness white, the
+    // standard "no augmentation" convention for a projector. Overwritten
+    // below whenever vegetation classifies the cell as something else;
+    // only shows through with vegetation disabled.
     vec4 color = vec4(1.0, 1.0, 1.0, 1.0);
 
     if (hasVegetation == 1)
@@ -96,35 +99,36 @@ void main()
         vec2 vegUV = (texcoordfrag - vegetationGridOrigin) / vegetationGridStep;
         vec4 veg = texture(vegetationSampler, vegUV);
 
-        // A touch of per-pixel jitter on the patch edges so cell
-        // boundaries read as a frayed, organic edge instead of a hard
-        // pixel grid - the blocky, speckled look of the real ELF sandbox
-        // comes from exactly this kind of noise at cell boundaries.
-        float edgeJitter = (hash(texcoordfrag * 3.7) - 0.5) * 0.35;
-
         if (veg.a > 0.75)
         {
-            // Water - flat dark blue-black, per BDlocation::getCellColor.
-            color.rgb = mix(color.rgb, vec3(0.0, 0.04, 0.16), 0.9);
+            // Water - BDlocation.getCellColor(): new Color(0, 0, cellheight).
+            color.rgb = vec3(0.0, 0.0, elevationNorm);
         }
         else if (veg.a > 0.25)
         {
-            // Snow - flat white.
-            color.rgb = mix(color.rgb, vec3(0.96, 0.97, 1.0), 0.9);
+            // Snow - BDlocation.getCellColor(): Color.WHITE, unmodulated.
+            color.rgb = vec3(1.0, 1.0, 1.0);
+        }
+        else if (veg.r > veg.g && veg.r > veg.b)
+        {
+            // Shrub-dominant - new Color(cellheight, 255, cellheight).
+            color.rgb = vec3(elevationNorm, 1.0, elevationNorm);
+        }
+        else if (veg.g > veg.r && veg.g > veg.b)
+        {
+            // Fruit-dominant - new Color(255, cellheight, cellheight).
+            color.rgb = vec3(1.0, elevationNorm, elevationNorm);
+        }
+        else if (veg.b > veg.g && veg.b > veg.r)
+        {
+            // Nut-dominant - new Color(0, cellheight, cellheight).
+            color.rgb = vec3(0.0, elevationNorm, elevationNorm);
         }
         else
         {
-            // Bright green / reddish-pink / dark teal, matching the three
-            // predominant-plant-type colors described for the ELF Dynamic
-            // System (shrub/fruit/nut in BDlocation.getCellColor terms).
-            vec3 shrubColor = vec3(0.25, 0.85, 0.35);
-            vec3 fruitColor = vec3(0.95, 0.35, 0.55);
-            vec3 nutColor   = vec3(0.15, 0.55, 0.60);
-
-            float total = veg.r + veg.g + veg.b;
-            vec3 patchColor = (veg.r * shrubColor + veg.g * fruitColor + veg.b * nutColor) / max(total, 0.0001);
-            float coverage = clamp(total + edgeJitter, 0.0, 1.0);
-            color.rgb = mix(color.rgb, patchColor, coverage);
+            // Tie (including the initial all-zero state) - Color.PINK,
+            // flat and unmodulated, matching getCellColor()'s final else.
+            color.rgb = vec3(1.0, 0.6863, 0.6863);
         }
     }
 

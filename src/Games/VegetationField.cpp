@@ -9,11 +9,15 @@ float VegetationField::FRUIT_MIN_ABOVE_WATER = 25.0f;
 float VegetationField::FRUIT_MAX_BELOW_SNOW = 25.0f;
 float VegetationField::NUT_MIN_ABOVE_WATER = 11.0f;
 float VegetationField::NUT_MAX_BELOW_SNOW = 11.0f;
-float VegetationField::GROWTH_RATE = 0.6f;
-float VegetationField::DECAY_RATE = 0.3f;
+// 1:3:2 ratio, matching ELF's SHRUBGROWTH=1/FRUITGROWTH=3/NUTGROWTH=2.
+float VegetationField::SHRUB_GROWTH_RATE = 0.2f;
+float VegetationField::FRUIT_GROWTH_RATE = 0.6f;
+float VegetationField::NUT_GROWTH_RATE = 0.4f;
 
 namespace {
-	const int GRID_STEP = 4; // kinect pixels per cell, matching HandField/PuckTracker/MyceliumNetwork's convention
+	// One cell per kinect pixel - see the header note on why this doesn't
+	// share HandField/PuckTracker/MyceliumNetwork's GRID_STEP==4 convention.
+	const int GRID_STEP = 1;
 }
 
 void VegetationField::setup(std::shared_ptr<KinectProjector> const& k)
@@ -75,19 +79,22 @@ void VegetationField::update()
 			float & nut = nutDensity.at<float>(gy, gx);
 
 			if (isWater || isSnow) {
-				// Mirrors BDlocation.makeSnow()/makeWater() zeroing out
-				// shrubs/fruits/nuts, just eased rather than instant.
-				shrub = std::max(0.0f, shrub - DECAY_RATE * dt);
-				fruit = std::max(0.0f, fruit - DECAY_RATE * dt);
-				nut = std::max(0.0f, nut - DECAY_RATE * dt);
+				// BDlocation.makeSnow()/makeWater() zero shrubs/fruits/nuts
+				// outright, with no easing - do the same here.
+				shrub = fruit = nut = 0.0f;
 			} else {
+				// One-way growth: a channel rises only while its band
+				// condition holds; otherwise it just holds its current
+				// value rather than decaying (see the header note - ELF's
+				// stepCells() has no code path that shrinks these while
+				// still land).
 				bool inShrubBand = elevation > waterLevel + SHRUB_MIN_ABOVE_WATER;
 				bool inFruitBand = elevation > waterLevel + FRUIT_MIN_ABOVE_WATER && elevation < snowLevel - FRUIT_MAX_BELOW_SNOW;
 				bool inNutBand = elevation > waterLevel + NUT_MIN_ABOVE_WATER && elevation < snowLevel - NUT_MAX_BELOW_SNOW;
 
-				shrub = ofClamp(shrub + (inShrubBand ? GROWTH_RATE : -DECAY_RATE) * dt, 0.0f, 1.0f);
-				fruit = ofClamp(fruit + (inFruitBand ? GROWTH_RATE : -DECAY_RATE) * dt, 0.0f, 1.0f);
-				nut = ofClamp(nut + (inNutBand ? GROWTH_RATE : -DECAY_RATE) * dt, 0.0f, 1.0f);
+				if (inShrubBand) shrub = std::min(1.0f, shrub + SHRUB_GROWTH_RATE * dt);
+				if (inFruitBand) fruit = std::min(1.0f, fruit + FRUIT_GROWTH_RATE * dt);
+				if (inNutBand) nut = std::min(1.0f, nut + NUT_GROWTH_RATE * dt);
 			}
 
 			int idx = (gy * cols + gx) * 4;
@@ -99,10 +106,10 @@ void VegetationField::update()
 	}
 
 	combinedTex.loadData(px);
-	// Nearest-neighbor, not the usual smooth interpolation - the blocky
-	// per-cell patches are the point (see the header/paper reference on
-	// ELF's own cell-rect rendering), softened only by the shader's own
-	// noise-based edge jitter rather than by texture filtering.
+	// Nearest-neighbor: at GRID_STEP==1 this is a no-op for alignment
+	// (one texel per mesh pixel already), but keeps the shader's texel
+	// lookup exact rather than blurring across the winner-take-all color
+	// boundaries computed there.
 	combinedTex.setTextureMinMagFilter(GL_NEAREST, GL_NEAREST);
 }
 
@@ -122,7 +129,8 @@ void VegetationField::drawGui()
 	ImGui::SliderFloat("Nut min above water (mm)", &NUT_MIN_ABOVE_WATER, 0.0f, 60.0f);
 	ImGui::SliderFloat("Nut max below snow (mm)", &NUT_MAX_BELOW_SNOW, 0.0f, 60.0f);
 	ImGui::Separator();
-	ImGui::SliderFloat("Growth rate", &GROWTH_RATE, 0.0f, 2.0f);
-	ImGui::SliderFloat("Decay rate", &DECAY_RATE, 0.0f, 2.0f);
+	ImGui::SliderFloat("Shrub growth rate", &SHRUB_GROWTH_RATE, 0.0f, 2.0f);
+	ImGui::SliderFloat("Fruit growth rate", &FRUIT_GROWTH_RATE, 0.0f, 2.0f);
+	ImGui::SliderFloat("Nut growth rate", &NUT_GROWTH_RATE, 0.0f, 2.0f);
 	ImGui::End();
 }

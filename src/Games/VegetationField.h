@@ -1,34 +1,47 @@
 /***********************************************************************
 VegetationField.h - a per-cell flora simulation and its ELF-style visual
-encoding: three plant "types" that grow and fade within elevation bands
-relative to a tunable water/snow line, ported from the cellular growth
-rules in Europe's Lost Frontiers' BDlocation/BDenvironment (see
-ELFdev001/ELFDynamicSystem - the "ecosim model" this is patterned on) and
-re-expressed as continuous per-cell density rather than ELF's per-tick
-random growth, so it reads as smoothly thickening/thinning patches
-instead of tick-by-tick flicker.
+encoding: three plant "types" that grow within elevation bands relative
+to a tunable water/snow line, ported from the cellular growth rules in
+Europe's Lost Frontiers' BDlocation/BDenvironment (see
+ELFdev001/ELFDynamicSystem - the "ecosim model" this is patterned on).
 
-Same architecture as MyceliumNetwork: a CPU-side grid sampled from
+Deliberately matches ELF's actual mechanics rather than a stylized
+approximation of them, per a direct line-by-line comparison against
+BDlocation.java/BDenvironment.java:
+
+- One cell per kinect pixel (GRID_STEP == 1 in the .cpp), not a coarser
+  decimated grid - ELF's cell IS one native Kinect depth pixel; its
+  CELLWIDTH/CELLHEIGHT=4 only upscales the *display*, never the
+  sampling. This is a deliberate departure from the GRID_STEP==4
+  convention MyceliumNetwork/HandField/PuckTracker share, since matching
+  ELF's resolution mattered more here than matching that convention.
+- Per-species growth rates in a 1:3:2 ratio (SHRUB:FRUIT:NUT), matching
+  BDlocation's SHRUBGROWTH=1/FRUITGROWTH=3/NUTGROWTH=2 per-tick growth
+  chances - fruit is the fastest grower, shrub the slowest, so in the
+  wide middle elevation band where all three are eligible, fruit tends
+  to win the color out over time exactly as it does in ELF.
+- One-way growth on land: a channel only ever rises (while its band
+  condition holds) or holds steady (while out of band but still land);
+  it never decays just from drifting out of a band. Only an actual
+  transition to water or snow resets all three to 0 instantly - see
+  BDlocation.makeSnow()/makeWater(), which zero shrubs/fruits/nuts
+  outright with no easing, and stepCells(), whose growShrubs() etc.
+  calls are the *only* per-tick modifications to those counts (nothing
+  in ELF's source path ever decrements them for leaving a band while
+  still land).
+
+Same upload architecture as MyceliumNetwork: a CPU-side grid sampled from
 elevationAtKinectCoord() each frame, uploaded as a single texture that
-SandSurfaceRenderer's heightMapShader blends in - see getTexture() /
-getGridOrigin() / getGridStep().
-
-Texture encoding (RGBA, one texel per grid cell):
-  R, G, B = density (0..1) of the three plant types (shrub/fruit/nut, in
-            ELF's terms - see the *_MIN_ABOVE_WATER/*_MAX_BELOW_SNOW
-            bands below), zero on water or snow cells.
-  A       = category flag: ~1.0 water, ~0.5 snow, ~0.0 land - the shader
-            uses this to pick a flat water/snow color instead of
-            blending vegetation, mirroring BDlocation::getCellColor's
-            water/snow/land branch.
-
-Growth rule per cell, each tick: if the cell's current elevation falls
-within a plant type's band, that channel's density rises toward 1 at
-GROWTH_RATE; otherwise (including water/snow cells) it decays toward 0 at
-DECAY_RATE. Reshaping the sand therefore visibly shifts vegetation cover
-over a few seconds rather than snapping instantly, which is what makes
-sculpting read as manipulating a living system instead of flipping a
-lookup table.
+SandSurfaceRenderer's heightMapShader reads - see getTexture() /
+getGridOrigin() / getGridStep(). The shader (not this class) is
+responsible for turning R/G/B density into a color: it picks whichever
+channel is strictly largest and colors the whole cell that plant's flat,
+elevation-modulated color - see heightMapShader.frag - matching
+BDlocation.getCellColor()'s winner-take-all comparison (ties, including
+the initial all-zero state, render as ELF's Color.PINK fallback) rather
+than blending all three proportionally. Density itself only decides the
+comparison outcome here, never a fade amount - there is no partial/faded
+color state in ELF, and now none in this shader either.
 
 TEMPERATURE shifts both WATER_LEVEL_BASE and SNOW_LEVEL_BASE by the same
 amount, matching ELF's temperature keys exactly (raising it both floods
@@ -72,8 +85,11 @@ public:
 	static float FRUIT_MAX_BELOW_SNOW;
 	static float NUT_MIN_ABOVE_WATER;
 	static float NUT_MAX_BELOW_SNOW;
-	static float GROWTH_RATE;  // density gained per second while a cell is in-band
-	static float DECAY_RATE;   // density lost per second while a cell is out-of-band (or water/snow)
+	// Density gained per second while a cell is in-band, 1:3:2 ratio matching
+	// ELF's SHRUBGROWTH:FRUITGROWTH:NUTGROWTH per-tick chances.
+	static float SHRUB_GROWTH_RATE;
+	static float FRUIT_GROWTH_RATE;
+	static float NUT_GROWTH_RATE;
 
 private:
 	std::shared_ptr<KinectProjector> kinectProjector;
@@ -82,7 +98,7 @@ private:
 	bool gridReady;
 
 	// Persistent 0..1 density per cell, CV_32F - see the header note on
-	// the growth rule.
+	// the one-way growth rule.
 	cv::Mat shrubDensity, fruitDensity, nutDensity;
 
 	ofTexture combinedTex;

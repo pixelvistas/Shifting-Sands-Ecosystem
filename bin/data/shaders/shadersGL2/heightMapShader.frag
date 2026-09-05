@@ -21,11 +21,10 @@ You should have received a copy of the GNU General Public License along
 with the Magic Sand; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
---- Ecosystem fork: same flat bare-sand base color and ELF-style
-vegetation-patch blending as shadersGL3's version of this file - see that
-file's header note for the full rationale. Kept in sync so behavior
-doesn't depend on which renderer path ofIsGLProgrammableRenderer() picks
-at runtime.
+--- Ecosystem fork: same ELF-accurate color logic as shadersGL3's version
+of this file - see that file's header note for the full rationale. Kept
+in sync so behavior doesn't depend on which renderer path
+ofIsGLProgrammableRenderer() picks at runtime.
 ***********************************************************************/
 
 #version 120
@@ -37,8 +36,8 @@ uniform sampler2DRect heightColorMapSampler;
 uniform sampler2DRect pixelCornerElevationSampler; // Sampler for the half pixel texture
 uniform float contourLineFactor;
 uniform int drawContourLines;
-uniform float heightMapNumEntries; // unused now that the base color no longer varies with elevation - see the GL3 shader's header note
-uniform float time; // unused now that the base color no longer pulses, same reasoning
+uniform float heightMapNumEntries; // depthfrag is in [0, heightMapNumEntries) texel space, not 0..1 - see elevationNorm below
+uniform float time; // unused - kept bound alongside heightColorMapSampler above
 
 // Mycelium: see MyceliumNetwork.h / the matching GL3 shader for the full note.
 uniform int hasMycelium;
@@ -53,15 +52,10 @@ uniform sampler2DRect vegetationSampler;
 uniform vec2 vegetationGridOrigin;
 uniform float vegetationGridStep;
 
-// Still used below for the vegetation patch edge jitter (see hasVegetation).
-float hash(vec2 p)
-{
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-}
-
 void main()
 {
-    // No colour cast - see the GL3 shader's header note.
+    float elevationNorm = clamp(depthfrag / heightMapNumEntries, 0.0, 1.0);
+
     vec4 color = vec4(1.0, 1.0, 1.0, 1.0);
 
     if (hasVegetation == 1)
@@ -69,26 +63,29 @@ void main()
         vec2 vegUV = (texcoordfrag - vegetationGridOrigin) / vegetationGridStep;
         vec4 veg = texture2DRect(vegetationSampler, vegUV);
 
-        float edgeJitter = (hash(texcoordfrag * 3.7) - 0.5) * 0.35;
-
         if (veg.a > 0.75)
         {
-            color.rgb = mix(color.rgb, vec3(0.0, 0.04, 0.16), 0.9);
+            color.rgb = vec3(0.0, 0.0, elevationNorm);
         }
         else if (veg.a > 0.25)
         {
-            color.rgb = mix(color.rgb, vec3(0.96, 0.97, 1.0), 0.9);
+            color.rgb = vec3(1.0, 1.0, 1.0);
+        }
+        else if (veg.r > veg.g && veg.r > veg.b)
+        {
+            color.rgb = vec3(elevationNorm, 1.0, elevationNorm);
+        }
+        else if (veg.g > veg.r && veg.g > veg.b)
+        {
+            color.rgb = vec3(1.0, elevationNorm, elevationNorm);
+        }
+        else if (veg.b > veg.g && veg.b > veg.r)
+        {
+            color.rgb = vec3(0.0, elevationNorm, elevationNorm);
         }
         else
         {
-            vec3 shrubColor = vec3(0.25, 0.85, 0.35);
-            vec3 fruitColor = vec3(0.95, 0.35, 0.55);
-            vec3 nutColor   = vec3(0.15, 0.55, 0.60);
-
-            float total = veg.r + veg.g + veg.b;
-            vec3 patchColor = (veg.r * shrubColor + veg.g * fruitColor + veg.b * nutColor) / max(total, 0.0001);
-            float coverage = clamp(total + edgeJitter, 0.0, 1.0);
-            color.rgb = mix(color.rgb, patchColor, coverage);
+            color.rgb = vec3(1.0, 0.6863, 0.6863);
         }
     }
 
