@@ -61,8 +61,8 @@ float hash(vec2 p)
 
 void main()
 {
-    // Flat bare-sand color - see the GL3 shader's header note.
-    vec4 color = vec4(0.88, 0.85, 0.76, 1.0);
+    // No colour cast - see the GL3 shader's header note.
+    vec4 color = vec4(1.0, 1.0, 1.0, 1.0);
 
     if (hasVegetation == 1)
     {

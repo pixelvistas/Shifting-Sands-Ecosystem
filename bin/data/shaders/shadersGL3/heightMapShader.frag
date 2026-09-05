@@ -21,17 +21,22 @@ You should have received a copy of the GNU General Public License along
 with the Magic Sand; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
---- Ecosystem fork: base color is a flat, neutral "bare sand" tone - no
-procedural rock/lichen texture. That noise-driven look (and the rainbow
-height-ramp before it) never appeared in any reference material (the ELF
-photo, the ELF paper, the sound-sandbox/fluvial papers): ELF's own
-renderer is flat categorical color, nothing else, and this now matches
-that directly. heightColorMapSampler is left bound but unused below,
+--- Ecosystem fork: base color is plain white - no colour cast at all,
+and no procedural rock/lichen texture. Neither that noise-driven look
+nor the rainbow height-ramp before it ever appeared in any reference
+material (the ELF photo, the ELF paper, the sound-sandbox/fluvial
+papers). ELF's own renderer (BDlocation.getCellColor()/BDframe) does
+technically paint every cell every frame rather than leaving any of them
+untouched, but the white/pale areas that dominate a real photo of it are
+its own snow-white cells, not a designed "idle" tint - so white is also
+the closest a projector can get to "no augmentation, sand's real color
+shows through" for cells this fork hasn't classified as water, snow, or
+vegetated yet. heightColorMapSampler is left bound but unused below,
 kept only so the existing colormap-editing GUI machinery doesn't need to
 be torn out to keep this compiling.
 
 --- Vegetation layer: VegetationField.h's ELF-style flora grid is blended
-over that flat base as flat-colored patches (water/snow/three plant
+over that white base as flat-colored patches (water/snow/three plant
 types), the same cellular, patchy-blob look documented in Murgatroyd et
 al.'s ELF AR sandbox paper and matched against a real photo of it - see
 vegetationSampler below and the blend logic near the end of main().
@@ -77,11 +82,14 @@ float hash(vec2 p)
 
 void main()
 {
-    // Flat bare-sand color - what shows through before any vegetation has
-    // grown on a cell, or permanently on any part of the mesh with
-    // vegetation disabled. Deliberately plain: ELF's own "nothing growing
-    // here yet" cells are just flat color too.
-    vec4 color = vec4(0.88, 0.85, 0.76, 1.0);
+    // No colour cast at all - full-brightness white, the standard
+    // "no augmentation" convention for a projector (it can't literally
+    // withhold light from a spot without going black, so white is what
+    // lets the sand's own true material color read through unaltered).
+    // This is what shows before any vegetation has grown on a cell, or
+    // permanently if vegetation is disabled - true bare sand, not an
+    // invented tint.
+    vec4 color = vec4(1.0, 1.0, 1.0, 1.0);
 
     if (hasVegetation == 1)
     {
