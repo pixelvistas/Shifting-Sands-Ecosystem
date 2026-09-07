@@ -42,9 +42,19 @@ comparison outcome here, never a fade amount - there is no partial/faded
 color state in ELF, and now none in this shader either.
 
 TEMPERATURE shifts both WATER_LEVEL_BASE and SNOW_LEVEL_BASE by the same
-amount, matching ELF's temperature keys exactly (raising it both floods
+amount, matching ELF's temperature effect exactly (raising it both floods
 more land and shrinks the snowcap, since the snow threshold rising means
 fewer cells clear it) - see BDenvironment.stepCells()/incTemp()/decTemp().
+Unlike ELF, where temperature only moves on operator keypresses (q/a),
+TEMPERATURE here is not a direct control at all - it is derived each
+frame from how much the sand is actively being reshaped (see
+activityLevel/update()), so it is a genuinely participant-facing effect
+rather than an operator-only lever, at the deliberate cost of exact
+parity with ELF's own input model. Sustained sculpting raises it toward
+BASE_TEMPERATURE + up to MAX_TEMPERATURE_OFFSET; an undisturbed sandbox
+eases it back down toward BASE_TEMPERATURE. TEMPERATURE_EASE_RATE keeps
+this a gradual "warming/cooling" rather than a frame-to-frame jitter
+reacting to sensor noise.
 
 Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 ***********************************************************************/
@@ -105,12 +115,21 @@ public:
 	int getCols() const { return cols; }
 	int getRows() const { return rows; }
 
+	// Average |elevation change| per cell last frame (mm) - what
+	// TEMPERATURE is actually derived from. Exposed for the GUI so an
+	// operator can see what's driving it, not for agents to query.
+	float getActivityLevel() const { return activityLevel; }
+
 	// Scales a full (1.0) density's worth of eaten plant into food -
 	// matches ELF's counts being added to food directly on a 0..255 scale.
 	static float FOOD_PER_FULL_CELL;
 
 	// Tunable in the debug GUI.
-	static float TEMPERATURE;            // mm, shifts both water and snow lines together
+	static float TEMPERATURE;            // mm, shifts both water and snow lines together - computed each frame, see the header note; not a direct slider
+	static float BASE_TEMPERATURE;       // mm, TEMPERATURE's resting value when the sand is undisturbed
+	static float ACTIVITY_TO_TEMPERATURE; // mm of TEMPERATURE offset per mm of average per-cell elevation change
+	static float MAX_TEMPERATURE_OFFSET; // mm, clamps how far activity alone can push TEMPERATURE above BASE_TEMPERATURE
+	static float TEMPERATURE_EASE_RATE;  // how fast TEMPERATURE chases its activity-driven target, per second
 	static float WATER_LEVEL_BASE;       // mm, elevation below which a cell is water at TEMPERATURE == 0
 	static float SNOW_LEVEL_BASE;        // mm, elevation above which a cell is snow at TEMPERATURE == 0
 	static float SHRUB_MIN_ABOVE_WATER;  // shrubs grow everywhere from this height up to the snow line
@@ -137,6 +156,12 @@ private:
 	// Persistent 0..1 density per cell, CV_32F - see the header note on
 	// the one-way growth rule.
 	cv::Mat shrubDensity, fruitDensity, nutDensity;
+
+	// Last frame's elevation per cell (mm) and whether it's populated yet -
+	// see update()'s activity/TEMPERATURE computation.
+	cv::Mat previousElevation;
+	bool activityBaselineReady;
+	float activityLevel;
 
 	ofTexture combinedTex;
 };

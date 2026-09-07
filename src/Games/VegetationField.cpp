@@ -2,6 +2,16 @@
 #include "ofxImGui.h"
 
 float VegetationField::TEMPERATURE = 0.0f;
+float VegetationField::BASE_TEMPERATURE = 0.0f;
+// First-guess scale, untested on real hardware - see the header note.
+// Average per-cell elevation change during active sculpting is expected
+// to be a small fraction of a millimeter per frame (only cells near a
+// hand actually move, diluted across the whole grid), so this is set
+// high enough that ordinary sculpting registers a visible climate
+// response; retune once real activity levels are observed.
+float VegetationField::ACTIVITY_TO_TEMPERATURE = 200.0f;
+float VegetationField::MAX_TEMPERATURE_OFFSET = 60.0f;
+float VegetationField::TEMPERATURE_EASE_RATE = 0.5f;
 float VegetationField::WATER_LEVEL_BASE = -25.0f;
 float VegetationField::SNOW_LEVEL_BASE = 60.0f;
 float VegetationField::SHRUB_MIN_ABOVE_WATER = 8.0f;
@@ -28,6 +38,8 @@ void VegetationField::setup(std::shared_ptr<KinectProjector> const& k)
 	cols = 0;
 	rows = 0;
 	gridReady = false;
+	activityBaselineReady = false;
+	activityLevel = 0.0f;
 }
 
 void VegetationField::setKinectROI(ofRectangle & KROI)
@@ -46,6 +58,12 @@ void VegetationField::setKinectROI(ofRectangle & KROI)
 	shrubDensity = cv::Mat::zeros(rows, cols, CV_32F);
 	fruitDensity = cv::Mat::zeros(rows, cols, CV_32F);
 	nutDensity = cv::Mat::zeros(rows, cols, CV_32F);
+	previousElevation = cv::Mat::zeros(rows, cols, CV_32F);
+	// A regenerated grid has no valid "last frame" to diff against yet -
+	// update() seeds previousElevation on its first pass and skips the
+	// activity computation that frame rather than reading a fake spike
+	// off the freshly-zeroed matrix.
+	activityBaselineReady = false;
 	gridReady = true;
 }
 
@@ -66,11 +84,22 @@ void VegetationField::update()
 	px.allocate(cols, rows, OF_IMAGE_COLOR_ALPHA);
 	unsigned char * data = px.getData();
 
+	// Participant-facing climate: TEMPERATURE is not a direct control (see
+	// the header note) - it is driven by how much the sand is actively
+	// being reshaped, accumulated below alongside the existing per-cell
+	// elevation sampling so this costs nothing extra.
+	float activitySum = 0.0f;
+
 	for (int gy = 0; gy < rows; gy++) {
 		for (int gx = 0; gx < cols; gx++) {
 			float kx = kinectROI.x + gx * step + step / 2.0f;
 			float ky = kinectROI.y + gy * step + step / 2.0f;
 			float elevation = kinectProjector->elevationAtKinectCoord(kx, ky);
+
+			float & prevElevation = previousElevation.at<float>(gy, gx);
+			if (activityBaselineReady)
+				activitySum += std::abs(elevation - prevElevation);
+			prevElevation = elevation;
 
 			bool isWater = elevation < waterLevel;
 			bool isSnow = !isWater && elevation > snowLevel;
@@ -112,6 +141,18 @@ void VegetationField::update()
 	// lookup exact rather than blurring across the winner-take-all color
 	// boundaries computed there.
 	combinedTex.setTextureMinMagFilter(GL_NEAREST, GL_NEAREST);
+
+	if (activityBaselineReady) {
+		activityLevel = activitySum / (float)(cols * rows);
+		float offset = ofClamp(activityLevel * ACTIVITY_TO_TEMPERATURE, 0.0f, MAX_TEMPERATURE_OFFSET);
+		float target = BASE_TEMPERATURE + offset;
+		// Ease toward the target rather than snapping, so sustained
+		// sculpting reads as gradual warming/cooling instead of chasing
+		// every frame's sensor noise.
+		TEMPERATURE += (target - TEMPERATURE) * std::min(1.0f, TEMPERATURE_EASE_RATE * dt);
+	} else {
+		activityBaselineReady = true;
+	}
 }
 
 bool VegetationField::cellIndexAt(float kx, float ky, int & gx, int & gy) const
@@ -190,8 +231,15 @@ void VegetationField::drawGui()
 	ImGui::Begin("Vegetation");
 	ImGui::Text("ELF-style flora: three plant types growing within elevation");
 	ImGui::Text("bands relative to the water line - reshape the sand to see it shift.");
-	ImGui::SliderFloat("Temperature", &TEMPERATURE, -60.0f, 60.0f);
-	ImGui::Text("Higher temperature floods more land and shrinks the snowcap.");
+	ImGui::Separator();
+	ImGui::Text("Climate (participant-driven, not a direct control)");
+	ImGui::Text("Temperature: %.1f mm  (activity: %.3f mm/cell)", TEMPERATURE, activityLevel);
+	ImGui::Text("Sustained sculpting raises it - floods more land, shrinks the snowcap.");
+	ImGui::SliderFloat("Base temperature (mm)", &BASE_TEMPERATURE, -60.0f, 60.0f);
+	ImGui::SliderFloat("Activity -> temperature scale", &ACTIVITY_TO_TEMPERATURE, 0.0f, 1000.0f);
+	ImGui::SliderFloat("Max activity offset (mm)", &MAX_TEMPERATURE_OFFSET, 0.0f, 120.0f);
+	ImGui::SliderFloat("Temperature ease rate", &TEMPERATURE_EASE_RATE, 0.05f, 3.0f);
+	ImGui::Separator();
 	ImGui::SliderFloat("Water level (mm)", &WATER_LEVEL_BASE, -100.0f, 50.0f);
 	ImGui::SliderFloat("Snow level (mm)", &SNOW_LEVEL_BASE, 0.0f, 150.0f);
 	ImGui::Separator();
