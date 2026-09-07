@@ -61,19 +61,10 @@ uniform int drawContourLines;
 uniform float heightMapNumEntries; // depthfrag is in [0, heightMapNumEntries) texel space, not 0..1 - see elevationNorm below
 uniform float time; // unused - kept bound alongside heightColorMapSampler above
 
-// Mycelium: see MyceliumNetwork.h. myceliumSampler is a coarse grid
-// texture (networkPattern x revealedAccum); myceliumGridOrigin/Step
-// convert texcoordfrag (kinect pixel space) into a texel lookup into it.
-uniform int hasMycelium;
-uniform sampler2DRect myceliumSampler;
-uniform vec2 myceliumGridOrigin;
-uniform float myceliumGridStep;
-uniform vec3 myceliumGlowColor;
-
 // Vegetation: see VegetationField.h. vegetationSampler packs three plant
 // densities (RGB) plus a water/snow flag (A) per grid cell;
 // vegetationGridOrigin/Step convert texcoordfrag (kinect pixel space)
-// into a texel lookup into it, same convention as the mycelium sampler.
+// into a texel lookup into it.
 uniform int hasVegetation;
 uniform sampler2DRect vegetationSampler;
 uniform vec2 vegetationGridOrigin;
@@ -130,13 +121,6 @@ void main()
             // flat and unmodulated, matching getCellColor()'s final else.
             color.rgb = vec3(1.0, 0.6863, 0.6863);
         }
-    }
-
-    if (hasMycelium == 1)
-    {
-        vec2 myceliumUV = (texcoordfrag - myceliumGridOrigin) / myceliumGridStep;
-        float myceliumIntensity = texture(myceliumSampler, myceliumUV).r;
-        color.rgb += myceliumGlowColor * myceliumIntensity;
     }
 
     if (drawContourLines == 1)

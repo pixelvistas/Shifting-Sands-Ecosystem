@@ -29,7 +29,6 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <iostream>
 #include "ofMain.h"
 #include "../KinectProjector/KinectProjector.h"
-#include "../Games/MyceliumNetwork.h"
 #include "../Games/VegetationField.h"
 #include "ColorMap.h"
 
@@ -69,14 +68,10 @@ class SandSurfaceRenderer {
 public:
     SandSurfaceRenderer(std::shared_ptr<KinectProjector> const& k, std::shared_ptr<ofAppBaseWindow> const& p);
 
-    // mycelium is owned by ofApp and shared here purely so drawSandbox()
-    // can bind its texture/grid transform as shader uniforms - the same
-    // query-only-pointer pattern used for PuckTracker elsewhere. Optional:
-    // if never set, the shader's mycelium sampler is simply never bound
-    // and the glow blend contributes nothing.
-    void setMyceliumNetwork(MyceliumNetwork* m) { myceliumNetwork = m; }
-    // Same query-only-pointer pattern as setMyceliumNetwork() above, for
-    // the ELF-style flora layer's density/water/snow texture.
+    // vegetationField is owned by ofApp and shared here purely so
+    // drawSandbox() can bind its texture/grid transform as shader
+    // uniforms. Optional: if never set, the shader's vegetation sampler
+    // is simply never bound and the base terrain color shows unmodified.
     void setVegetationField(VegetationField* v) { vegetationField = v; }
 
     // Main loop function
@@ -112,7 +107,6 @@ private:
     // shared pointers
     std::shared_ptr<KinectProjector> kinectProjector;
     std::shared_ptr<ofAppBaseWindow> projWindow;
-    MyceliumNetwork* myceliumNetwork; // query-only, owned by ofApp - see setMyceliumNetwork()
     VegetationField* vegetationField; // query-only, owned by ofApp - see setVegetationField()
     bool settingsLoaded;
     

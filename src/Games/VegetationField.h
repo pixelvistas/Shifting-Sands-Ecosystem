@@ -12,9 +12,7 @@ BDlocation.java/BDenvironment.java:
 - One cell per kinect pixel (GRID_STEP == 1 in the .cpp), not a coarser
   decimated grid - ELF's cell IS one native Kinect depth pixel; its
   CELLWIDTH/CELLHEIGHT=4 only upscales the *display*, never the
-  sampling. This is a deliberate departure from the GRID_STEP==4
-  convention MyceliumNetwork/HandField/PuckTracker share, since matching
-  ELF's resolution mattered more here than matching that convention.
+  sampling.
 - Per-species growth rates in a 1:3:2 ratio (SHRUB:FRUIT:NUT), matching
   BDlocation's SHRUBGROWTH=1/FRUITGROWTH=3/NUTGROWTH=2 per-tick growth
   chances - fruit is the fastest grower, shrub the slowest, so in the
@@ -30,9 +28,9 @@ BDlocation.java/BDenvironment.java:
   in ELF's source path ever decrements them for leaving a band while
   still land).
 
-Same upload architecture as MyceliumNetwork: a CPU-side grid sampled from
-elevationAtKinectCoord() each frame, uploaded as a single texture that
-SandSurfaceRenderer's heightMapShader reads - see getTexture() /
+A CPU-side grid sampled from elevationAtKinectCoord() each frame,
+uploaded as a single texture that SandSurfaceRenderer's heightMapShader
+reads - see getTexture() /
 getGridOrigin() / getGridStep(). The shader (not this class) is
 responsible for turning R/G/B density into a color: it picks whichever
 channel is strictly largest and colors the whole cell that plant's flat,
@@ -63,8 +61,7 @@ public:
 	void setup(std::shared_ptr<KinectProjector> const& k);
 	// Resets the persistent density grids (only) when the play area's grid
 	// dimensions actually change - an ROI update that doesn't change
-	// cols/rows leaves current vegetation cover untouched, same convention
-	// as MyceliumNetwork::setKinectROI().
+	// cols/rows leaves current vegetation cover untouched.
 	void setKinectROI(ofRectangle & KROI);
 	void update();
 	void drawGui();

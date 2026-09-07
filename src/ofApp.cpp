@@ -35,39 +35,16 @@ void ofApp::setup() {
 	// Setup kinectProjector
 	kinectProjector = std::make_shared<KinectProjector>(projWindow);
 	kinectProjector->setup(true);
-	
+
 	// Setup sandSurfaceRenderer
 	sandSurfaceRenderer = new SandSurfaceRenderer(kinectProjector, projWindow);
 	sandSurfaceRenderer->setup(true);
-	
+
 	// Retrieve variables
 	ofVec2f kinectRes = kinectProjector->getKinectRes();
 	ofVec2f projRes = ofVec2f(projWindow->getWidth(), projWindow->getHeight());
 	ofRectangle kinectROI = kinectProjector->getKinectROI();
-	////mainWindowROI = ofRectangle(600, 30, 600, 450);
-	//mainWindowROI = ofRectangle(0, 0, 640, 480);
 	mainWindowROI = ofRectangle((ofGetWindowWidth()-kinectRes.x)/2, (ofGetWindowHeight()-kinectRes.y)/2, kinectRes.x, kinectRes.y);
-
-	mapGameController.setup(kinectProjector);
-	mapGameController.setProjectorRes(projRes);
-	mapGameController.setKinectRes(kinectRes);
-	mapGameController.setKinectROI(kinectROI);
-
-	boidGameController.setup(kinectProjector);
-	boidGameController.setProjectorRes(projRes);
-	boidGameController.setKinectRes(kinectRes);
-	boidGameController.setKinectROI(kinectROI);
-
-	puckTracker.setup(kinectProjector);
-
-	sonicWaveController.setup(kinectProjector, &puckTracker);
-	sonicWaveController.setProjectorRes(projRes);
-	sonicWaveController.setKinectRes(kinectRes);
-	sonicWaveController.setKinectROI(kinectROI);
-
-	myceliumNetwork.setup(kinectProjector);
-	myceliumNetwork.setKinectROI(kinectROI);
-	sandSurfaceRenderer->setMyceliumNetwork(&myceliumNetwork);
 
 	// vegetationField must be ready (its grid allocated) before
 	// critterController's setKinectROI() below, since that's what
@@ -80,6 +57,7 @@ void ofApp::setup() {
 	critterController.setup(kinectProjector, &vegetationField);
 	critterController.setProjectorRes(projRes);
 	critterController.setKinectROI(kinectROI);
+	lastKinectROI = kinectROI;
 
 	imgui.setup();
 
@@ -90,32 +68,21 @@ void ofApp::update() {
     // Call kinectProjector->update() first during the update function()
 	kinectProjector->update();
    	sandSurfaceRenderer->update();
-    
-    //if (kinectProjector->isROIUpdated())
-	if (kinectProjector->getKinectROI() != mapGameController.getKinectROI())
+
+	if (kinectProjector->getKinectROI() != lastKinectROI)
 	{
 		ofRectangle kinectROI = kinectProjector->getKinectROI();
-		mapGameController.setKinectROI(kinectROI);
-		boidGameController.setKinectROI(kinectROI);
-		sonicWaveController.setKinectROI(kinectROI);
-		myceliumNetwork.setKinectROI(kinectROI);
-		// vegetationField before critterController - see the setup() note.
+		lastKinectROI = kinectROI;
 		vegetationField.setKinectROI(kinectROI);
 		critterController.setKinectROI(kinectROI);
 	}
 
-	puckTracker.update();
-	myceliumNetwork.update();
 	vegetationField.update();
-
-	mapGameController.update();
-	boidGameController.update();
 	critterController.update();
-	sonicWaveController.update();
 }
 
 
-void ofApp::draw() 
+void ofApp::draw()
 {
 	float x = mainWindowROI.x;
 	float y = mainWindowROI.y;
@@ -124,15 +91,12 @@ void ofApp::draw()
 
 	if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING)
 	{
-		// Ecosystem fork: topology is back, but SandSurfaceRenderer now
-		// renders a flat bare-sand base with ELF-style vegetation patches
-		// blended on top (see heightMapShader.frag and VegetationField.h)
-		// instead of the original rainbow height ramp, per direction to
-		// move away from the generic-AR-sandbox visual signature.
+		// Ecosystem fork: flat bare-sand base with ELF-style vegetation
+		// patches blended on top (see heightMapShader.frag and
+		// VegetationField.h), plus the ELF deer/human population - see
+		// ofApp.h's header note on what has been removed from this branch.
 		sandSurfaceRenderer->drawMainWindow(x, y, w, h);
-		boidGameController.drawMainWindow(x, y, w, h);
 		critterController.drawMainWindow(x, y, w, h);
-		sonicWaveController.drawMainWindow(x, y, w, h);
 	}
 
 	kinectProjector->drawMainWindow(x, y, w, h);
@@ -142,8 +106,6 @@ void ofApp::draw()
 		if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING) {
 			sandSurfaceRenderer->drawGui();
 			critterController.drawGui();
-			sonicWaveController.drawGui();
-			myceliumNetwork.drawGui();
 			vegetationField.drawGui();
 		}
 	imgui.end();
@@ -155,20 +117,16 @@ void ofApp::drawProjWindow(ofEventArgs &args)
 	if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING)
 	{
 		sandSurfaceRenderer->drawProjectorWindow();
-		mapGameController.drawProjectorWindow();
-		boidGameController.drawProjectorWindow();
 		critterController.drawProjectorWindow();
-		sonicWaveController.drawProjectorWindow();
 	}
 	kinectProjector->drawProjectorWindow();
 }
 
 void ofApp::exit()
 {
-	sonicWaveController.exit();
 }
 
-void ofApp::keyPressed(int key) 
+void ofApp::keyPressed(int key)
 {
 	if (key == 'c')
 	{
@@ -180,84 +138,11 @@ void ofApp::keyPressed(int key)
 	}
 	else if (key == ' ')
 	{
-		if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING && 
-			boidGameController.isIdle()) // do not start map game if boidgame is not idle
-		{
-			if (mapGameController.isIdle())
-			{
-				mapGameController.setDebug(kinectProjector->getDumpDebugFiles());
-				mapGameController.StartGame();
-			}
-			else
-			{
-				mapGameController.ButtonPressed();
-			}
-		}
-		else if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_SETUP)
+		if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_SETUP)
 		{
 			// Try to start the application
 			kinectProjector->startApplication();
 		}
-	}
-	else if (key == 'f' || key == 'r')
-	{
-		if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING)
-		{
-			if (mapGameController.isIdle())
-			{
-				boidGameController.setDebug(kinectProjector->getDumpDebugFiles());
-				boidGameController.StartGame(2);
-			}
-			else 
-			{
-				mapGameController.EndButtonPressed();
-			}
-		}
-	}
-	else if (key == '1') // Absolute beginner
-	{
-		if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING && mapGameController.isIdle())
-		{
-			boidGameController.setDebug(kinectProjector->getDumpDebugFiles());
-			boidGameController.StartGame(0);
-		}
-	}
-	else if (key == '2') 
-	{
-		if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING && mapGameController.isIdle())
-		{
-			boidGameController.setDebug(kinectProjector->getDumpDebugFiles());
-			boidGameController.StartGame(1);
-		}
-	}
-	else if (key == '3')
-	{
-		if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING && mapGameController.isIdle())
-		{
-			boidGameController.setDebug(kinectProjector->getDumpDebugFiles());
-			boidGameController.StartGame(2);
-		}
-	}
-	else if (key == '4')
-	{
-		if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING && mapGameController.isIdle())
-		{
-			boidGameController.setDebug(kinectProjector->getDumpDebugFiles());
-			boidGameController.StartGame(3);
-		}
-	}
-	else if (key == 'm')
-	{
-		if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING && mapGameController.isIdle())
-		{
-			boidGameController.setDebug(kinectProjector->getDumpDebugFiles());
-			boidGameController.StartSeekMotherGame();
-		}
-	}
-	else if (key == 't')
-	{
-		mapGameController.setDebug(kinectProjector->getDumpDebugFiles());
-		mapGameController.RealTimeTestMe();
 	}
 	else if (key == 'i')
 	{
@@ -265,11 +150,6 @@ void ofApp::keyPressed(int key)
 		{
 			critterController.addDeer(critterController.getDeerSpawnCount());
 		}
-	}
-	else if (key == 'w')
-	{
-		mapGameController.setDebug(kinectProjector->getDumpDebugFiles());
-		mapGameController.DebugTestMe();
 	}
 }
 
@@ -319,4 +199,3 @@ void ofApp::gotMessage(ofMessage msg) {
 void ofApp::dragEvent(ofDragInfo dragInfo) {
 
 }
-

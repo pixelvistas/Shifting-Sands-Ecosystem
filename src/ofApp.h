@@ -17,6 +17,15 @@ General Public License for more details.
 You should have received a copy of the GNU General Public License along
 with the Augmented Reality Sandbox; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+
+--- Ecosystem fork: stripped down to the ELF port and what it needs.
+MapGameController/BoidGameController (the pre-ecosystem game modes and
+their own hand-gesture input), PuckTracker (3D object/puck recognition),
+MyceliumNetwork, and SonicWaveController (with it, SonicEngine,
+SonicParticle, Tangible, and HandField) have all been removed - none of
+them have an ELF equivalent. What remains is the Kinect/projector
+pipeline, the ELF-style terrain+vegetation renderer, and the ELF
+deer/human population.
 ***********************************************************************/
 
 #pragma once
@@ -25,12 +34,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "ofxImGui.h"
 #include "KinectProjector/KinectProjector.h"
 #include "SandSurfaceRenderer/SandSurfaceRenderer.h"
-#include "Games/MapGameController.h"
-#include "Games/BoidGameController.h"
 #include "Games/CritterController.h"
-#include "Games/SonicWaveController.h"
-#include "Games/PuckTracker.h"
-#include "Games/MyceliumNetwork.h"
 #include "Games/VegetationField.h"
 
 class ofApp : public ofBaseApp {
@@ -62,24 +66,17 @@ private:
 	ofxImGui::Gui imgui;
 	std::shared_ptr<KinectProjector> kinectProjector;
 	SandSurfaceRenderer* sandSurfaceRenderer;
-	CMapGameController mapGameController;
-	CBoidGameController boidGameController;
-	// One PuckTracker shared by both ecosystem layers, so the Critters and
-	// Sonic Wave panels agree on where (and whether) the physical puck is
-	// rather than each running its own independently-tuned detection.
-	PuckTracker puckTracker;
 	CCritterController critterController;
-	CSonicWaveController sonicWaveController;
-	// Buried network revealed by digging - see MyceliumNetwork.h. Shared
-	// with SandSurfaceRenderer (which binds its texture as a shader
-	// uniform) via setMyceliumNetwork(), same query-only-pointer pattern
-	// as PuckTracker.
-	MyceliumNetwork myceliumNetwork;
 	// ELF-style flora grid rendered as colored ground patches - see
-	// VegetationField.h. Shared with SandSurfaceRenderer the same way as
-	// myceliumNetwork above.
+	// VegetationField.h. Shared with SandSurfaceRenderer (which binds its
+	// texture as a shader uniform) and with critterController (deer/humans
+	// query it for growth/water/snow) via query-only pointers.
 	VegetationField vegetationField;
 
 	// Main window ROI
 	ofRectangle mainWindowROI;
+	// Last-seen kinect ROI, purely to detect when it changes (the ROI
+	// calibration can move mid-session) - previously this diffed against
+	// mapGameController's own cached copy, which is gone along with it.
+	ofRectangle lastKinectROI;
 };

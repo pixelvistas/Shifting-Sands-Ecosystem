@@ -7,52 +7,16 @@
 		<ClCompile Include="src\main.cpp">
 			<Filter>src</Filter>
 		</ClCompile>
-		<ClCompile Include="src\Games\BoidGameController.cpp">
-			<Filter>src\Games</Filter>
-		</ClCompile>
 		<ClCompile Include="src\Games\Critter.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
 		<ClCompile Include="src\Games\CritterController.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
-		<ClCompile Include="src\Games\HandField.cpp">
-			<Filter>src\Games</Filter>
-		</ClCompile>
-		<ClCompile Include="src\Games\MapGameController.cpp">
-			<Filter>src\Games</Filter>
-		</ClCompile>
-		<ClCompile Include="src\Games\PuckTracker.cpp">
-			<Filter>src\Games</Filter>
-		</ClCompile>
-		<ClCompile Include="src\Games\MyceliumNetwork.cpp">
-			<Filter>src\Games</Filter>
-		</ClCompile>
 		<ClCompile Include="src\Games\VegetationField.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
 		<ClCompile Include="src\Games\HumanAgent.cpp">
-			<Filter>src\Games</Filter>
-		</ClCompile>
-		<ClCompile Include="src\Games\ReferenceMapHandler.cpp">
-			<Filter>src\Games</Filter>
-		</ClCompile>
-		<ClCompile Include="src\Games\SandboxScoreTracker.cpp">
-			<Filter>src\Games</Filter>
-		</ClCompile>
-		<ClCompile Include="src\Games\SonicEngine.cpp">
-			<Filter>src\Games</Filter>
-		</ClCompile>
-		<ClCompile Include="src\Games\SonicParticle.cpp">
-			<Filter>src\Games</Filter>
-		</ClCompile>
-		<ClCompile Include="src\Games\SonicWaveController.cpp">
-			<Filter>src\Games</Filter>
-		</ClCompile>
-		<ClCompile Include="src\Games\Tangible.cpp">
-			<Filter>src\Games</Filter>
-		</ClCompile>
-		<ClCompile Include="src\Games\vehicle.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
 		<ClCompile Include="src\KinectProjector\KinectGrabber.cpp">
@@ -755,52 +719,16 @@
 		<ClInclude Include="src\ofApp.h">
 			<Filter>src</Filter>
 		</ClInclude>
-		<ClInclude Include="src\Games\BoidGameController.h">
-			<Filter>src\Games</Filter>
-		</ClInclude>
 		<ClInclude Include="src\Games\Critter.h">
 			<Filter>src\Games</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Games\CritterController.h">
 			<Filter>src\Games</Filter>
 		</ClInclude>
-		<ClInclude Include="src\Games\HandField.h">
-			<Filter>src\Games</Filter>
-		</ClInclude>
-		<ClInclude Include="src\Games\MapGameController.h">
-			<Filter>src\Games</Filter>
-		</ClInclude>
-		<ClInclude Include="src\Games\PuckTracker.h">
-			<Filter>src\Games</Filter>
-		</ClInclude>
-		<ClInclude Include="src\Games\MyceliumNetwork.h">
-			<Filter>src\Games</Filter>
-		</ClInclude>
 		<ClInclude Include="src\Games\VegetationField.h">
 			<Filter>src\Games</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Games\HumanAgent.h">
-			<Filter>src\Games</Filter>
-		</ClInclude>
-		<ClInclude Include="src\Games\ReferenceMapHandler.h">
-			<Filter>src\Games</Filter>
-		</ClInclude>
-		<ClInclude Include="src\Games\SandboxScoreTracker.h">
-			<Filter>src\Games</Filter>
-		</ClInclude>
-		<ClInclude Include="src\Games\SonicEngine.h">
-			<Filter>src\Games</Filter>
-		</ClInclude>
-		<ClInclude Include="src\Games\SonicParticle.h">
-			<Filter>src\Games</Filter>
-		</ClInclude>
-		<ClInclude Include="src\Games\SonicWaveController.h">
-			<Filter>src\Games</Filter>
-		</ClInclude>
-		<ClInclude Include="src\Games\Tangible.h">
-			<Filter>src\Games</Filter>
-		</ClInclude>
-		<ClInclude Include="src\Games\vehicle.h">
 			<Filter>src\Games</Filter>
 		</ClInclude>
 		<ClInclude Include="src\KinectProjector\KinectGrabber.h">

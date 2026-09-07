@@ -32,7 +32,6 @@ SandSurfaceRenderer::SandSurfaceRenderer(std::shared_ptr<KinectProjector> const&
 editColorMap(false){
     kinectProjector = k;
     projWindow = p;
-    myceliumNetwork = nullptr;
     vegetationField = nullptr;
 }
 
@@ -250,16 +249,6 @@ void SandSurfaceRenderer::drawSandbox() {
     heightMapShader.setUniform1i("drawContourLines", drawContourLines);
     heightMapShader.setUniform1f("heightMapNumEntries", (float)heightMap.getNumEntries());
     heightMapShader.setUniform1f("time", ofGetElapsedTimef());
-
-    bool hasMycelium = myceliumNetwork && myceliumNetwork->getTexture().isAllocated();
-    heightMapShader.setUniform1i("hasMycelium", hasMycelium);
-    if (hasMycelium) {
-        heightMapShader.setUniformTexture("myceliumSampler", myceliumNetwork->getTexture(), 4);
-        heightMapShader.setUniform2f("myceliumGridOrigin", myceliumNetwork->getGridOrigin());
-        heightMapShader.setUniform1f("myceliumGridStep", myceliumNetwork->getGridStep());
-        ofColor glow = MyceliumNetwork::GLOW_COLOR;
-        heightMapShader.setUniform3f("myceliumGlowColor", ofVec3f(glow.r / 255.0f, glow.g / 255.0f, glow.b / 255.0f));
-    }
 
     bool hasVegetation = vegetationField && vegetationField->getTexture().isAllocated();
     heightMapShader.setUniform1i("hasVegetation", hasVegetation);

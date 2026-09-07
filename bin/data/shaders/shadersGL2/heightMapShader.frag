@@ -39,13 +39,6 @@ uniform int drawContourLines;
 uniform float heightMapNumEntries; // depthfrag is in [0, heightMapNumEntries) texel space, not 0..1 - see elevationNorm below
 uniform float time; // unused - kept bound alongside heightColorMapSampler above
 
-// Mycelium: see MyceliumNetwork.h / the matching GL3 shader for the full note.
-uniform int hasMycelium;
-uniform sampler2DRect myceliumSampler;
-uniform vec2 myceliumGridOrigin;
-uniform float myceliumGridStep;
-uniform vec3 myceliumGlowColor;
-
 // Vegetation: see VegetationField.h / the matching GL3 shader for the full note.
 uniform int hasVegetation;
 uniform sampler2DRect vegetationSampler;
@@ -87,13 +80,6 @@ void main()
         {
             color.rgb = vec3(1.0, 0.6863, 0.6863);
         }
-    }
-
-    if (hasMycelium == 1)
-    {
-        vec2 myceliumUV = (texcoordfrag - myceliumGridOrigin) / myceliumGridStep;
-        float myceliumIntensity = texture2DRect(myceliumSampler, myceliumUV).r;
-        color.rgb += myceliumGlowColor * myceliumIntensity;
     }
 
     if (drawContourLines == 1)

@@ -33,8 +33,7 @@ class CCritterController
 {
 public:
 	// vegetationField is owned by ofApp and shared here (and with
-	// SandSurfaceRenderer) - same query-only-pointer pattern used
-	// elsewhere in this codebase (see PuckTracker's use by two layers).
+	// SandSurfaceRenderer) as a query-only pointer.
 	void setup(std::shared_ptr<KinectProjector> const& k, VegetationField* vegetationField);
 	void setProjectorRes(ofVec2f & PR);
 	void setKinectROI(ofRectangle & KROI);

@@ -16,8 +16,8 @@ float VegetationField::NUT_GROWTH_RATE = 0.4f;
 float VegetationField::FOOD_PER_FULL_CELL = 255.0f;
 
 namespace {
-	// One cell per kinect pixel - see the header note on why this doesn't
-	// share HandField/PuckTracker/MyceliumNetwork's GRID_STEP==4 convention.
+	// One cell per kinect pixel - see the header note on matching ELF's
+	// own native-resolution sampling.
 	const int GRID_STEP = 1;
 }
 
