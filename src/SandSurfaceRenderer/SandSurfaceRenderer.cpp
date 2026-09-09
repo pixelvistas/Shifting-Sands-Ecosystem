@@ -24,6 +24,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 ***********************************************************************/
 
 #include "SandSurfaceRenderer.h"
+#include "ofxImGui.h"
 
 using namespace ofxCSG;
 
@@ -530,8 +531,19 @@ void SandSurfaceRenderer::updateColorListColor(int i, int j) {
 }
 
 void SandSurfaceRenderer::drawGui() {
-	// PORT-TODO(imgui): re-expose colormap/contour controls here when needed.
-	// Renderer runs on its loaded colormap and default contour settings.
+	if (!displayGui)
+		return;
+
+	ImGui::Begin("Sand Surface Renderer");
+	// loadSettings() in setup() can restore drawContourLines=true from a
+	// previously-saved sandSurfaceRendererSettings.xml even though the
+	// in-code default is off - this is the only way to see or override
+	// that at runtime (see setup()'s header note on the flag).
+	ImGui::Checkbox("Draw contour lines", &drawContourLines);
+	if (ImGui::SliderFloat("Contour line distance (mm)", &contourLineDistance, 1.0f, 30.0f)) {
+		contourLineFactor = contourLineFboScale / contourLineDistance;
+	}
+	ImGui::End();
 }
 
 //TODO: Save additionnal settings

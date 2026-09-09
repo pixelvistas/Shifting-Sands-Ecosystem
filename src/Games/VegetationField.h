@@ -56,6 +56,22 @@ eases it back down toward BASE_TEMPERATURE. TEMPERATURE_EASE_RATE keeps
 this a gradual "warming/cooling" rather than a frame-to-frame jitter
 reacting to sensor noise.
 
+ACTIVITY_NOISE_FLOOR exists because "reacting to sensor noise" is not
+just a jitter risk but a real failure mode on physical Kinect hardware:
+depth measurement noise of a few mm per pixel is present on every cell
+every frame, even when nothing is touching the sand - unlike genuine
+sculpting, which is confined to whatever the hand is actually touching,
+this noise is not diluted by averaging over the whole grid. Left
+unfiltered it pins activityLevel just above zero permanently, which
+saturates TEMPERATURE at MAX_TEMPERATURE_OFFSET on a perfectly still
+sandbox, floods land that would otherwise hold its vegetation, and zeros
+it via the water/snow branch above - visually, the whole play area
+decaying to the tie-break PINK fallback over time with no participant
+interaction at all. Per-cell deltas at or below this floor are dropped
+from the activity sum entirely (not merely damped), so a still sandbox's
+activityLevel reads as exactly 0 and TEMPERATURE eases back to
+BASE_TEMPERATURE, matching ELF's undisturbed baseline.
+
 Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 ***********************************************************************/
 
@@ -129,6 +145,10 @@ public:
 	static float BASE_TEMPERATURE;       // mm, TEMPERATURE's resting value when the sand is undisturbed
 	static float ACTIVITY_TO_TEMPERATURE; // mm of TEMPERATURE offset per mm of average per-cell elevation change
 	static float MAX_TEMPERATURE_OFFSET; // mm, clamps how far activity alone can push TEMPERATURE above BASE_TEMPERATURE
+	// mm, per-cell elevation change below which a frame's delta is treated as
+	// depth-sensor noise rather than real sculpting and dropped from the
+	// activity sum entirely - see update()'s header note on why this exists.
+	static float ACTIVITY_NOISE_FLOOR;
 	static float TEMPERATURE_EASE_RATE;  // how fast TEMPERATURE chases its activity-driven target, per second
 	static float WATER_LEVEL_BASE;       // mm, elevation below which a cell is water at TEMPERATURE == 0
 	static float SNOW_LEVEL_BASE;        // mm, elevation above which a cell is snow at TEMPERATURE == 0

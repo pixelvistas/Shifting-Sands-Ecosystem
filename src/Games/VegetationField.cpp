@@ -11,6 +11,10 @@ float VegetationField::BASE_TEMPERATURE = 0.0f;
 // response; retune once real activity levels are observed.
 float VegetationField::ACTIVITY_TO_TEMPERATURE = 200.0f;
 float VegetationField::MAX_TEMPERATURE_OFFSET = 60.0f;
+// Typical per-pixel Kinect depth noise is on the order of 1-2mm at rest;
+// set with headroom above that so a still sandbox reliably reads as zero
+// activity rather than chasing sensor jitter - see the header note.
+float VegetationField::ACTIVITY_NOISE_FLOOR = 3.0f;
 float VegetationField::TEMPERATURE_EASE_RATE = 0.5f;
 float VegetationField::WATER_LEVEL_BASE = -25.0f;
 float VegetationField::SNOW_LEVEL_BASE = 60.0f;
@@ -97,8 +101,14 @@ void VegetationField::update()
 			float elevation = kinectProjector->elevationAtKinectCoord(kx, ky);
 
 			float & prevElevation = previousElevation.at<float>(gy, gx);
-			if (activityBaselineReady)
-				activitySum += std::abs(elevation - prevElevation);
+			if (activityBaselineReady) {
+				float delta = std::abs(elevation - prevElevation);
+				// Drop noise-floor-level deltas entirely rather than
+				// damping them, so a still sandbox reads as exactly
+				// zero activity - see the header note.
+				if (delta > ACTIVITY_NOISE_FLOOR)
+					activitySum += delta;
+			}
 			prevElevation = elevation;
 
 			bool isWater = elevation < waterLevel;
@@ -239,6 +249,7 @@ void VegetationField::drawGui()
 	ImGui::SliderFloat("Activity -> temperature scale", &ACTIVITY_TO_TEMPERATURE, 0.0f, 1000.0f);
 	ImGui::SliderFloat("Max activity offset (mm)", &MAX_TEMPERATURE_OFFSET, 0.0f, 120.0f);
 	ImGui::SliderFloat("Temperature ease rate", &TEMPERATURE_EASE_RATE, 0.05f, 3.0f);
+	ImGui::SliderFloat("Activity noise floor (mm)", &ACTIVITY_NOISE_FLOOR, 0.0f, 20.0f);
 	ImGui::Separator();
 	ImGui::SliderFloat("Water level (mm)", &WATER_LEVEL_BASE, -100.0f, 50.0f);
 	ImGui::SliderFloat("Snow level (mm)", &SNOW_LEVEL_BASE, 0.0f, 150.0f);
