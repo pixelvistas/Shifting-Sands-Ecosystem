@@ -289,16 +289,30 @@ void VegetationField::drawGui()
 	ImGui::Separator();
 	ImGui::Text("Climate (participant-driven, not a direct control)");
 	ImGui::Text("Temperature: %.3f  (activity: %.3f mm/cell)", TEMPERATURE, activityLevel);
+	// Reorder by actual value, same as normalizedElevation() - elevationMin
+	// is NOT guaranteed the smaller of the two, see setElevationRange()'s
+	// header note. This readout was inverted/wrong until now: it computed
+	// straight from elevationMax-elevationMin without that reordering.
+	float lo = std::min(elevationMin, elevationMax);
+	float hi = std::max(elevationMin, elevationMax);
 	float waterLevelFrac = TEMPERATURE - LIVING_RANGE_FRACTION;
-	float waterLevelMM = elevationMin + waterLevelFrac * (elevationMax - elevationMin);
-	float snowLevelMM = elevationMin + TEMPERATURE * (elevationMax - elevationMin);
-	ImGui::Text("Water line: %.1f mm   Snow line: %.1f mm   (calibrated range %.0f..%.0f mm)", waterLevelMM, snowLevelMM, elevationMin, elevationMax);
+	float waterLevelMM = lo + waterLevelFrac * (hi - lo);
+	float snowLevelMM = lo + TEMPERATURE * (hi - lo);
+	ImGui::Text("Water line: %.1f mm   Snow line: %.1f mm", waterLevelMM, snowLevelMM);
 	ImGui::Text("Sustained sculpting raises it - floods more land, shrinks the snowcap.");
 	ImGui::SliderFloat("Base temperature", &BASE_TEMPERATURE, 0.0f, 1.0f);
 	ImGui::SliderFloat("Activity -> temperature scale", &ACTIVITY_TO_TEMPERATURE, 0.0f, 2.0f);
 	ImGui::SliderFloat("Max activity offset", &MAX_TEMPERATURE_OFFSET, 0.0f, 0.5f);
 	ImGui::SliderFloat("Temperature ease rate", &TEMPERATURE_EASE_RATE, 0.05f, 3.0f);
 	ImGui::SliderFloat("Activity noise floor (mm)", &ACTIVITY_NOISE_FLOOR, 0.0f, 20.0f);
+	ImGui::Separator();
+	ImGui::Text("Calibrated elevation range (mm) - what water/snow lines above are");
+	ImGui::Text("a fraction OF. Narrow this to your box's real achievable relief:");
+	ImGui::Text("too wide (the stock +-220mm default) and the whole 'living' zone");
+	ImGui::Text("swallows ordinary sculpting, so nothing you build ever crosses it.");
+	ImGui::Text("Order doesn't matter - normalizedElevation() sorts by value.");
+	ImGui::SliderFloat("Elevation range bound A (mm)", &elevationMin, -400.0f, 400.0f);
+	ImGui::SliderFloat("Elevation range bound B (mm)", &elevationMax, -400.0f, 400.0f);
 	ImGui::Separator();
 	ImGui::Text("ELF ratios (BDenvironment.LIVINGRANGE/SHRUBLINE/FRUITLINE/NUTLINE / 255)");
 	ImGui::SliderFloat("Living range fraction", &LIVING_RANGE_FRACTION, 0.0f, 1.0f);
