@@ -91,7 +91,21 @@ void KinectProjector::setup(bool sdisplayGui)
 		ofLogVerbose("KinectProjector") << "KinectProjector.setup(): Kinect not found - trying again later";
 	}
 
-	doInpainting = false;
+	// On by default: KinectGrabber::applySimpleOutlierInpainting() detects
+	// raw depth pixels reading exactly 0 (no IR return) or initialValue
+	// (never-updated sentinel) and repairs them from a local or ROI-wide
+	// average instead of passing them straight through. Without it, those
+	// invalid pixels reach heightMapShader.vert's per-vertex depth lookup
+	// unfiltered and displace that one vertex to a wildly wrong world
+	// position; since the sandbox mesh triangulates every pixel to its
+	// immediate neighbors with no gaps, every triangle touching that one
+	// bad vertex stretches into a long, thin, colorized spike across the
+	// mesh - the "trails"/tangled-line artifacts seen crossing an
+	// otherwise blank sandbox. This was always a risk on real hardware but
+	// was easy to miss under the old textured/rainbow terrain rendering;
+	// it's now the loudest thing on screen with a flat white base and
+	// saturated, opaque vegetation colors providing no cover for it.
+	doInpainting = true;
 	doFullFrameFiltering = false;
 	spatialFiltering = false;
     followBigChanges = false;
