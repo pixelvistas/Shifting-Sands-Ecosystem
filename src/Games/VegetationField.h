@@ -144,9 +144,12 @@ public:
 	// normalized against before any threshold comparison - see the header
 	// note. Call once, after SandSurfaceRenderer has computed its own
 	// elevationMin/elevationMax (i.e. after its setup()), passing
-	// SandSurfaceRenderer::getElevationMin()/getElevationMax(). Safe to
-	// call again if calibration changes; classification just picks up the
-	// new range next update() - no grid reset needed.
+	// SandSurfaceRenderer::getElevationMin()/getElevationMax() - in
+	// whichever order, min/max are NOT guaranteed ascending there (see
+	// that getter's comment), and normalizedElevation() reorders by
+	// actual value rather than trusting minMM<maxMM. Safe to call again
+	// if calibration changes; classification just picks up the new range
+	// next update() - no grid reset needed.
 	void setElevationRange(float minMM, float maxMM);
 
 	// Resets the persistent density grids (only) when the play area's grid

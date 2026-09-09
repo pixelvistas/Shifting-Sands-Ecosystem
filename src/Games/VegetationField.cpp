@@ -68,10 +68,19 @@ void VegetationField::setElevationRange(float minMM, float maxMM)
 
 float VegetationField::normalizedElevation(float elevationMM) const
 {
-	float range = elevationMax - elevationMin;
+	// SandSurfaceRenderer's elevationMin/elevationMax are NOT guaranteed
+	// ascending - its own setup() deliberately sets elevationMin = higher
+	// number, elevationMax = lower number (both negated from the loaded
+	// colormap's height range) to feed a correspondingly negative
+	// heightMapScale in its own affine formula. That convention is
+	// self-consistent there, but this is a plain linear normalization, so
+	// reorder by actual value here rather than trusting the field names.
+	float lo = std::min(elevationMin, elevationMax);
+	float hi = std::max(elevationMin, elevationMax);
+	float range = hi - lo;
 	if (range < 1.0f)
 		range = 1.0f; // guard against a degenerate/uncalibrated range
-	return ofClamp((elevationMM - elevationMin) / range, 0.0f, 1.0f);
+	return ofClamp((elevationMM - lo) / range, 0.0f, 1.0f);
 }
 
 void VegetationField::setKinectROI(ofRectangle & KROI)

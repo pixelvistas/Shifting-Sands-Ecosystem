@@ -91,6 +91,17 @@ public:
     // so classification and display agree on what "normalized elevation"
     // means, instead of VegetationField inventing a second, disconnected
     // calibration in raw millimeters.
+    //
+    // NOT guaranteed elevationMin < elevationMax: setup() assigns each as
+    // the NEGATION of the loaded colormap's min/max height key, which
+    // flips their relative order (e.g. colormap range -220..220 here
+    // becomes elevationMin=220, elevationMax=-220). That inversion is
+    // deliberate and self-consistent with this class's own
+    // heightMapScale/heightMapOffset formula, but a caller doing a plain
+    // linear normalization (as VegetationField::normalizedElevation()
+    // does) must reorder by actual value rather than trust these names -
+    // an earlier version of that function didn't, and it silently
+    // collapsed the whole grid to the same normalized value.
     float getElevationMin() const { return elevationMin; }
     float getElevationMax() const { return elevationMax; }
 
