@@ -51,6 +51,12 @@ void ofApp::setup() {
 	// triggers the population's first spawn - see CCritterController::
 	// setKinectROI()/addDeer()/addHumans().
 	vegetationField.setup(kinectProjector);
+	// Share SandSurfaceRenderer's calibrated elevation range so
+	// VegetationField's classification and the shader's cosmetic color
+	// modulation agree on what "normalized elevation" means - see
+	// VegetationField.h's header note. Must come after sandSurfaceRenderer
+	// setup() above, which is what computes this range.
+	vegetationField.setElevationRange(sandSurfaceRenderer->getElevationMin(), sandSurfaceRenderer->getElevationMax());
 	vegetationField.setKinectROI(kinectROI);
 	sandSurfaceRenderer->setVegetationField(&vegetationField);
 

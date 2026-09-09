@@ -75,11 +75,17 @@ uniform float vegetationGridStep;
 
 void main()
 {
-    // ELF's "cellheight" analog: a full-sensor-range normalized
-    // elevation (0..1), independent of VegetationField's own
-    // temperature-relative water/snow thresholds - exactly how ELF keeps
-    // its MINDEPTH/MAXDEPTH-derived cellheight separate from
-    // BDenvironment's LIVINGRANGE/temperature bands operating on it.
+    // ELF's "cellheight" analog: a full-sensor-range normalized elevation
+    // (0..1). In ELF, cellheight is the SAME field used both for
+    // getCellColor()'s cosmetic modulation and for stepCells()'s
+    // temperature/water/snow threshold comparisons - not two independent
+    // normalizations. This mirrors that: elevationNorm here and
+    // VegetationField::normalizedElevation() both normalize against the
+    // same calibrated elevationMin/elevationMax range (see
+    // VegetationField.h's header note and SandSurfaceRenderer's
+    // getElevationMin()/getElevationMax()), just computed on different
+    // sides (GPU here for display, CPU there for classification) since
+    // they run at different times relative to each other.
     float elevationNorm = clamp(depthfrag / heightMapNumEntries, 0.0, 1.0);
 
     // No colour cast before classification - full-brightness white, the

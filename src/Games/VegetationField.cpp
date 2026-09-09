@@ -1,28 +1,37 @@
 #include "VegetationField.h"
 #include "ofxImGui.h"
 
-float VegetationField::TEMPERATURE = 0.0f;
-float VegetationField::BASE_TEMPERATURE = 0.0f;
+// Fraction of the calibrated elevation range (see setElevationRange() and
+// the header note), not millimeters. Starts equal to BASE_TEMPERATURE so
+// there's no artificial startup transient easing up from 0.
+float VegetationField::TEMPERATURE = 0.85f;
+// NOT ELF's literal default (200/255): with LIVING_RANGE_FRACTION already
+// ~0.784 of the whole range, that value places the water line exactly at
+// the calibrated floor with zero margin - only usable in ELF's own source
+// because an operator manually lowers temperature first. This is a
+// starting guess with a little headroom on both ends instead; see the
+// header note - it needs on-site placement against the real box.
+float VegetationField::BASE_TEMPERATURE = 0.85f;
 // First-guess scale, untested on real hardware - see the header note.
 // Average per-cell elevation change during active sculpting is expected
 // to be a small fraction of a millimeter per frame (only cells near a
 // hand actually move, diluted across the whole grid), so this is set
 // high enough that ordinary sculpting registers a visible climate
 // response; retune once real activity levels are observed.
-float VegetationField::ACTIVITY_TO_TEMPERATURE = 200.0f;
-float VegetationField::MAX_TEMPERATURE_OFFSET = 60.0f;
+float VegetationField::ACTIVITY_TO_TEMPERATURE = 0.3f;
+float VegetationField::MAX_TEMPERATURE_OFFSET = 0.1f;
+float VegetationField::TEMPERATURE_EASE_RATE = 0.5f;
 // Typical per-pixel Kinect depth noise is on the order of 1-2mm at rest;
 // set with headroom above that so a still sandbox reliably reads as zero
 // activity rather than chasing sensor jitter - see the header note.
 float VegetationField::ACTIVITY_NOISE_FLOOR = 3.0f;
-float VegetationField::TEMPERATURE_EASE_RATE = 0.5f;
-float VegetationField::WATER_LEVEL_BASE = -25.0f;
-float VegetationField::SNOW_LEVEL_BASE = 60.0f;
-float VegetationField::SHRUB_MIN_ABOVE_WATER = 8.0f;
-float VegetationField::FRUIT_MIN_ABOVE_WATER = 25.0f;
-float VegetationField::FRUIT_MAX_BELOW_SNOW = 25.0f;
-float VegetationField::NUT_MIN_ABOVE_WATER = 11.0f;
-float VegetationField::NUT_MAX_BELOW_SNOW = 11.0f;
+// BDenvironment's LIVINGRANGE=200/SHRUBLINE=20/FRUITLINE=60/NUTLINE=25,
+// each divided by 255 - see the header note on why these are fractions
+// and on FRUITLINE/NUTLINE's relative sizes.
+float VegetationField::LIVING_RANGE_FRACTION = 200.0f / 255.0f;
+float VegetationField::SHRUB_LINE_FRACTION = 20.0f / 255.0f;
+float VegetationField::FRUIT_LINE_FRACTION = 60.0f / 255.0f;
+float VegetationField::NUT_LINE_FRACTION = 25.0f / 255.0f;
 // 1:3:2 ratio, matching ELF's SHRUBGROWTH=1/FRUITGROWTH=3/NUTGROWTH=2.
 float VegetationField::SHRUB_GROWTH_RATE = 0.2f;
 float VegetationField::FRUIT_GROWTH_RATE = 0.6f;
@@ -44,6 +53,25 @@ void VegetationField::setup(std::shared_ptr<KinectProjector> const& k)
 	gridReady = false;
 	activityBaselineReady = false;
 	activityLevel = 0.0f;
+	// Sane fallback until setElevationRange() is called - keeps
+	// normalizedElevation() well-defined even if update() somehow runs
+	// first.
+	elevationMin = -220.0f;
+	elevationMax = 220.0f;
+}
+
+void VegetationField::setElevationRange(float minMM, float maxMM)
+{
+	elevationMin = minMM;
+	elevationMax = maxMM;
+}
+
+float VegetationField::normalizedElevation(float elevationMM) const
+{
+	float range = elevationMax - elevationMin;
+	if (range < 1.0f)
+		range = 1.0f; // guard against a degenerate/uncalibrated range
+	return ofClamp((elevationMM - elevationMin) / range, 0.0f, 1.0f);
 }
 
 void VegetationField::setKinectROI(ofRectangle & KROI)
@@ -79,9 +107,11 @@ void VegetationField::update()
 	// See the header note: raising TEMPERATURE shifts both lines up
 	// together, which floods more low ground AND shrinks the snowcap
 	// (fewer cells clear the now-higher snow threshold) - exactly ELF's
-	// 'q'/'a' behavior.
-	float waterLevel = WATER_LEVEL_BASE + TEMPERATURE;
-	float snowLevel = SNOW_LEVEL_BASE + TEMPERATURE;
+	// 'q'/'a' behavior. Both are fractions of the calibrated elevation
+	// range, matching BDenvironment.stepCells()'s temperature/
+	// temperature-LIVINGRANGE comparisons on its own normalized cellheight.
+	float snowLevelFrac = TEMPERATURE;
+	float waterLevelFrac = TEMPERATURE - LIVING_RANGE_FRACTION;
 	float dt = ofGetLastFrameTime();
 
 	ofPixels px;
@@ -91,7 +121,10 @@ void VegetationField::update()
 	// Participant-facing climate: TEMPERATURE is not a direct control (see
 	// the header note) - it is driven by how much the sand is actively
 	// being reshaped, accumulated below alongside the existing per-cell
-	// elevation sampling so this costs nothing extra.
+	// elevation sampling so this costs nothing extra. Activity itself
+	// stays in raw mm (compared against ACTIVITY_NOISE_FLOOR, also mm)
+	// since it's a delta between two raw sensor readings, not a
+	// classification decision.
 	float activitySum = 0.0f;
 
 	for (int gy = 0; gy < rows; gy++) {
@@ -111,8 +144,9 @@ void VegetationField::update()
 			}
 			prevElevation = elevation;
 
-			bool isWater = elevation < waterLevel;
-			bool isSnow = !isWater && elevation > snowLevel;
+			float elevFrac = normalizedElevation(elevation);
+			bool isWater = elevFrac < waterLevelFrac;
+			bool isSnow = !isWater && elevFrac > snowLevelFrac;
 
 			float & shrub = shrubDensity.at<float>(gy, gx);
 			float & fruit = fruitDensity.at<float>(gy, gx);
@@ -127,10 +161,12 @@ void VegetationField::update()
 				// condition holds; otherwise it just holds its current
 				// value rather than decaying (see the header note - ELF's
 				// stepCells() has no code path that shrinks these while
-				// still land).
-				bool inShrubBand = elevation > waterLevel + SHRUB_MIN_ABOVE_WATER;
-				bool inFruitBand = elevation > waterLevel + FRUIT_MIN_ABOVE_WATER && elevation < snowLevel - FRUIT_MAX_BELOW_SNOW;
-				bool inNutBand = elevation > waterLevel + NUT_MIN_ABOVE_WATER && elevation < snowLevel - NUT_MAX_BELOW_SNOW;
+				// still land). Shrub has no upper bound, matching
+				// stepCells()'s shrub check having no "< temperature - X"
+				// clause the way fruit/nut's do.
+				bool inShrubBand = elevFrac > waterLevelFrac + SHRUB_LINE_FRACTION;
+				bool inFruitBand = elevFrac > waterLevelFrac + FRUIT_LINE_FRACTION && elevFrac < snowLevelFrac - FRUIT_LINE_FRACTION;
+				bool inNutBand = elevFrac > waterLevelFrac + NUT_LINE_FRACTION && elevFrac < snowLevelFrac - NUT_LINE_FRACTION;
 
 				if (inShrubBand) shrub = std::min(1.0f, shrub + SHRUB_GROWTH_RATE * dt);
 				if (inFruitBand) fruit = std::min(1.0f, fruit + FRUIT_GROWTH_RATE * dt);
@@ -224,16 +260,16 @@ bool VegetationField::isWaterAt(float kx, float ky) const
 {
 	if (!kinectProjector)
 		return false;
-	float elevation = kinectProjector->elevationAtKinectCoord(kx, ky);
-	return elevation < (WATER_LEVEL_BASE + TEMPERATURE);
+	float elevFrac = normalizedElevation(kinectProjector->elevationAtKinectCoord(kx, ky));
+	return elevFrac < (TEMPERATURE - LIVING_RANGE_FRACTION);
 }
 
 bool VegetationField::isSnowAt(float kx, float ky) const
 {
 	if (!kinectProjector)
 		return false;
-	float elevation = kinectProjector->elevationAtKinectCoord(kx, ky);
-	return elevation >= (WATER_LEVEL_BASE + TEMPERATURE) && elevation > (SNOW_LEVEL_BASE + TEMPERATURE);
+	float elevFrac = normalizedElevation(kinectProjector->elevationAtKinectCoord(kx, ky));
+	return elevFrac >= (TEMPERATURE - LIVING_RANGE_FRACTION) && elevFrac > TEMPERATURE;
 }
 
 void VegetationField::drawGui()
@@ -243,22 +279,23 @@ void VegetationField::drawGui()
 	ImGui::Text("bands relative to the water line - reshape the sand to see it shift.");
 	ImGui::Separator();
 	ImGui::Text("Climate (participant-driven, not a direct control)");
-	ImGui::Text("Temperature: %.1f mm  (activity: %.3f mm/cell)", TEMPERATURE, activityLevel);
+	ImGui::Text("Temperature: %.3f  (activity: %.3f mm/cell)", TEMPERATURE, activityLevel);
+	float waterLevelFrac = TEMPERATURE - LIVING_RANGE_FRACTION;
+	float waterLevelMM = elevationMin + waterLevelFrac * (elevationMax - elevationMin);
+	float snowLevelMM = elevationMin + TEMPERATURE * (elevationMax - elevationMin);
+	ImGui::Text("Water line: %.1f mm   Snow line: %.1f mm   (calibrated range %.0f..%.0f mm)", waterLevelMM, snowLevelMM, elevationMin, elevationMax);
 	ImGui::Text("Sustained sculpting raises it - floods more land, shrinks the snowcap.");
-	ImGui::SliderFloat("Base temperature (mm)", &BASE_TEMPERATURE, -60.0f, 60.0f);
-	ImGui::SliderFloat("Activity -> temperature scale", &ACTIVITY_TO_TEMPERATURE, 0.0f, 1000.0f);
-	ImGui::SliderFloat("Max activity offset (mm)", &MAX_TEMPERATURE_OFFSET, 0.0f, 120.0f);
+	ImGui::SliderFloat("Base temperature", &BASE_TEMPERATURE, 0.0f, 1.0f);
+	ImGui::SliderFloat("Activity -> temperature scale", &ACTIVITY_TO_TEMPERATURE, 0.0f, 2.0f);
+	ImGui::SliderFloat("Max activity offset", &MAX_TEMPERATURE_OFFSET, 0.0f, 0.5f);
 	ImGui::SliderFloat("Temperature ease rate", &TEMPERATURE_EASE_RATE, 0.05f, 3.0f);
 	ImGui::SliderFloat("Activity noise floor (mm)", &ACTIVITY_NOISE_FLOOR, 0.0f, 20.0f);
 	ImGui::Separator();
-	ImGui::SliderFloat("Water level (mm)", &WATER_LEVEL_BASE, -100.0f, 50.0f);
-	ImGui::SliderFloat("Snow level (mm)", &SNOW_LEVEL_BASE, 0.0f, 150.0f);
-	ImGui::Separator();
-	ImGui::SliderFloat("Shrub min above water (mm)", &SHRUB_MIN_ABOVE_WATER, 0.0f, 50.0f);
-	ImGui::SliderFloat("Fruit min above water (mm)", &FRUIT_MIN_ABOVE_WATER, 0.0f, 60.0f);
-	ImGui::SliderFloat("Fruit max below snow (mm)", &FRUIT_MAX_BELOW_SNOW, 0.0f, 60.0f);
-	ImGui::SliderFloat("Nut min above water (mm)", &NUT_MIN_ABOVE_WATER, 0.0f, 60.0f);
-	ImGui::SliderFloat("Nut max below snow (mm)", &NUT_MAX_BELOW_SNOW, 0.0f, 60.0f);
+	ImGui::Text("ELF ratios (BDenvironment.LIVINGRANGE/SHRUBLINE/FRUITLINE/NUTLINE / 255)");
+	ImGui::SliderFloat("Living range fraction", &LIVING_RANGE_FRACTION, 0.0f, 1.0f);
+	ImGui::SliderFloat("Shrub line fraction", &SHRUB_LINE_FRACTION, 0.0f, 0.5f);
+	ImGui::SliderFloat("Fruit line fraction", &FRUIT_LINE_FRACTION, 0.0f, 0.5f);
+	ImGui::SliderFloat("Nut line fraction", &NUT_LINE_FRACTION, 0.0f, 0.5f);
 	ImGui::Separator();
 	ImGui::SliderFloat("Shrub growth rate", &SHRUB_GROWTH_RATE, 0.0f, 2.0f);
 	ImGui::SliderFloat("Fruit growth rate", &FRUIT_GROWTH_RATE, 0.0f, 2.0f);

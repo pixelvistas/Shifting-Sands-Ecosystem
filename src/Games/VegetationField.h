@@ -28,6 +28,57 @@ BDlocation.java/BDenvironment.java:
   in ELF's source path ever decrements them for leaving a band while
   still land).
 
+ELEVATION IS NORMALIZED, NOT RAW MILLIMETERS - this is the one place an
+earlier pass of this port genuinely diverged from ELF's actual physics
+rather than just its visual style, and it is the reason a hand-dug pit
+or a mounded hill could fail to register as water/growth/snow at all
+depending on the installation: BDlocation's "cellheight" is never a
+real-world measurement. It is raw Kinect depth rescaled once into a
+fixed 0..255 range via BDlocation's own hardcoded MINDEPTH=6800/
+MAXDEPTH=8200, and every threshold BDenvironment compares against it
+(temperature, LIVINGRANGE, SHRUBLINE, FRUITLINE, NUTLINE) is a point on
+that same 0..255 scale - i.e. a *fraction* of whatever physical depth
+range the installation was calibrated for, not an absolute millimeter
+distance. Comparing elevationAtKinectCoord()'s real millimeters against
+invented millimeter constants (an earlier version of this file did
+exactly that) has no principled relationship to either ELF's real
+numbers or to a given box's actual usable relief - a 60mm shift might
+be negligible on one installation and flood an entire box on another.
+
+setElevationRange() fixes this: it takes the same calibrated elevation
+range (elevationMin/elevationMax, mm) that SandSurfaceRenderer already
+derives from the loaded colormap and uses to normalize elevationNorm for
+cosmetic color modulation in heightMapShader.frag - see that file's
+header note. All classification here normalizes elevation into that
+same 0..1 fraction before comparing against thresholds, so this class's
+MINDEPTH/MAXDEPTH analog is shared with, not disconnected from, the
+shader's own normalization, and LIVING_RANGE_FRACTION/SHRUB_LINE_FRACTION/
+FRUIT_LINE_FRACTION/NUT_LINE_FRACTION are BDenvironment's literal
+LIVINGRANGE=200/SHRUBLINE=20/FRUITLINE=60/NUTLINE=25 each divided by
+255 - exact ELF ratios, expressed as fractions of whatever range this
+installation is calibrated for, rather than re-guessed constants. Note
+in particular that FRUITLINE (60/255, the *largest* offset) makes fruit
+ELF's most exclusive/narrowest band and NUTLINE (25/255) makes nut
+almost as permissive as shrub's SHRUBLINE (20/255) - a shape an earlier
+pass of this port also got backwards by using symmetric, similarly-sized
+offsets for fruit and nut.
+
+TEMPERATURE/BASE_TEMPERATURE/MAX_TEMPERATURE_OFFSET are themselves now
+fractions of the same calibrated range (0..1-ish, not millimeters) for
+the same reason. BASE_TEMPERATURE's starting value is NOT ELF's literal
+default (temperature=200/255): working through the arithmetic, that
+value places the water line exactly at the calibrated floor with zero
+margin (LIVINGRANGE=200/255 already consumes ~78% of the whole range),
+which in ELF's own source is only usable because an operator manually
+lowers temperature via decTemp() ('a') before/during a session to open
+a reachable water band for their specific installation. This port has
+no equivalent manual dial (TEMPERATURE only rises from BASE_TEMPERATURE
+with activity, per the note below), so BASE_TEMPERATURE needs that
+one-time manual placement instead, done live against the real box: the
+Vegetation GUI panel's Temperature readout plus watching what a real dig
+and a real mound actually do is the fastest way to place it, the same
+way an ELF operator would have dialed 'q'/'a' once at setup time.
+
 A CPU-side grid sampled from elevationAtKinectCoord() each frame,
 uploaded as a single texture that SandSurfaceRenderer's heightMapShader
 reads - see getTexture() /
@@ -45,9 +96,9 @@ heightMapShader.frag's header note. Density itself only decides the
 comparison outcome here, never a fade amount - there is no partial/faded
 color state in ELF, and now none in this shader either.
 
-TEMPERATURE shifts both WATER_LEVEL_BASE and SNOW_LEVEL_BASE by the same
-amount, matching ELF's temperature effect exactly (raising it both floods
-more land and shrinks the snowcap, since the snow threshold rising means
+TEMPERATURE shifts both the water and snow lines by the same amount,
+matching ELF's temperature effect exactly (raising it both floods more
+land and shrinks the snowcap, since the snow threshold rising means
 fewer cells clear it) - see BDenvironment.stepCells()/incTemp()/decTemp().
 Unlike ELF, where temperature only moves on operator keypresses (q/a),
 TEMPERATURE here is not a direct control at all - it is derived each
@@ -60,21 +111,20 @@ eases it back down toward BASE_TEMPERATURE. TEMPERATURE_EASE_RATE keeps
 this a gradual "warming/cooling" rather than a frame-to-frame jitter
 reacting to sensor noise.
 
-ACTIVITY_NOISE_FLOOR exists because "reacting to sensor noise" is not
-just a jitter risk but a real failure mode on physical Kinect hardware:
-depth measurement noise of a few mm per pixel is present on every cell
-every frame, even when nothing is touching the sand - unlike genuine
-sculpting, which is confined to whatever the hand is actually touching,
-this noise is not diluted by averaging over the whole grid. Left
-unfiltered it pins activityLevel just above zero permanently, which
-saturates TEMPERATURE at MAX_TEMPERATURE_OFFSET on a perfectly still
-sandbox, floods land that would otherwise hold its vegetation, and zeros
-it via the water/snow branch above - visually, the whole play area
-decaying to the tie-break PINK fallback over time with no participant
-interaction at all. Per-cell deltas at or below this floor are dropped
-from the activity sum entirely (not merely damped), so a still sandbox's
-activityLevel reads as exactly 0 and TEMPERATURE eases back to
-BASE_TEMPERATURE, matching ELF's undisturbed baseline.
+ACTIVITY_NOISE_FLOOR (mm, not a fraction - it's compared against a raw
+per-cell elevation delta before any normalization) exists because
+"reacting to sensor noise" is not just a jitter risk but a real failure
+mode on physical Kinect hardware: depth measurement noise of a few mm
+per pixel is present on every cell every frame, even when nothing is
+touching the sand - unlike genuine sculpting, which is confined to
+whatever the hand is actually touching, this noise is not diluted by
+averaging over the whole grid. Left unfiltered it pins activityLevel
+just above zero permanently, which saturates TEMPERATURE at
+BASE_TEMPERATURE + MAX_TEMPERATURE_OFFSET on a perfectly still sandbox.
+Per-cell deltas at or below this floor are dropped from the activity sum
+entirely (not merely damped), so a still sandbox's activityLevel reads
+as exactly 0 and TEMPERATURE eases back to BASE_TEMPERATURE, matching
+ELF's undisturbed baseline.
 
 Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 ***********************************************************************/
@@ -89,6 +139,16 @@ Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 class VegetationField {
 public:
 	void setup(std::shared_ptr<KinectProjector> const& k);
+
+	// The calibrated real-world elevation range (mm) elevation is
+	// normalized against before any threshold comparison - see the header
+	// note. Call once, after SandSurfaceRenderer has computed its own
+	// elevationMin/elevationMax (i.e. after its setup()), passing
+	// SandSurfaceRenderer::getElevationMin()/getElevationMax(). Safe to
+	// call again if calibration changes; classification just picks up the
+	// new range next update() - no grid reset needed.
+	void setElevationRange(float minMM, float maxMM);
+
 	// Resets the persistent density grids (only) when the play area's grid
 	// dimensions actually change - an ROI update that doesn't change
 	// cols/rows leaves current vegetation cover untouched.
@@ -144,23 +204,28 @@ public:
 	// matches ELF's counts being added to food directly on a 0..255 scale.
 	static float FOOD_PER_FULL_CELL;
 
-	// Tunable in the debug GUI.
-	static float TEMPERATURE;            // mm, shifts both water and snow lines together - computed each frame, see the header note; not a direct slider
-	static float BASE_TEMPERATURE;       // mm, TEMPERATURE's resting value when the sand is undisturbed
-	static float ACTIVITY_TO_TEMPERATURE; // mm of TEMPERATURE offset per mm of average per-cell elevation change
-	static float MAX_TEMPERATURE_OFFSET; // mm, clamps how far activity alone can push TEMPERATURE above BASE_TEMPERATURE
+	// Tunable in the debug GUI. TEMPERATURE/BASE_TEMPERATURE/
+	// MAX_TEMPERATURE_OFFSET are fractions of the calibrated elevation
+	// range (see setElevationRange() and the header note), not millimeters.
+	static float TEMPERATURE;             // fraction, shifts both water and snow lines together - computed each frame; not a direct slider
+	static float BASE_TEMPERATURE;        // fraction, TEMPERATURE's resting value when the sand is undisturbed - needs on-site placement, see the header note
+	static float ACTIVITY_TO_TEMPERATURE; // fraction of TEMPERATURE offset per mm of average per-cell elevation change
+	static float MAX_TEMPERATURE_OFFSET;  // fraction, clamps how far activity alone can push TEMPERATURE above BASE_TEMPERATURE
+	static float TEMPERATURE_EASE_RATE;   // how fast TEMPERATURE chases its activity-driven target, per second
 	// mm, per-cell elevation change below which a frame's delta is treated as
 	// depth-sensor noise rather than real sculpting and dropped from the
-	// activity sum entirely - see update()'s header note on why this exists.
+	// activity sum entirely - see the header note.
 	static float ACTIVITY_NOISE_FLOOR;
-	static float TEMPERATURE_EASE_RATE;  // how fast TEMPERATURE chases its activity-driven target, per second
-	static float WATER_LEVEL_BASE;       // mm, elevation below which a cell is water at TEMPERATURE == 0
-	static float SNOW_LEVEL_BASE;        // mm, elevation above which a cell is snow at TEMPERATURE == 0
-	static float SHRUB_MIN_ABOVE_WATER;  // shrubs grow everywhere from this height up to the snow line
-	static float FRUIT_MIN_ABOVE_WATER;
-	static float FRUIT_MAX_BELOW_SNOW;
-	static float NUT_MIN_ABOVE_WATER;
-	static float NUT_MAX_BELOW_SNOW;
+
+	// BDenvironment's LIVINGRANGE/SHRUBLINE/FRUITLINE/NUTLINE, each
+	// divided by 255 - exact ELF ratios as fractions of the calibrated
+	// elevation range. See the header note on why these are fractions and
+	// on FRUITLINE/NUTLINE's relative sizes.
+	static float LIVING_RANGE_FRACTION;
+	static float SHRUB_LINE_FRACTION;
+	static float FRUIT_LINE_FRACTION;
+	static float NUT_LINE_FRACTION;
+
 	// Density gained per second while a cell is in-band, 1:3:2 ratio matching
 	// ELF's SHRUBGROWTH:FRUITGROWTH:NUTGROWTH per-tick chances.
 	static float SHRUB_GROWTH_RATE;
@@ -172,10 +237,21 @@ private:
 	// coordinate into grid indices, false if outside the grid.
 	bool cellIndexAt(float kx, float ky, int & gx, int & gy) const;
 
+	// elevation (mm) -> fraction of [elevationMin, elevationMax], clamped
+	// 0..1 - the shared normalization every classification decision in
+	// update()/isWaterAt()/isSnowAt() goes through. Mirrors
+	// heightMapShader.frag's elevationNorm computation exactly, so
+	// classification and cosmetic display agree on what "normalized
+	// elevation" means.
+	float normalizedElevation(float elevationMM) const;
+
 	std::shared_ptr<KinectProjector> kinectProjector;
 	ofRectangle kinectROI;
 	int step, cols, rows;
 	bool gridReady;
+
+	// Calibrated elevation range (mm) - see setElevationRange().
+	float elevationMin, elevationMax;
 
 	// Persistent 0..1 density per cell, CV_32F - see the header note on
 	// the one-way growth rule.

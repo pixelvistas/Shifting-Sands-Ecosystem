@@ -83,6 +83,17 @@ public:
     // Gui and events functions
     void setupGui();
 	void drawGui();
+
+    // The calibrated real-world elevation range (mm) the loaded colormap
+    // declares - what elevationNorm in heightMapShader.frag normalizes
+    // against for cosmetic color modulation. VegetationField reuses this
+    // same range as its own MINDEPTH/MAXDEPTH analog (see its header note)
+    // so classification and display agree on what "normalized elevation"
+    // means, instead of VegetationField inventing a second, disconnected
+    // calibration in raw millimeters.
+    float getElevationMin() const { return elevationMin; }
+    float getElevationMax() const { return elevationMax; }
+
     //void onButtonEvent(ofxDatGuiButtonEvent e);
     //void onToggleEvent(ofxDatGuiToggleEvent e);
     //void onSliderEvent(ofxDatGuiSliderEvent e);
