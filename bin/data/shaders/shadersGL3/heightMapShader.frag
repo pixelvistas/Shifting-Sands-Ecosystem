@@ -30,14 +30,17 @@ ELF's exact color logic and formulas rather than an approximation of
 them:
 
 - Land: strictly-dominant-channel comparison, same as
-  getCellColor()'s shrubs>fruits&&shrubs>nuts chain, with a tie
-  (including the initial all-zero state) rendering as ELF's flat
-  Color.PINK fallback - no blending between types, ever.
+  getCellColor()'s shrubs>fruits&&shrubs>nuts chain - no blending
+  between types, ever. A tie (including the initial all-zero state,
+  which is the common case: most of the play area starts, and often
+  stays, unvegetated) renders as negative space rather than
+  getCellColor()'s literal flat Color.PINK return value - see the
+  no-op tie branch below for why: the reference photo of ELF's actual
+  running sandbox shows bare land as plain lit sand, never a painted
+  pink expanse, so PINK evidently never reaches the screen in practice.
 - Each winning type's color is modulated by elevationNorm exactly as
   ELF's colors are modulated by cellheight (0..255 there, 0..1 here):
-  shrub = (h, 1, h), fruit = (1, h, h), nut = (0, h, h). PINK is NOT
-  modulated, matching getCellColor() returning the flat Color.PINK
-  constant on a tie.
+  shrub = (h, 1, h), fruit = (1, h, h), nut = (0, h, h).
 - Water = (0, 0, h), also cellheight-modulated (a bathymetric gradient,
   darker in deeper water) - not the flat color this used to be.
 - Snow = flat white, unmodulated, matching Color.WHITE exactly.
@@ -115,12 +118,21 @@ void main()
             // Nut-dominant - new Color(0, cellheight, cellheight).
             color.rgb = vec3(0.0, elevationNorm, elevationNorm);
         }
-        else
-        {
-            // Tie (including the initial all-zero state) - Color.PINK,
-            // flat and unmodulated, matching getCellColor()'s final else.
-            color.rgb = vec3(1.0, 0.6863, 0.6863);
-        }
+        // Tie (including the initial all-zero state, which is by far the
+        // common one - most of the play area starts and often stays
+        // unvegetated): no branch above fires, so color is left exactly as
+        // set before classification - the plain white "no augmentation"
+        // base, i.e. genuine negative space. getCellColor() returns flat
+        // Color.PINK on a tie in ELF's own source, but the reference photo
+        // (ELFdev001/ELFDynamicSystem's actual sandbox output) shows bare
+        // land as plain lit sand, never a painted pink expanse, and
+        // vegetation itself reads as sparse scattered colored specks
+        // rather than a solid area fill - ELF's renderer evidently only
+        // marks pixels in proportion to density (so a 0-density cell never
+        // actually receives that PINK draw call in practice), not a
+        // per-cell flat fill the way this shader still does for the
+        // non-tie cases above. Matching the photographed look here takes
+        // priority over the literal, never-actually-visible return value.
     }
 
     if (drawContourLines == 1)

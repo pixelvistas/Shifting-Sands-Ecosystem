@@ -35,9 +35,13 @@ getGridOrigin() / getGridStep(). The shader (not this class) is
 responsible for turning R/G/B density into a color: it picks whichever
 channel is strictly largest and colors the whole cell that plant's flat,
 elevation-modulated color - see heightMapShader.frag - matching
-BDlocation.getCellColor()'s winner-take-all comparison (ties, including
-the initial all-zero state, render as ELF's Color.PINK fallback) rather
-than blending all three proportionally. Density itself only decides the
+BDlocation.getCellColor()'s winner-take-all comparison, except on a tie
+(including the initial all-zero state, which is the common case - most
+of the play area starts, and often stays, unvegetated): getCellColor()
+returns flat Color.PINK there, but the shader deliberately renders that
+case as negative space instead, since ELF's own photographed sandbox
+output shows bare land as plain sand, not a painted pink expanse - see
+heightMapShader.frag's header note. Density itself only decides the
 comparison outcome here, never a fade amount - there is no partial/faded
 color state in ELF, and now none in this shader either.
 

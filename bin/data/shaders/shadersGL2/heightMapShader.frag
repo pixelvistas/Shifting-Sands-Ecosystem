@@ -76,10 +76,9 @@ void main()
         {
             color.rgb = vec3(0.0, elevationNorm, elevationNorm);
         }
-        else
-        {
-            color.rgb = vec3(1.0, 0.6863, 0.6863);
-        }
+        // Tie (including the initial all-zero state) - left uncolored as
+        // genuine negative space rather than ELF's literal Color.PINK
+        // return value; see the matching GL3 shader's header note for why.
     }
 
     if (drawContourLines == 1)
