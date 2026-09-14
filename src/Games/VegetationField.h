@@ -63,14 +63,16 @@ this box's real calibration, and is no longer what this class defaults
 from. All classification here normalizes elevation into that
 same 0..1 fraction before comparing against thresholds, so this class's
 MINDEPTH/MAXDEPTH analog is shared with, not disconnected from, the
-shader's own normalization. SHRUB_LINE_FRACTION/FRUIT_LINE_FRACTION/
-NUT_LINE_FRACTION are BDenvironment's literal SHRUBLINE=20/FRUITLINE=60/
-NUTLINE=25 each divided by 255 - exact ELF ratios. Note in particular
-that FRUITLINE (60/255, the *largest* offset) makes fruit ELF's most
-exclusive/narrowest band and NUTLINE (25/255) makes nut almost as
-permissive as shrub's SHRUBLINE (20/255) - a shape an earlier pass of
-this port also got backwards by using symmetric, similarly-sized
-offsets for fruit and nut.
+shader's own normalization. SHRUB_LINE_RATIO/FRUIT_LINE_RATIO/
+NUT_LINE_RATIO are BDenvironment's literal SHRUBLINE=20/FRUITLINE=60/
+NUTLINE=25 each divided by LIVINGRANGE=200 - i.e. 0.10/0.30/0.125,
+expressed as fractions OF THE LIVING RANGE rather than of the total
+calibrated range (see LIVING_RANGE_FRACTION's own note just below for
+why that distinction matters). Note in particular that FRUITLINE
+(0.30, the *largest* offset) makes fruit ELF's most exclusive/narrowest
+band and NUTLINE (0.125) makes nut almost as permissive as shrub's
+SHRUBLINE (0.10) - a shape an earlier pass of this port also got
+backwards by using symmetric, similarly-sized offsets for fruit and nut.
 
 LIVING_RANGE_FRACTION is the one deliberate departure from ELF's exact
 ratio: ELF's literal LIVINGRANGE=200/255 (~0.78) consumes so much of
@@ -82,6 +84,18 @@ waterline, regardless of the calibrated ceiling used. Loosened to 0.5 -
 still clearly the dominant fraction (most of the range is livable land,
 matching ELF's intent), but leaves 25% margin on each end so ordinary
 sculpting can actually reach both lines.
+
+Loosening LIVING_RANGE_FRACTION is exactly why SHRUB/FRUIT/NUT_LINE
+have to be ratios of it rather than fixed fractions of the total range:
+fruit's band width is livingRange - 2*fruitLineOffset. At ELF's own
+numbers that's 0.78 - 2*0.235 ~= 31% of the range - plenty. Holding
+FRUITLINE fixed at 0.235 of the *total* range while shrinking living
+range to 0.5 crushes that band to 0.5 - 2*0.235 = 0.03 - about 3% of
+the range, a near-hairline a real pixel rarely lands in - confirmed on
+real hardware as "little to no red [fruit] ever appears." Deriving
+FRUIT_LINE_FRACTION = FRUIT_LINE_RATIO * LIVING_RANGE_FRACTION each
+frame instead keeps fruit's band at the same ~31%-of-living-range width
+ELF's own ratio implies, however LIVING_RANGE_FRACTION itself is tuned.
 
 TEMPERATURE/BASE_TEMPERATURE/MAX_TEMPERATURE_OFFSET are themselves now
 fractions of the same calibrated range (0..1-ish, not millimeters) for
@@ -245,14 +259,28 @@ public:
 	// activity sum entirely - see the header note.
 	static float ACTIVITY_NOISE_FLOOR;
 
-	// BDenvironment's LIVINGRANGE/SHRUBLINE/FRUITLINE/NUTLINE, each
-	// divided by 255 - exact ELF ratios as fractions of the calibrated
-	// elevation range. See the header note on why these are fractions and
-	// on FRUITLINE/NUTLINE's relative sizes.
+	// BDenvironment's LIVINGRANGE/255 - see the header note on why
+	// LIVING_RANGE_FRACTION deliberately departs from ELF's literal ratio.
 	static float LIVING_RANGE_FRACTION;
-	static float SHRUB_LINE_FRACTION;
-	static float FRUIT_LINE_FRACTION;
-	static float NUT_LINE_FRACTION;
+
+	// SHRUB_LINE_RATIO/FRUIT_LINE_RATIO/NUT_LINE_RATIO are each species'
+	// water/snow-line offset expressed as a fraction OF LIVING_RANGE_FRACTION
+	// (not of the total calibrated range) - BDenvironment's literal
+	// SHRUBLINE=20/FRUITLINE=60/NUTLINE=25 each divided by LIVINGRANGE=200,
+	// i.e. 0.10/0.30/0.125. This is what actually preserves ELF's relative
+	// band shape (fruit narrowest, shrub widest, nut nearly as wide as
+	// shrub - see the header note) once LIVING_RANGE_FRACTION is loosened
+	// away from ELF's own value: fixing these as fractions of the total
+	// range instead would have fruit's band width shrink to near-nothing
+	// as living range narrows (confirmed on real hardware - almost no
+	// fruit/red ever appeared once living range was loosened to 0.5,
+	// because 2xFRUIT_LINE_FRACTION had, by fixed-total-range accounting,
+	// come to consume nearly the entire narrowed living range). The actual
+	// fractions-of-total-range used in update()'s comparisons are derived
+	// from these each frame - see the .cpp.
+	static float SHRUB_LINE_RATIO;
+	static float FRUIT_LINE_RATIO;
+	static float NUT_LINE_RATIO;
 
 	// Density gained per second while a cell is in-band, 1:3:2 ratio matching
 	// ELF's SHRUBGROWTH:FRUITGROWTH:NUTGROWTH per-tick chances.

@@ -28,22 +28,27 @@ float VegetationField::TEMPERATURE_EASE_RATE = 0.5f;
 // set with headroom above that so a still sandbox reliably reads as zero
 // activity rather than chasing sensor jitter - see the header note.
 float VegetationField::ACTIVITY_NOISE_FLOOR = 3.0f;
-// BDenvironment's SHRUBLINE=20/FRUITLINE=60/NUTLINE=25, each divided by
-// 255 - see the header note on why these are fractions and on
-// FRUITLINE/NUTLINE's relative sizes. LIVING_RANGE_FRACTION is the one
-// exception: ELF's literal LIVINGRANGE=200/255 (~0.78) leaves almost no
-// margin for water/snow within any realistically-sized calibrated range
-// (confirmed on real hardware: a hand-built mound never reached the
-// snowline, a hand-dug pit never reached the waterline, at this ratio).
-// Loosened to 0.5 - still clearly the dominant fraction (most of the
-// range is livable land, matching ELF's intent), but leaves 25% margin
-// on each end instead of ELF's ~11%, so ordinary sculpting can actually
-// reach both lines. This is a deliberate departure from ELF's exact
-// ratio, not a bug - see BASE_TEMPERATURE's comment for the pairing.
+// ELF's literal LIVINGRANGE=200/255 (~0.78) leaves almost no margin for
+// water/snow within any realistically-sized calibrated range (confirmed
+// on real hardware: a hand-built mound never reached the snowline, a
+// hand-dug pit never reached the waterline, at this ratio). Loosened to
+// 0.5 - still clearly the dominant fraction (most of the range is
+// livable land, matching ELF's intent), but leaves 25% margin on each
+// end instead of ELF's ~11%, so ordinary sculpting can actually reach
+// both lines. This is a deliberate departure from ELF's exact ratio,
+// not a bug - see BASE_TEMPERATURE's comment for the pairing.
 float VegetationField::LIVING_RANGE_FRACTION = 0.5f;
-float VegetationField::SHRUB_LINE_FRACTION = 20.0f / 255.0f;
-float VegetationField::FRUIT_LINE_FRACTION = 60.0f / 255.0f;
-float VegetationField::NUT_LINE_FRACTION = 25.0f / 255.0f;
+// BDenvironment's SHRUBLINE=20/FRUITLINE=60/NUTLINE=25 each divided by
+// LIVINGRANGE=200 - i.e. fractions OF THE LIVING RANGE, not of the
+// total calibrated range. See the header note on why that distinction
+// is what actually preserves ELF's relative band shape once
+// LIVING_RANGE_FRACTION is loosened away from ELF's own value - fixing
+// these as fractions of the total range instead left fruit's band
+// crushed to a near-hairline width (confirmed on real hardware: "little
+// to no red ever appears" once living range was loosened to 0.5).
+float VegetationField::SHRUB_LINE_RATIO = 20.0f / 200.0f;
+float VegetationField::FRUIT_LINE_RATIO = 60.0f / 200.0f;
+float VegetationField::NUT_LINE_RATIO = 25.0f / 200.0f;
 // 1:3:2 ratio, matching ELF's SHRUBGROWTH=1/FRUITGROWTH=3/NUTGROWTH=2.
 float VegetationField::SHRUB_GROWTH_RATE = 0.2f;
 float VegetationField::FRUIT_GROWTH_RATE = 0.6f;
@@ -133,6 +138,14 @@ void VegetationField::update()
 	// temperature-LIVINGRANGE comparisons on its own normalized cellheight.
 	float snowLevelFrac = TEMPERATURE;
 	float waterLevelFrac = TEMPERATURE - LIVING_RANGE_FRACTION;
+	// Derived fresh each frame from the *_LINE_RATIO tunables (fractions
+	// of LIVING_RANGE_FRACTION, not of the total range) so shrub/fruit/nut
+	// band widths stay proportional to whatever the living range is
+	// currently tuned to - see the header note and SHRUB_LINE_RATIO's own
+	// comment.
+	float shrubLineFrac = SHRUB_LINE_RATIO * LIVING_RANGE_FRACTION;
+	float fruitLineFrac = FRUIT_LINE_RATIO * LIVING_RANGE_FRACTION;
+	float nutLineFrac = NUT_LINE_RATIO * LIVING_RANGE_FRACTION;
 	float dt = ofGetLastFrameTime();
 
 	ofPixels px;
@@ -185,9 +198,9 @@ void VegetationField::update()
 				// still land). Shrub has no upper bound, matching
 				// stepCells()'s shrub check having no "< temperature - X"
 				// clause the way fruit/nut's do.
-				bool inShrubBand = elevFrac > waterLevelFrac + SHRUB_LINE_FRACTION;
-				bool inFruitBand = elevFrac > waterLevelFrac + FRUIT_LINE_FRACTION && elevFrac < snowLevelFrac - FRUIT_LINE_FRACTION;
-				bool inNutBand = elevFrac > waterLevelFrac + NUT_LINE_FRACTION && elevFrac < snowLevelFrac - NUT_LINE_FRACTION;
+				bool inShrubBand = elevFrac > waterLevelFrac + shrubLineFrac;
+				bool inFruitBand = elevFrac > waterLevelFrac + fruitLineFrac && elevFrac < snowLevelFrac - fruitLineFrac;
+				bool inNutBand = elevFrac > waterLevelFrac + nutLineFrac && elevFrac < snowLevelFrac - nutLineFrac;
 
 				if (inShrubBand) shrub = std::min(1.0f, shrub + SHRUB_GROWTH_RATE * dt);
 				if (inFruitBand) fruit = std::min(1.0f, fruit + FRUIT_GROWTH_RATE * dt);
@@ -338,9 +351,22 @@ void VegetationField::drawGui()
 	ImGui::Separator();
 	ImGui::Text("ELF ratios (BDenvironment.LIVINGRANGE/SHRUBLINE/FRUITLINE/NUTLINE / 255)");
 	ImGui::SliderFloat("Living range fraction", &LIVING_RANGE_FRACTION, 0.0f, 1.0f);
-	ImGui::SliderFloat("Shrub line fraction", &SHRUB_LINE_FRACTION, 0.0f, 0.5f);
-	ImGui::SliderFloat("Fruit line fraction", &FRUIT_LINE_FRACTION, 0.0f, 0.5f);
-	ImGui::SliderFloat("Nut line fraction", &NUT_LINE_FRACTION, 0.0f, 0.5f);
+	ImGui::Text("Shrub/fruit/nut lines below are fractions OF the living range above,");
+	ImGui::Text("not of the total range - so band widths stay proportional if you");
+	ImGui::Text("retune the living range fraction. See the header note.");
+	ImGui::SliderFloat("Shrub line ratio (of living range)", &SHRUB_LINE_RATIO, 0.0f, 0.5f);
+	ImGui::SliderFloat("Fruit line ratio (of living range)", &FRUIT_LINE_RATIO, 0.0f, 0.5f);
+	ImGui::SliderFloat("Nut line ratio (of living range)", &NUT_LINE_RATIO, 0.0f, 0.5f);
+	{
+		float shrubLineFrac = SHRUB_LINE_RATIO * LIVING_RANGE_FRACTION;
+		float fruitLineFrac = FRUIT_LINE_RATIO * LIVING_RANGE_FRACTION;
+		float nutLineFrac = NUT_LINE_RATIO * LIVING_RANGE_FRACTION;
+		float rangeMM = hi - lo;
+		float shrubWidthMM = std::max(0.0f, LIVING_RANGE_FRACTION - shrubLineFrac) * rangeMM;
+		float fruitWidthMM = std::max(0.0f, LIVING_RANGE_FRACTION - 2.0f * fruitLineFrac) * rangeMM;
+		float nutWidthMM = std::max(0.0f, LIVING_RANGE_FRACTION - 2.0f * nutLineFrac) * rangeMM;
+		ImGui::Text("Resulting band widths: shrub %.1f mm, fruit %.1f mm, nut %.1f mm", shrubWidthMM, fruitWidthMM, nutWidthMM);
+	}
 	ImGui::Separator();
 	ImGui::SliderFloat("Shrub growth rate", &SHRUB_GROWTH_RATE, 0.0f, 2.0f);
 	ImGui::SliderFloat("Fruit growth rate", &FRUIT_GROWTH_RATE, 0.0f, 2.0f);
