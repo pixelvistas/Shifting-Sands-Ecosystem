@@ -51,12 +51,18 @@ void ofApp::setup() {
 	// triggers the population's first spawn - see CCritterController::
 	// setKinectROI()/addDeer()/addHumans().
 	vegetationField.setup(kinectProjector);
-	// Share SandSurfaceRenderer's calibrated elevation range so
-	// VegetationField's classification and the shader's cosmetic color
-	// modulation agree on what "normalized elevation" means - see
-	// VegetationField.h's header note. Must come after sandSurfaceRenderer
-	// setup() above, which is what computes this range.
-	vegetationField.setElevationRange(sandSurfaceRenderer->getElevationMin(), sandSurfaceRenderer->getElevationMax());
+	// Default the calibration range from this installation's own already-
+	// calibrated Magic Sand ceiling (getCalibratedCeilingElevation() - see
+	// its header note) rather than the generic, never-recalibrated
+	// colormap range SandSurfaceRenderer falls back to - real hardware
+	// calibration beats a guess. There's no equivalent calibrated floor in
+	// Magic Sand (only a ceiling is calibrated, for hand-rejection, not a
+	// dig-depth limit), so the floor is assumed symmetric with the ceiling
+	// until measured - still just a placeholder, but a better-grounded one
+	// than the colormap's +-220mm. Live-tunable afterward in the
+	// Vegetation panel either way - see VegetationField.h's header note.
+	float ceilingElevation = kinectProjector->getCalibratedCeilingElevation();
+	vegetationField.setElevationRange(-ceilingElevation, ceilingElevation);
 	vegetationField.setKinectROI(kinectROI);
 	sandSurfaceRenderer->setVegetationField(&vegetationField);
 

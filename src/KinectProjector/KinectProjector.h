@@ -112,6 +112,23 @@ public:
     float elevationToKinectDepth(float elevation, float x, float y);
     ofVec2f gradientAtKinectCoord(float x, float y);
 
+    // Height (mm) of this installation's already-calibrated ceiling plane
+    // above the calibrated base/flat-sand plane - i.e. maxOffset expressed
+    // in the same elevation units elevationAtKinectCoord() returns, using
+    // the same relationship basePlaneOffset/maxOffset already have (see
+    // their default initialization: maxOffsetBack = basePlaneOffset.z-300,
+    // which is exactly the 300mm this formula would report). maxOffset
+    // itself comes from updateMaxOffset() - the same plane-fit calibration
+    // routine as the base plane, just sampled at the box's real ceiling
+    // height (typically calibrated by hand during setup) - so this is a
+    // genuinely per-installation measurement, not a guessed constant.
+    // There is no equivalent calibrated floor/dig-depth value in Magic
+    // Sand - only a ceiling is calibrated (it exists to reject the hand
+    // from the depth filter, not to bound gameplay relief, but it's the
+    // best available real number for how high a mound can go and still
+    // register as terrain).
+    float getCalibratedCeilingElevation() const { return basePlaneOffset.z - maxOffset; }
+
 	// Try to start the application - assumes calibration has been done before
 	void startApplication();
 

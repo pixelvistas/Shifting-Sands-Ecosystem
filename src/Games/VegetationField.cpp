@@ -308,9 +308,19 @@ void VegetationField::drawGui()
 	ImGui::Separator();
 	ImGui::Text("Calibrated elevation range (mm) - what water/snow lines above are");
 	ImGui::Text("a fraction OF. Narrow this to your box's real achievable relief:");
-	ImGui::Text("too wide (the stock +-220mm default) and the whole 'living' zone");
-	ImGui::Text("swallows ordinary sculpting, so nothing you build ever crosses it.");
+	ImGui::Text("too wide and the whole 'living' zone swallows ordinary sculpting,");
+	ImGui::Text("so nothing you build ever crosses it.");
 	ImGui::Text("Order doesn't matter - normalizedElevation() sorts by value.");
+	if (kinectProjector) {
+		float ceiling = kinectProjector->getCalibratedCeilingElevation();
+		ImGui::Text("Magic Sand's own calibrated ceiling: %.1f mm above the base plane", ceiling);
+		ImGui::Text("(real per-installation measurement; no floor is calibrated, so the");
+		ImGui::Text("floor default below just mirrors it - measure a real dig if you can)");
+		if (ImGui::Button("Reset range to +-calibrated ceiling")) {
+			elevationMin = -ceiling;
+			elevationMax = ceiling;
+		}
+	}
 	ImGui::SliderFloat("Elevation range bound A (mm)", &elevationMin, -400.0f, 400.0f);
 	ImGui::SliderFloat("Elevation range bound B (mm)", &elevationMax, -400.0f, 400.0f);
 	ImGui::Separator();

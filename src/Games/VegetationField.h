@@ -45,11 +45,22 @@ exactly that) has no principled relationship to either ELF's real
 numbers or to a given box's actual usable relief - a 60mm shift might
 be negligible on one installation and flood an entire box on another.
 
-setElevationRange() fixes this: it takes the same calibrated elevation
-range (elevationMin/elevationMax, mm) that SandSurfaceRenderer already
-derives from the loaded colormap and uses to normalize elevationNorm for
-cosmetic color modulation in heightMapShader.frag - see that file's
-header note. All classification here normalizes elevation into that
+setElevationRange() fixes this: it takes a calibrated elevation range
+(elevationMin/elevationMax, mm) rather than an invented one. ofApp
+defaults this from KinectProjector::getCalibratedCeilingElevation() -
+Magic Sand's own already-calibrated ceiling for this specific
+installation (the same plane-fit routine as the base plane, just
+sampled at the box's real ceiling height), mirrored to a symmetric
+floor since Magic Sand doesn't calibrate an equivalent dig-depth limit.
+This is the same physical box and the same Magic Sand calibration this
+fork inherited unchanged - no reason to re-guess a range when a real
+per-installation measurement already exists, even if only for one
+side. SandSurfaceRenderer's own elevationMin/elevationMax (derived from
+the loaded colormap's declared height range, used there to normalize
+elevationNorm for cosmetic color modulation in heightMapShader.frag -
+see that file's header note) is a different, generic value not tied to
+this box's real calibration, and is no longer what this class defaults
+from. All classification here normalizes elevation into that
 same 0..1 fraction before comparing against thresholds, so this class's
 MINDEPTH/MAXDEPTH analog is shared with, not disconnected from, the
 shader's own normalization, and LIVING_RANGE_FRACTION/SHRUB_LINE_FRACTION/
@@ -145,14 +156,16 @@ public:
 
 	// The calibrated real-world elevation range (mm) elevation is
 	// normalized against before any threshold comparison - see the header
-	// note. Call once, after SandSurfaceRenderer has computed its own
-	// elevationMin/elevationMax (i.e. after its setup()), passing
-	// SandSurfaceRenderer::getElevationMin()/getElevationMax() - in
-	// whichever order, min/max are NOT guaranteed ascending there (see
-	// that getter's comment), and normalizedElevation() reorders by
-	// actual value rather than trusting minMM<maxMM. Safe to call again
-	// if calibration changes; classification just picks up the new range
-	// next update() - no grid reset needed.
+	// note. ofApp calls this once at startup with a range built from
+	// KinectProjector::getCalibratedCeilingElevation() - this box's own
+	// already-calibrated Magic Sand ceiling - not from
+	// SandSurfaceRenderer::getElevationMin()/getElevationMax() (a generic,
+	// colormap-derived value unrelated to this installation's real
+	// calibration). Order doesn't matter - normalizedElevation() sorts by
+	// actual value rather than trusting minMM<maxMM. Also live-tunable
+	// from the Vegetation GUI panel afterward; safe to call again if
+	// calibration changes, since classification just picks up the new
+	// range next update() - no grid reset needed.
 	void setElevationRange(float minMM, float maxMM);
 
 	// Resets the persistent density grids (only) when the play area's grid
