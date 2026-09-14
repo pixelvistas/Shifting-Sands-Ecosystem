@@ -35,9 +35,12 @@ them:
   which is the common case: most of the play area starts, and often
   stays, unvegetated) renders as negative space rather than
   getCellColor()'s literal flat Color.PINK return value - see the
-  no-op tie branch below for why: the reference photo of ELF's actual
-  running sandbox shows bare land as plain lit sand, never a painted
-  pink expanse, so PINK evidently never reaches the screen in practice.
+  no-op tie branch below. This is confirmed NOT to match ELF's actual
+  behavior: running ELF's own TESTING-mode reference build shows
+  untouched land as solid, unmodulated pink exactly as the source
+  implies. Negative space here is a deliberate stylistic departure
+  from that confirmed reference, chosen by the project owner with the
+  real behavior already seen firsthand - not a fidelity claim.
 - Each winning type's color is modulated by elevationNorm exactly as
   ELF's colors are modulated by cellheight (0..255 there, 0..1 here):
   shrub = (h, 1, h), fruit = (1, h, h), nut = (0, h, h).
@@ -128,17 +131,17 @@ void main()
         // common one - most of the play area starts and often stays
         // unvegetated): no branch above fires, so color is left exactly as
         // set before classification - the plain white "no augmentation"
-        // base, i.e. genuine negative space. getCellColor() returns flat
-        // Color.PINK on a tie in ELF's own source, but the reference photo
-        // (ELFdev001/ELFDynamicSystem's actual sandbox output) shows bare
-        // land as plain lit sand, never a painted pink expanse, and
-        // vegetation itself reads as sparse scattered colored specks
-        // rather than a solid area fill - ELF's renderer evidently only
-        // marks pixels in proportion to density (so a 0-density cell never
-        // actually receives that PINK draw call in practice), not a
-        // per-cell flat fill the way this shader still does for the
-        // non-tie cases above. Matching the photographed look here takes
-        // priority over the literal, never-actually-visible return value.
+        // base, i.e. genuine negative space.
+        //
+        // getCellColor() returns flat Color.PINK on a tie in ELF's own
+        // source, and running ELF's own TESTING-mode reference build
+        // confirms that's exactly what happens: untouched land renders as
+        // solid, unmodulated pink, densely and immediately, not sparse
+        // specks and not negative space (an earlier version of this
+        // comment guessed otherwise from a single photo - that guess was
+        // wrong). Negative space here is a deliberate stylistic choice by
+        // the project owner, made after seeing ELF's real behavior
+        // firsthand, not a claim that it matches.
     }
 
     if (drawContourLines == 1)

@@ -89,10 +89,13 @@ elevation-modulated color - see heightMapShader.frag - matching
 BDlocation.getCellColor()'s winner-take-all comparison, except on a tie
 (including the initial all-zero state, which is the common case - most
 of the play area starts, and often stays, unvegetated): getCellColor()
-returns flat Color.PINK there, but the shader deliberately renders that
-case as negative space instead, since ELF's own photographed sandbox
-output shows bare land as plain sand, not a painted pink expanse - see
-heightMapShader.frag's header note. Density itself only decides the
+returns flat Color.PINK there - confirmed by actually running ELF's own
+TESTING-mode reference build, where untouched land shows as solid,
+unmodulated pink exactly as the source implies - but this fork
+deliberately renders that case as negative space instead, a project
+owner's explicit stylistic choice made with that confirmation in hand,
+not a fidelity claim. See heightMapShader.frag's header note. Density
+itself only decides the
 comparison outcome here, never a fade amount - there is no partial/faded
 color state in ELF, and now none in this shader either.
 
