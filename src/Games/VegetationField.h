@@ -63,23 +63,32 @@ this box's real calibration, and is no longer what this class defaults
 from. All classification here normalizes elevation into that
 same 0..1 fraction before comparing against thresholds, so this class's
 MINDEPTH/MAXDEPTH analog is shared with, not disconnected from, the
-shader's own normalization, and LIVING_RANGE_FRACTION/SHRUB_LINE_FRACTION/
-FRUIT_LINE_FRACTION/NUT_LINE_FRACTION are BDenvironment's literal
-LIVINGRANGE=200/SHRUBLINE=20/FRUITLINE=60/NUTLINE=25 each divided by
-255 - exact ELF ratios, expressed as fractions of whatever range this
-installation is calibrated for, rather than re-guessed constants. Note
-in particular that FRUITLINE (60/255, the *largest* offset) makes fruit
-ELF's most exclusive/narrowest band and NUTLINE (25/255) makes nut
-almost as permissive as shrub's SHRUBLINE (20/255) - a shape an earlier
-pass of this port also got backwards by using symmetric, similarly-sized
+shader's own normalization. SHRUB_LINE_FRACTION/FRUIT_LINE_FRACTION/
+NUT_LINE_FRACTION are BDenvironment's literal SHRUBLINE=20/FRUITLINE=60/
+NUTLINE=25 each divided by 255 - exact ELF ratios. Note in particular
+that FRUITLINE (60/255, the *largest* offset) makes fruit ELF's most
+exclusive/narrowest band and NUTLINE (25/255) makes nut almost as
+permissive as shrub's SHRUBLINE (20/255) - a shape an earlier pass of
+this port also got backwards by using symmetric, similarly-sized
 offsets for fruit and nut.
+
+LIVING_RANGE_FRACTION is the one deliberate departure from ELF's exact
+ratio: ELF's literal LIVINGRANGE=200/255 (~0.78) consumes so much of
+the range that water/snow are left with almost no margin (~11% each)
+within any realistically-sized calibrated range - confirmed on real
+hardware, not just worked out on paper: with this ratio, a hand-built
+mound never reached the snowline and a hand-dug pit never reached the
+waterline, regardless of the calibrated ceiling used. Loosened to 0.5 -
+still clearly the dominant fraction (most of the range is livable land,
+matching ELF's intent), but leaves 25% margin on each end so ordinary
+sculpting can actually reach both lines.
 
 TEMPERATURE/BASE_TEMPERATURE/MAX_TEMPERATURE_OFFSET are themselves now
 fractions of the same calibrated range (0..1-ish, not millimeters) for
 the same reason. BASE_TEMPERATURE's starting value is NOT ELF's literal
-default (temperature=200/255): working through the arithmetic, that
-value places the water line exactly at the calibrated floor with zero
-margin (LIVINGRANGE=200/255 already consumes ~78% of the whole range),
+default (temperature=200/255) either, and not just because
+LIVING_RANGE_FRACTION changed: even at ELF's own ratio, that value
+places the water line exactly at the calibrated floor with zero margin,
 which in ELF's own source is only usable because an operator manually
 lowers temperature via decTemp() ('a') before/during a session to open
 a reachable water band for their specific installation. This port has
