@@ -51,16 +51,20 @@ void ofApp::setup() {
 	// triggers the population's first spawn - see CCritterController::
 	// setKinectROI()/addDeer()/addHumans().
 	vegetationField.setup(kinectProjector);
-	// Default the calibration range from this installation's own already-
-	// calibrated Magic Sand ceiling (getCalibratedCeilingElevation() - see
-	// its header note) rather than the generic, never-recalibrated
-	// colormap range SandSurfaceRenderer falls back to - real hardware
-	// calibration beats a guess. There's no equivalent calibrated floor in
-	// Magic Sand (only a ceiling is calibrated, for hand-rejection, not a
-	// dig-depth limit), so the floor is assumed symmetric with the ceiling
-	// until measured - still just a placeholder, but a better-grounded one
-	// than the colormap's +-220mm. Live-tunable afterward in the
-	// Vegetation panel either way - see VegetationField.h's header note.
+	// Seed the calibration range from getCalibratedCeilingElevation() -
+	// see its header note. This early it's almost certainly still reading
+	// KinectProjector's hardcoded, untrained defaults rather than a real
+	// per-installation calibration - startApplication() (the "RUN!"
+	// button) is what actually loads basePlaneOffset/maxOffset from
+	// kinectProjectorSettings.xml, and that hasn't run yet here. This
+	// value gets properly refreshed in ofApp::update()'s kinectROI-change
+	// block below once real calibration has actually loaded - this call
+	// is just so the range is never literally unset before then. There's
+	// no equivalent calibrated floor in Magic Sand (only a ceiling is
+	// calibrated, for hand-rejection, not a dig-depth limit), so the
+	// floor is assumed symmetric with the ceiling until measured. Live-
+	// tunable afterward in the Vegetation panel either way - see
+	// VegetationField.h's header note.
 	float ceilingElevation = kinectProjector->getCalibratedCeilingElevation();
 	vegetationField.setElevationRange(-ceilingElevation, ceilingElevation);
 	vegetationField.setKinectROI(kinectROI);
@@ -85,6 +89,24 @@ void ofApp::update() {
 	{
 		ofRectangle kinectROI = kinectProjector->getKinectROI();
 		lastKinectROI = kinectROI;
+		// Re-pull the calibrated ceiling here too, not just at ofApp::setup() -
+		// setup() runs before the "RUN!" button (KinectProjector::
+		// startApplication()) ever executes, and startApplication() is what
+		// actually calls loadSettings() and populates basePlaneOffset/
+		// maxOffset from kinectProjectorSettings.xml. A setup()-time-only
+		// call reads those fields while they're still sitting on their
+		// hardcoded, untrained defaults (basePlaneOffsetBack=870,
+		// maxOffsetBack=basePlaneOffset.z-300=570 -> a ceiling of exactly
+		// 300, not this installation's real calibration) and never
+		// refreshes, so "calibrated" ends up being a lie in practice. The
+		// kinectROI changing is a reasonable proxy for "calibration state
+		// just changed" (setNewKinectROI() inside startApplication() is
+		// what replaces the full-sensor default ROI with the real
+		// calibrated one), so re-apply here too. Doesn't fight the
+		// Vegetation panel's live-tunable sliders in normal play, since
+		// this only fires on an actual ROI change, not every frame.
+		float ceilingElevation = kinectProjector->getCalibratedCeilingElevation();
+		vegetationField.setElevationRange(-ceilingElevation, ceilingElevation);
 		vegetationField.setKinectROI(kinectROI);
 		critterController.setKinectROI(kinectROI);
 	}
