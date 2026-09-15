@@ -312,6 +312,19 @@ void VegetationField::drawGui()
 	ImGui::Text("ELF-style flora: three plant types growing within elevation");
 	ImGui::Text("bands relative to the water line - reshape the sand to see it shift.");
 	ImGui::Separator();
+	// Ground truth, independent of any threshold/classification below -
+	// put a hand at the ROI center and read the real mm value directly,
+	// to actually measure this box's achievable relief instead of
+	// guessing at elevation range/temperature values blind. This is what
+	// the calibrated-elevation-range sliders and Water/Snow line readout
+	// further down should be checked against, not the other way around.
+	if (kinectProjector && kinectROI.width > 0) {
+		float cx = kinectROI.x + kinectROI.width / 2.0f;
+		float cy = kinectROI.y + kinectROI.height / 2.0f;
+		float rawElevation = kinectProjector->elevationAtKinectCoord(cx, cy);
+		ImGui::Text("Raw elevation at ROI center: %.1f mm (put a hand/dig/mound here to measure)", rawElevation);
+	}
+	ImGui::Separator();
 	ImGui::Text("Climate (participant-driven, not a direct control)");
 	ImGui::Text("Temperature: %.3f  (activity: %.3f mm/cell)", TEMPERATURE, activityLevel);
 	// Reorder by actual value, same as normalizedElevation() - elevationMin
