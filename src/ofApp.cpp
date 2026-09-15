@@ -102,11 +102,27 @@ void ofApp::update() {
 		// kinectROI changing is a reasonable proxy for "calibration state
 		// just changed" (setNewKinectROI() inside startApplication() is
 		// what replaces the full-sensor default ROI with the real
-		// calibrated one), so re-apply here too. Doesn't fight the
-		// Vegetation panel's live-tunable sliders in normal play, since
-		// this only fires on an actual ROI change, not every frame.
-		float ceilingElevation = kinectProjector->getCalibratedCeilingElevation();
-		vegetationField.setElevationRange(-ceilingElevation, ceilingElevation);
+		// calibrated one).
+		//
+		// Guarded to apply only once (elevationRangeAutoApplied), not on
+		// every ROI change this block fires for: confirmed on real
+		// hardware that re-applying unconditionally here made the
+		// Vegetation panel's elevation-range sliders look completely
+		// inert (-300/300 typed in "did absolutely nothing") - almost
+		// certainly because getKinectROI() != lastKinectROI was true far
+		// more often than "calibration state just changed" (e.g. every
+		// frame, from floating-point jitter in a live-recomputed ROI),
+		// silently stomping any manual slider edit back to the calibrated
+		// ceiling before the next frame ever rendered it. Once auto-
+		// applied here the first time, later ROI changes leave the range
+		// alone - the "Reset range to +-calibrated ceiling" button in the
+		// Vegetation panel covers re-pulling it by hand if calibration is
+		// redone later.
+		if (!elevationRangeAutoApplied) {
+			float ceilingElevation = kinectProjector->getCalibratedCeilingElevation();
+			vegetationField.setElevationRange(-ceilingElevation, ceilingElevation);
+			elevationRangeAutoApplied = true;
+		}
 		vegetationField.setKinectROI(kinectROI);
 		critterController.setKinectROI(kinectROI);
 	}

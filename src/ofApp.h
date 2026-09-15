@@ -79,4 +79,12 @@ private:
 	// calibration can move mid-session) - previously this diffed against
 	// mapGameController's own cached copy, which is gone along with it.
 	ofRectangle lastKinectROI;
+
+	// True once vegetationField's elevation range has been auto-seeded
+	// from a real (post-"RUN!") Magic Sand calibration - see the
+	// kinectROI-change block in update(). Guards against re-applying the
+	// calibrated-ceiling default on every later ROI change, which would
+	// silently overwrite whatever the user has since tuned by hand in the
+	// Vegetation panel's live elevation-range sliders.
+	bool elevationRangeAutoApplied = false;
 };
