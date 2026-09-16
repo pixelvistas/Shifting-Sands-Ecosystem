@@ -75,6 +75,11 @@ uniform int hasVegetation;
 uniform sampler2DRect vegetationSampler;
 uniform vec2 vegetationGridOrigin;
 uniform float vegetationGridStep;
+// Debug aid - see VegetationField::DEBUG_SHOW_SNOW's header note. Snow
+// is normally flat white, identical to un-grown negative-space land;
+// this tints it pale blue instead so the two are visually separable
+// while diagnosing calibration.
+uniform int debugShowSnow;
 
 void main()
 {
@@ -109,8 +114,10 @@ void main()
         }
         else if (veg.a > 0.25)
         {
-            // Snow - BDlocation.getCellColor(): Color.WHITE, unmodulated.
-            color.rgb = vec3(1.0, 1.0, 1.0);
+            // Snow - BDlocation.getCellColor(): Color.WHITE, unmodulated -
+            // except in debug mode, where it's tinted pale blue instead so
+            // it doesn't read as identical to un-grown negative space.
+            color.rgb = (debugShowSnow == 1) ? vec3(0.75, 0.85, 1.0) : vec3(1.0, 1.0, 1.0);
         }
         else if (veg.r > veg.g && veg.r > veg.b)
         {

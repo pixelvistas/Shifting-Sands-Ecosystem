@@ -54,6 +54,7 @@ float VegetationField::SHRUB_GROWTH_RATE = 0.2f;
 float VegetationField::FRUIT_GROWTH_RATE = 0.6f;
 float VegetationField::NUT_GROWTH_RATE = 0.4f;
 float VegetationField::FOOD_PER_FULL_CELL = 255.0f;
+bool VegetationField::DEBUG_SHOW_SNOW = false;
 
 namespace {
 	// One cell per kinect pixel - see the header note on matching ELF's
@@ -338,6 +339,10 @@ void VegetationField::drawGui()
 	float snowLevelMM = lo + TEMPERATURE * (hi - lo);
 	ImGui::Text("Water line: %.1f mm   Snow line: %.1f mm", waterLevelMM, snowLevelMM);
 	ImGui::Text("Sustained sculpting raises it - floods more land, shrinks the snowcap.");
+	ImGui::Checkbox("Debug: render snow as pale blue (not flat white)", &DEBUG_SHOW_SNOW);
+	ImGui::Text("Snow normally looks identical to un-grown land - both flat white -");
+	ImGui::Text("so this is the only way to tell by eye whether a blank area is");
+	ImGui::Text("'still growing' or 'already snow' while diagnosing calibration.");
 	ImGui::SliderFloat("Base temperature", &BASE_TEMPERATURE, 0.0f, 1.0f);
 	ImGui::SliderFloat("Activity -> temperature scale", &ACTIVITY_TO_TEMPERATURE, 0.0f, 2.0f);
 	ImGui::SliderFloat("Max activity offset", &MAX_TEMPERATURE_OFFSET, 0.0f, 0.5f);

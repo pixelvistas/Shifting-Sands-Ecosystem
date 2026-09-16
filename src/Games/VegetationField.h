@@ -288,6 +288,16 @@ public:
 	static float FRUIT_GROWTH_RATE;
 	static float NUT_GROWTH_RATE;
 
+	// Debug aid only - normally snow renders as flat white, identical to
+	// un-grown negative-space land (see heightMapShader.frag's header
+	// note), which makes it impossible to tell by eye whether a blank
+	// area is "still growing" or "already snow." When true, the shader
+	// tints snow a distinct pale blue instead, so the two are visually
+	// separable while diagnosing calibration. SandSurfaceRenderer reads
+	// this directly (it already includes VegetationField.h) to set the
+	// shader uniform - see drawSandbox().
+	static bool DEBUG_SHOW_SNOW;
+
 private:
 	// Shared by the eat*() helpers above - converts a kinect pixel
 	// coordinate into grid indices, false if outside the grid.

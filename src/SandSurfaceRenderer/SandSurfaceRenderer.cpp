@@ -258,6 +258,8 @@ void SandSurfaceRenderer::drawSandbox() {
         heightMapShader.setUniform2f("vegetationGridOrigin", vegetationField->getGridOrigin());
         heightMapShader.setUniform1f("vegetationGridStep", vegetationField->getGridStep());
     }
+    // Debug aid - see VegetationField::DEBUG_SHOW_SNOW's header note.
+    heightMapShader.setUniform1i("debugShowSnow", VegetationField::DEBUG_SHOW_SNOW ? 1 : 0);
 
     mesh.draw();
     heightMapShader.end();

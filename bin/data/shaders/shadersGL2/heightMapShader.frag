@@ -44,6 +44,7 @@ uniform int hasVegetation;
 uniform sampler2DRect vegetationSampler;
 uniform vec2 vegetationGridOrigin;
 uniform float vegetationGridStep;
+uniform int debugShowSnow; // see the matching GL3 shader's header note
 
 void main()
 {
@@ -62,7 +63,7 @@ void main()
         }
         else if (veg.a > 0.25)
         {
-            color.rgb = vec3(1.0, 1.0, 1.0);
+            color.rgb = (debugShowSnow == 1) ? vec3(0.75, 0.85, 1.0) : vec3(1.0, 1.0, 1.0);
         }
         else if (veg.r > veg.g && veg.r > veg.b)
         {
