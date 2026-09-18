@@ -13,11 +13,23 @@ BDlocation.java/BDenvironment.java:
   decimated grid - ELF's cell IS one native Kinect depth pixel; its
   CELLWIDTH/CELLHEIGHT=4 only upscales the *display*, never the
   sampling.
-- Per-species growth rates in a 1:3:2 ratio (SHRUB:FRUIT:NUT), matching
-  BDlocation's SHRUBGROWTH=1/FRUITGROWTH=3/NUTGROWTH=2 per-tick growth
-  chances - fruit is the fastest grower, shrub the slowest, so in the
-  wide middle elevation band where all three are eligible, fruit tends
-  to win the color out over time exactly as it does in ELF.
+- Growth is a per-tick coin flip, not continuous accumulation - matching
+  BDlocation.growShrubs()/growFruits()/growNuts() literally:
+  Math.random()*100 < SHRUBGROWTH/FRUITGROWTH/NUTGROWTH (1/3/2), and on
+  success density rises by exactly 1/255, capped at 255 (1.0 here). One
+  update() call is treated as one ELF tick, same convention Critter/
+  HumanAgent already use - see those files' header notes. This was
+  previously reimplemented as continuous `density += rate * dt`, an
+  earlier session's unprompted smoothness choice never put to the
+  project owner as a decision; reverted at their explicit request
+  (2026-09) to have a known ELF-faithful baseline to diagnose the
+  "vegetation never grows" problem from, before any further
+  customization. Fruit is still the fastest grower, shrub the slowest,
+  so in the wide middle elevation band where all three are eligible,
+  fruit tends to win the color out over time exactly as it does in ELF -
+  just glacially slowly now, matching ELF's real pace (tens of thousands
+  of ticks to reach full density), not the few-seconds pace the
+  continuous version had.
 - One-way growth on land: a channel only ever rises (while its band
   condition holds) or holds steady (while out of band but still land);
   it never decays just from drifting out of a band. Only an actual
@@ -282,11 +294,13 @@ public:
 	static float FRUIT_LINE_RATIO;
 	static float NUT_LINE_RATIO;
 
-	// Density gained per second while a cell is in-band, 1:3:2 ratio matching
-	// ELF's SHRUBGROWTH:FRUITGROWTH:NUTGROWTH per-tick chances.
-	static float SHRUB_GROWTH_RATE;
-	static float FRUIT_GROWTH_RATE;
-	static float NUT_GROWTH_RATE;
+	// Percent chance per tick (one update() call) of a +1/255 density
+	// increment while a cell is in-band - ELF's literal
+	// SHRUBGROWTH=1/FRUITGROWTH=3/NUTGROWTH=2, not a rescaled rate. See
+	// the header note.
+	static float SHRUB_GROWTH_CHANCE_PCT;
+	static float FRUIT_GROWTH_CHANCE_PCT;
+	static float NUT_GROWTH_CHANCE_PCT;
 
 	// Debug aid only - normally snow renders as flat white, identical to
 	// un-grown negative-space land (see heightMapShader.frag's header

@@ -49,10 +49,12 @@ float VegetationField::LIVING_RANGE_FRACTION = 0.5f;
 float VegetationField::SHRUB_LINE_RATIO = 20.0f / 200.0f;
 float VegetationField::FRUIT_LINE_RATIO = 60.0f / 200.0f;
 float VegetationField::NUT_LINE_RATIO = 25.0f / 200.0f;
-// 1:3:2 ratio, matching ELF's SHRUBGROWTH=1/FRUITGROWTH=3/NUTGROWTH=2.
-float VegetationField::SHRUB_GROWTH_RATE = 0.2f;
-float VegetationField::FRUIT_GROWTH_RATE = 0.6f;
-float VegetationField::NUT_GROWTH_RATE = 0.4f;
+// ELF's literal SHRUBGROWTH=1/FRUITGROWTH=3/NUTGROWTH=2 - percent chance
+// per tick of a +1/255 density increment, not a per-second rate. See the
+// header note on why this reverted from continuous growth.
+float VegetationField::SHRUB_GROWTH_CHANCE_PCT = 1.0f;
+float VegetationField::FRUIT_GROWTH_CHANCE_PCT = 3.0f;
+float VegetationField::NUT_GROWTH_CHANCE_PCT = 2.0f;
 float VegetationField::FOOD_PER_FULL_CELL = 255.0f;
 bool VegetationField::DEBUG_SHOW_SNOW = false;
 
@@ -60,6 +62,10 @@ namespace {
 	// One cell per kinect pixel - see the header note on matching ELF's
 	// own native-resolution sampling.
 	const int GRID_STEP = 1;
+	// ELF's density scale is 0..255 (see BDlocation's shrubs/fruits/nuts
+	// int fields, constrainVal(0,255)); this class's is 0..1, so ELF's
+	// literal "+1" per successful growth tick is 1/255 here.
+	const float GROWTH_INCREMENT = 1.0f / 255.0f;
 }
 
 void VegetationField::setup(std::shared_ptr<KinectProjector> const& k)
@@ -203,9 +209,13 @@ void VegetationField::update()
 				bool inFruitBand = elevFrac > waterLevelFrac + fruitLineFrac && elevFrac < snowLevelFrac - fruitLineFrac;
 				bool inNutBand = elevFrac > waterLevelFrac + nutLineFrac && elevFrac < snowLevelFrac - nutLineFrac;
 
-				if (inShrubBand) shrub = std::min(1.0f, shrub + SHRUB_GROWTH_RATE * dt);
-				if (inFruitBand) fruit = std::min(1.0f, fruit + FRUIT_GROWTH_RATE * dt);
-				if (inNutBand) nut = std::min(1.0f, nut + NUT_GROWTH_RATE * dt);
+				// BDlocation.growShrubs()/growFruits()/growNuts() literally:
+				// a per-tick coin flip, not a continuous rate - one
+				// update() call is one tick, same convention Critter/
+				// HumanAgent already use. See the header note.
+				if (inShrubBand && ofRandom(100.0f) < SHRUB_GROWTH_CHANCE_PCT) shrub = std::min(1.0f, shrub + GROWTH_INCREMENT);
+				if (inFruitBand && ofRandom(100.0f) < FRUIT_GROWTH_CHANCE_PCT) fruit = std::min(1.0f, fruit + GROWTH_INCREMENT);
+				if (inNutBand && ofRandom(100.0f) < NUT_GROWTH_CHANCE_PCT) nut = std::min(1.0f, nut + GROWTH_INCREMENT);
 			}
 
 			int idx = (gy * cols + gx) * 4;
@@ -363,8 +373,10 @@ void VegetationField::drawGui()
 				ImGui::Text("ROI-center cell: water=%s snow=%s in-band [shrub=%s fruit=%s nut=%s]",
 					isWater ? "yes" : "no", isSnow ? "yes" : "no",
 					inShrubBand ? "yes" : "no", inFruitBand ? "yes" : "no", inNutBand ? "yes" : "no");
-				ImGui::Text("ROI-center density: shrub=%.4f fruit=%.4f nut=%.4f (should rise if in-band above)",
+				ImGui::Text("ROI-center density: shrub=%.4f fruit=%.4f nut=%.4f",
 					shrubDensity.at<float>(gy, gx), fruitDensity.at<float>(gy, gx), nutDensity.at<float>(gy, gx));
+				ImGui::Text("(+1/255 only on a successful per-tick chance roll while in-band -");
+				ImGui::Text("thousands of ticks to visibly accumulate is expected, not a bug)");
 			}
 		}
 	}
@@ -429,8 +441,13 @@ void VegetationField::drawGui()
 		ImGui::Text("Resulting band widths: shrub %.1f mm, fruit %.1f mm, nut %.1f mm", shrubWidthMM, fruitWidthMM, nutWidthMM);
 	}
 	ImGui::Separator();
-	ImGui::SliderFloat("Shrub growth rate", &SHRUB_GROWTH_RATE, 0.0f, 2.0f);
-	ImGui::SliderFloat("Fruit growth rate", &FRUIT_GROWTH_RATE, 0.0f, 2.0f);
-	ImGui::SliderFloat("Nut growth rate", &NUT_GROWTH_RATE, 0.0f, 2.0f);
+	ImGui::Text("Growth: ELF's literal per-tick coin flip (Math.random()*100 <");
+	ImGui::Text("chance), not a continuous rate - a %% chance each frame of +1/255");
+	ImGui::Text("density. Reaching full density takes thousands of in-band ticks,");
+	ImGui::Text("same glacial pace as real ELF, not the few-second fill the earlier");
+	ImGui::Text("continuous version had.");
+	ImGui::SliderFloat("Shrub growth chance (% per tick)", &SHRUB_GROWTH_CHANCE_PCT, 0.0f, 20.0f);
+	ImGui::SliderFloat("Fruit growth chance (% per tick)", &FRUIT_GROWTH_CHANCE_PCT, 0.0f, 20.0f);
+	ImGui::SliderFloat("Nut growth chance (% per tick)", &NUT_GROWTH_CHANCE_PCT, 0.0f, 20.0f);
 	ImGui::End();
 }
