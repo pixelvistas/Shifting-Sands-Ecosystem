@@ -72,20 +72,15 @@ void CCritterController::update()
 	if (!kinectProjector->isImageStabilized() || !vegetationField)
 		return;
 
-	// Deer - mirrors BDenvironment.stepDeer()'s newdeerlist/it.remove() pattern.
-	std::vector<Critter> newDeer;
-	for (auto & d : deer) {
-		d.update(*vegetationField);
-		if (d.consumeSpawnRequest() && (int)(deer.size() + newDeer.size()) < maxDeerPopulation)
-			newDeer.push_back(Critter(d.getGX(), d.getGY()));
-	}
-	deer.insert(deer.end(), newDeer.begin(), newDeer.end());
-	deer.erase(std::remove_if(deer.begin(), deer.end(), [](Critter const& d) { return d.isDeadForRemoval(); }), deer.end());
-
-	// Humans - mirrors stepAgents()'s equivalent pattern. Runs after the
-	// deer update above so a hunt this tick sees each deer's fresh
-	// position, matching BDframe.setPixels()'s step() calling stepDeer()
-	// before stepAgents().
+	// Humans - mirrors stepAgents()'s newagentlist/it.remove() pattern.
+	// Runs BEFORE deer below, matching BDenvironment.step()'s literal
+	// stepAgents()-then-stepDeer() order (an earlier version of this
+	// comment claimed the reverse, which was simply a misreading of
+	// step() - stepAgents() runs first). This means a hunt this tick
+	// checks each deer's position as of the END of the PREVIOUS tick
+	// (deer haven't moved or died yet this tick), same as ELF: a human
+	// hunts the deer where it was last rendered, not a position it's
+	// about to move to.
 	std::vector<HumanAgent> newHumans;
 	for (auto & h : humans) {
 		h.update(*vegetationField, deer);
@@ -94,6 +89,20 @@ void CCritterController::update()
 	}
 	humans.insert(humans.end(), newHumans.begin(), newHumans.end());
 	humans.erase(std::remove_if(humans.begin(), humans.end(), [](HumanAgent const& h) { return h.isDeadForRemoval(); }), humans.end());
+
+	// Deer - mirrors BDenvironment.stepDeer()'s newdeerlist/it.remove()
+	// pattern. A deer killed by a hunt above already has isDead()==true
+	// here, so its own update() just advances its corpse timer this
+	// tick instead of moving/eating - matching stepDeer()'s own
+	// `if (!thisdeer.isDead())` check on a deer stepAgents() just killed.
+	std::vector<Critter> newDeer;
+	for (auto & d : deer) {
+		d.update(*vegetationField);
+		if (d.consumeSpawnRequest() && (int)(deer.size() + newDeer.size()) < maxDeerPopulation)
+			newDeer.push_back(Critter(d.getGX(), d.getGY()));
+	}
+	deer.insert(deer.end(), newDeer.begin(), newDeer.end());
+	deer.erase(std::remove_if(deer.begin(), deer.end(), [](Critter const& d) { return d.isDeadForRemoval(); }), deer.end());
 
 	fbo.begin();
 	ofClear(255, 255, 255, 0);

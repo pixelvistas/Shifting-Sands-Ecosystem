@@ -82,6 +82,11 @@ void Critter::update(VegetationField & vegetationField)
 	if (food < MAX_FOOD) {
 		ofPoint here = cellCenterKinectCoord(gx, gy, vegetationField);
 		float gained = vegetationField.eatShrubOrFruit(here.x, here.y);
+		// Intentional deviation from ELF: stepDeer() adds the eaten amount
+		// to food with no cap, so a big shrub/fruit tile can push BDdeer's
+		// food past MAXFOOD=255 in one bite. Clamping here is a deliberate
+		// correction, not a literal reproduction - see HumanAgent.cpp's
+		// matching comment for the human-side equivalent.
 		food = std::min(MAX_FOOD, food + gained);
 	}
 

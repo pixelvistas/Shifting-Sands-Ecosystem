@@ -133,6 +133,11 @@ void HumanAgent::update(VegetationField & vegetationField, std::vector<Critter> 
 		bool ateNut = false;
 		float gained = vegetationField.eatFruitOrNut(here.x, here.y, preferNut, ateNut);
 		if (gained > 0.0f) {
+			// Intentional deviation from ELF: stepAgents() adds the eaten
+			// amount to food with no cap, so a big fruit/nut tile can push
+			// BDagent's food past MAXFOOD=255 in one bite (its constrainVal
+			// helper exists but is never called on food). Clamping here is a
+			// deliberate correction, not a literal reproduction.
 			food = std::min(MAX_FOOD, food + gained);
 			if (ateNut) nutstaken += (int)gained;
 			else fruittaken += (int)gained;
@@ -143,6 +148,12 @@ void HumanAgent::update(VegetationField & vegetationField, std::vector<Critter> 
 		if (vegetationField.isWaterAt(here.x, here.y)) {
 			if (ofRandom(100.0f) < (float)fishing)
 				food = MAX_FOOD;
+			// Intentional deviation from ELF: BDagent.setFishing() has a
+			// real bug - it writes the unclamped value straight to the
+			// field, then clamps a local copy of the parameter that's
+			// never written back, so the 1-100 clamp is dead code and
+			// fishing skill is actually unbounded in real ELF. Clamping
+			// here is a deliberate correction, not a literal reproduction.
 			fishing = std::min(100, fishing + 1);
 		}
 
@@ -157,6 +168,8 @@ void HumanAgent::update(VegetationField & vegetationField, std::vector<Critter> 
 					food = MAX_FOOD;
 					d.makeDead();
 				}
+				// Same setHunting() clamp bug as fishing above - see that
+				// comment. Clamped here deliberately, not literally.
 				hunting = std::min(100, hunting + 5);
 			}
 		}
