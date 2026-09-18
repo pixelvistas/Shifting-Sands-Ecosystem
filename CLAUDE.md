@@ -62,24 +62,27 @@ clone):
   density by exactly 1 out of a 0..255 max (SHRUBGROWTH=1,
   FRUITGROWTH=3, NUTGROWTH=2 - i.e. 1%/3%/2% chance per tick of +1/255).
   Reaching full density takes on the order of tens of thousands of ticks.
-- **Our port's growth is continuous instead, and NOT something the user
-  asked for.** `VegetationField.cpp` (~line 206-208) does
-  `density += GROWTH_RATE * dt` (real seconds) clamped to 1.0, with
-  `SHRUB_GROWTH_RATE=0.2f`, `FRUIT_GROWTH_RATE=0.6f`, `NUT_GROWTH_RATE=0.4f`
-  - a full regrowth in ~1.7-5 seconds of continuous in-band time, preserving
-  ELF's 1:3:2 ratio but not its per-tick coin-flip pace. This was an
-  unprompted call made by an earlier session at the very first vegetation
-  commit (`86b416f`), whose own header comment says outright it was
-  "re-expressed as continuous per-cell density rather than ELF's per-tick
-  random growth, so it reads as smoothly thickening/thinning patches
-  instead of tick-by-tick flicker" - a smoothness rationale invented and
-  applied without ever being put to the user as a decision. A later pass
-  (`055ae18`) re-derived the 1:3:2 ratio to match ELF's
-  SHRUBGROWTH/FRUITGROWTH/NUTGROWTH more precisely but kept the continuous
-  mechanic rather than reconsidering it. **Needs an explicit call from the
-  user**: revert to ELF's literal per-tick probabilistic growth, or keep
-  continuous growth now that it's flagged as a real (not rubber-stamped)
-  fidelity departure.
+- **RESOLVED (`0afa62f`, 2026-09-18) - reverted to ELF's literal per-tick
+  mechanic, per the user's explicit decision.** Was continuous
+  (`density += GROWTH_RATE * dt`), an earlier session's unprompted
+  smoothness call at the very first vegetation commit (`86b416f`) never
+  put to the user as a decision - see git history if the full backstory
+  is needed again. Now `VegetationField.cpp`'s `update()` does
+  `ofRandom(100.0f) < SHRUB_GROWTH_CHANCE_PCT` (etc., values 1.0/3.0/2.0,
+  ELF's literal SHRUBGROWTH/FRUITGROWTH/NUTGROWTH) once per cell per
+  frame, incrementing by exactly 1/255 on success - one `update()` call
+  is one ELF tick, matching Critter/HumanAgent's existing convention.
+  Reasoning given: start from a known-ELF-faithful baseline to diagnose
+  the "vegetation never grows" problem from, then customize from there.
+  **Important expectation-setting for the next hardware test:** this is
+  ELF's actual glacial pace - full density takes on the order of tens of
+  thousands of ticks. A short test (seconds, even a minute or two) is
+  expected to show little to no visible growth even if everything else
+  is working correctly now. Use the pipeline/band diagnostics added in
+  `58d1890` (Vegetation panel: stabilized/ROI/gridReady gate states, and
+  the ROI-center cell's live band/density readout) to confirm the
+  mechanism is actually running and rolling the dice, rather than
+  waiting a long time and judging only by whether color appears.
 - **RESOLVED - grazing pressure is not the cause.** User ran the proposed
   test (removed all deer/humans via the Population panel, waited) on a
   build before the white->black negative-space change. Result: still
