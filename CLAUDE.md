@@ -80,11 +80,27 @@ clone):
   user**: revert to ELF's literal per-tick probabilistic growth, or keep
   continuous growth now that it's flagged as a real (not rubber-stamped)
   fidelity departure.
-- **Still unconfirmed on real hardware:** whether ~120 wandering
-  deer+humans, each instantly stripping whatever cell they stand on,
-  outrun even this boosted regrowth rate within the actual living-range
-  band width on the real sandbox's grid resolution. Proposed test (never
-  reported back by user): remove all deer/humans via the Population
-  panel, wait, see if vegetation visibly accumulates. The population
-  chart above (once built) would make this trivial to see instead of
-  guessing.
+- **RESOLVED - grazing pressure is not the cause.** User ran the proposed
+  test (removed all deer/humans via the Population panel, waited) on a
+  build before the white->black negative-space change. Result: still
+  just blank white, no visible vegetation. With zero agents there is
+  nothing left to strip cells bare, so growth itself is not happening at
+  any rate - the "~120 agents outrunning regrowth" hypothesis is dead.
+  Whatever's wrong is upstream of agents entirely.
+- **Open, more fundamental question this reopens:** is elevation ever
+  landing inside a growth band at all, or is the vegetation pipeline
+  itself not engaging? Blank white is ambiguous in this shader - it's
+  both the "nothing grown yet" base color AND the flat snow color when
+  `debugShowSnow` is off - so "blank white" alone doesn't distinguish
+  "no band ever satisfied" from "everything reads as snow" from "the
+  overlay isn't wired up." Follow-ups asked of the user (2026-09-18,
+  awaiting answer): (1) was there ANY variation at all - contour lines,
+  water tint - or literally uniform flat white everywhere; (2) was the
+  debug-snow toggle (`08a810a`) on during this test, and if so was the
+  pale-blue snow tint ever visible; (3) what did the Vegetation panel's
+  live readouts show (raw elevation at ROI center, water/snow line mm,
+  calibrated ceiling, band widths) at the time; (4) which build/commit
+  was this tested on. This is now a higher-priority thread than the
+  growth-mechanic question above, since it may be the same root cause
+  as the earlier "no height map at all" reports rather than anything
+  vegetation-specific.
