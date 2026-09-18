@@ -49,9 +49,8 @@ Windows-and-Kinect-1473-specific and are not needed on Linux). In brief:
 
 ## Calibration
 
-Follow the standard Magic Sand calibration flow: flatten the sand, manually
-define the sand region, run automatic kinect/projector calibration, and complete
-the raised-board step. In this fork, calibration confirmation prompts are ImGui
+Flatten the sand, manually define the sand region, run automatic kinect/projector calibration, 
+and complete the raised-board step. In this fork, calibration confirmation prompts are ImGui
 popups (click OK to advance each step).
 
 ---
