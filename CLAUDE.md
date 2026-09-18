@@ -1,5 +1,43 @@
 # Project notes for Claude
 
+## Structural fidelity audit vs. ELF source (2026-09-18)
+
+Full side-by-side re-read of our C++ port against ELF's actual Java
+source (`BDenvironment.java`/`BDagent.java`/`BDdeer.java`/`BDlocation.java`
+in the ELFdev001/ELFDynamicSystem clone), covering movement, eating,
+fishing, hunting, spawn/death/corpse constants, and population caps -
+not just the growth mechanic covered above. Confirmed accurate: deer's
+permissive-OR movement rule, humans' wait/stutter-step rule, all
+water/snow/growth band thresholds, eating gated on `food < MAX_FOOD`,
+fishing/hunting chance-equals-skill mechanics, the literal (not "fixed")
+`fruittaken + nutstaken/100` gathering formula, and all spawn/death/
+corpse constants (`LIFE_OF_CORPSE=500`, `SPAWN_CHANCE_PER_TICK=1.0`,
+etc.). Population cap (60/60 vs. ELF's literal `MAXAGENTS/MAXDEERS=1000`)
+is a documented, deliberate adaptation for real-time draw cost - already
+flagged as intentional in `CritterController.h`, not a new finding.
+
+**Found and fixed (`e94d39f`): update order was backwards.**
+`CritterController::update()` updated deer before humans, with a
+comment claiming this matched ELF - it didn't. `BDenvironment.step()`
+literally calls `stepAgents()` then `stepDeer()` every tick; re-reading
+it directly (not trusting the existing comment) confirmed humans go
+first in real ELF. Swapped to match: humans now update first, so a
+hunt this tick checks each deer's end-of-previous-tick position, same
+as ELF, instead of a position the deer moved to later in the same tick.
+
+**Documented, per explicit user instruction, as intentional (not
+reverted):** two places where the port is more correct than ELF's own
+literal arithmetic rather than reproducing it bug-for-bug:
+- Food is clamped at `MAX_FOOD` on eating; ELF's `stepAgents()`/
+  `stepDeer()` add with no cap at all (a big tile can overshoot 255).
+- Fishing/hunting skill is clamped at 100; ELF's `setFishing()`/
+  `setHunting()` have a real bug (unclamped value written to the field
+  before a clamp is computed on a local copy that's never written
+  back), so skill is actually unbounded in real ELF.
+
+Both are now called out in code comments (`Critter.cpp`/
+`HumanAgent.cpp`) as deliberate deviations rather than left silent.
+
 ## Follow-up: Repast reference paper (logged 2026-09-18, revisit after ELF port is solid)
 
 User asked whether to adopt Repast Simphony/HPC for the human/deer agents.
