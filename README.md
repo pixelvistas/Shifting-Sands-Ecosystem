@@ -23,7 +23,7 @@ openFrameworks 0.9.3, which no longer builds on current toolchains. This fork:
   openFrameworks on Windows (see `PATCHES.md`).
 
 **Ecosystem direction (in progress).** The rendering and interaction model is
-being reworked from a height-based colormap toward an ecosystem simulation:
+being reworked from a height-based colormap toward an ecological succession model:
 moisture and water accumulation, vegetation that grows and recedes over time,
 and terrain-driven dynamics. This is the core creative-research contribution and
 is under active development.
