@@ -62,13 +62,24 @@ clone):
   density by exactly 1 out of a 0..255 max (SHRUBGROWTH=1,
   FRUITGROWTH=3, NUTGROWTH=2 - i.e. 1%/3%/2% chance per tick of +1/255).
   Reaching full density takes on the order of tens of thousands of ticks.
-- **Our port's growth is continuous and much faster by design:**
-  `VegetationField.cpp` (~line 206-208) does
+- **Our port's growth is continuous instead, and NOT something the user
+  asked for.** `VegetationField.cpp` (~line 206-208) does
   `density += GROWTH_RATE * dt` (real seconds) clamped to 1.0, with
   `SHRUB_GROWTH_RATE=0.2f`, `FRUIT_GROWTH_RATE=0.6f`, `NUT_GROWTH_RATE=0.4f`
   - a full regrowth in ~1.7-5 seconds of continuous in-band time, preserving
-  ELF's 1:3:2 ratio but not its glacial pace (a deliberate playability
-  choice, not a fidelity bug).
+  ELF's 1:3:2 ratio but not its per-tick coin-flip pace. This was an
+  unprompted call made by an earlier session at the very first vegetation
+  commit (`86b416f`), whose own header comment says outright it was
+  "re-expressed as continuous per-cell density rather than ELF's per-tick
+  random growth, so it reads as smoothly thickening/thinning patches
+  instead of tick-by-tick flicker" - a smoothness rationale invented and
+  applied without ever being put to the user as a decision. A later pass
+  (`055ae18`) re-derived the 1:3:2 ratio to match ELF's
+  SHRUBGROWTH/FRUITGROWTH/NUTGROWTH more precisely but kept the continuous
+  mechanic rather than reconsidering it. **Needs an explicit call from the
+  user**: revert to ELF's literal per-tick probabilistic growth, or keep
+  continuous growth now that it's flagged as a real (not rubber-stamped)
+  fidelity departure.
 - **Still unconfirmed on real hardware:** whether ~120 wandering
   deer+humans, each instantly stripping whatever cell they stand on,
   outrun even this boosted regrowth rate within the actual living-range
