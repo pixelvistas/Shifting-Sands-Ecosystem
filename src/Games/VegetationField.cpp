@@ -326,6 +326,49 @@ void VegetationField::drawGui()
 		ImGui::Text("Raw elevation at ROI center: %.1f mm (put a hand/dig/mound here to measure)", rawElevation);
 	}
 	ImGui::Separator();
+	// Direct visibility into update()'s early-return gate and the actual
+	// per-cell growth computation at the one point we already have a raw
+	// elevation reading for (ROI center) - added because "blank white,
+	// even with zero agents and after several seconds" is consistent with
+	// at least three different root causes (pipeline never running,
+	// elevation never landing in a growth band, or growth computed but not
+	// visibly accumulating) that look identical from a screenshot alone.
+	if (kinectProjector) {
+		bool stabilized = kinectProjector->isImageStabilized();
+		bool roiValid = kinectROI.width > 0;
+		ImGui::Text("Pipeline: stabilized=%s  ROI valid=%s  grid ready=%s (%d x %d cells)",
+			stabilized ? "yes" : "NO", roiValid ? "yes" : "NO", gridReady ? "yes" : "NO", cols, rows);
+		if (!stabilized || !roiValid || !gridReady) {
+			ImGui::Text("*** update() is returning early right now - nothing below this line is running. ***");
+		} else if (roiValid) {
+			int gx, gy;
+			float cx = kinectROI.x + kinectROI.width / 2.0f;
+			float cy = kinectROI.y + kinectROI.height / 2.0f;
+			if (cellIndexAt(cx, cy, gx, gy)) {
+				// Mirrors update()'s classification exactly (isWater/isSnow
+				// checked first, shrub has no upper bound) rather than a
+				// re-derived approximation, so this can't disagree with
+				// what update() actually computed for this same cell.
+				float elevFrac = normalizedElevation(kinectProjector->elevationAtKinectCoord(cx, cy));
+				float waterFrac = TEMPERATURE - LIVING_RANGE_FRACTION;
+				float snowFrac = TEMPERATURE;
+				bool isWater = elevFrac < waterFrac;
+				bool isSnow = !isWater && elevFrac > snowFrac;
+				float shrubLineFrac = SHRUB_LINE_RATIO * LIVING_RANGE_FRACTION;
+				float fruitLineFrac = FRUIT_LINE_RATIO * LIVING_RANGE_FRACTION;
+				float nutLineFrac = NUT_LINE_RATIO * LIVING_RANGE_FRACTION;
+				bool inShrubBand = !isWater && !isSnow && elevFrac > waterFrac + shrubLineFrac;
+				bool inFruitBand = !isWater && !isSnow && elevFrac > waterFrac + fruitLineFrac && elevFrac < snowFrac - fruitLineFrac;
+				bool inNutBand = !isWater && !isSnow && elevFrac > waterFrac + nutLineFrac && elevFrac < snowFrac - nutLineFrac;
+				ImGui::Text("ROI-center cell: water=%s snow=%s in-band [shrub=%s fruit=%s nut=%s]",
+					isWater ? "yes" : "no", isSnow ? "yes" : "no",
+					inShrubBand ? "yes" : "no", inFruitBand ? "yes" : "no", inNutBand ? "yes" : "no");
+				ImGui::Text("ROI-center density: shrub=%.4f fruit=%.4f nut=%.4f (should rise if in-band above)",
+					shrubDensity.at<float>(gy, gx), fruitDensity.at<float>(gy, gx), nutDensity.at<float>(gy, gx));
+			}
+		}
+	}
+	ImGui::Separator();
 	ImGui::Text("Climate (participant-driven, not a direct control)");
 	ImGui::Text("Temperature: %.3f  (activity: %.3f mm/cell)", TEMPERATURE, activityLevel);
 	// Reorder by actual value, same as normalizedElevation() - elevationMin
