@@ -74,6 +74,27 @@ port itself is verified working on hardware:
 3. **Reproducible logging** - CSV export from the same per-tick sampler
    (tick, counts, RNG seed) - equivalent to Repast's data-set recorders.
 
+**Independent confirmation that #1 isn't just a Repast borrowing:** during
+the 2026-09-19 structural audit, `BDdisplay.java` in ELF's own source
+turned out to be a 7-line unimplemented stub:
+
+```java
+public class BDdisplay {
+  //TODO function for displaying output data on top of environment
+  //TODO need to add, population data, patches, animals and trees
+  //TODO also potentially add some output graphs that update as the
+  //     simulation is running
+}
+```
+
+ELF's own authors planned a population/output-graph display and never
+built it - `BDframe`/`BDenvironment` never reference this class at all,
+so it's dead scaffolding, not a feature that shipped. The population-
+over-time chart above is therefore finishing an ELF design intent left
+undone, not just adapting something from the Repast/Tangible Landscape
+paper - two independent sources (ELF's own TODO and Guest/Bernardes/
+Howard's working implementation) now point at the same feature.
+
 The slope-based movement energy cost from the paper is a plausible design
 reference for the *future succession-model phase* (Xun Liu's paper), not
 something to port now.
