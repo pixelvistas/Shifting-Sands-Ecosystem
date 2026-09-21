@@ -96,12 +96,56 @@ paper - two independent sources (ELF's own TODO and Guest/Bernardes/
 Howard's working implementation) now point at the same feature.
 
 The slope-based movement energy cost from the paper is a plausible design
-reference for the *future succession-model phase* (Xun Liu's paper), not
+reference for the *future succession-model phase* (see below), not
 something to port now.
 
 **Do not start implementing any of this until the ELF port itself is
 confirmed working properly on real hardware** - that's the current
 priority per the user's explicit instruction (2026-09-18).
+
+## Future phase: ecological succession model (hydrology + plant seeding, from Liu)
+
+This is the project's stated main goal, not a side idea - in the user's
+own words from early in the project: "The main goal is to create an
+ecological succession model... What we should have now, is a port of
+the ELF model to openFrameworks. What will come after that is something
+similar to the Agent-based Simulation from Liu's paper." Confirmed
+2026-09-21 that "hydrology model / plant seeding / particle flow" is
+this same phase, not a separate idea - this note had compressed that
+connection away; restoring it here with the actual source material this
+time:
+
+1. **Xun Liu, "The Third Simulation: Augmented Reality Fluvial Modeling
+   Tool"** (Journal of Digital Landscape Architecture, 2020) - a
+   tangible hydromorphology table combining a physical hydraulic sand
+   model with real-time computational fluvial (water-flow) simulation
+   via AR: sculpt the sand, see the water-flow simulation update live.
+2. A second, longer reference paper (uploaded alongside Liu's,
+   `ARsandbox014.pdf`) describing a related system in more depth:
+   water-flow visualized through Rhino Grasshopper as vector-field/
+   particle-flow imagery, GIS overlays (contour lines, cut-and-fill
+   maps), and an agent-based vegetation propagation simulation - a
+   hand position on the table reads as a planting/seeding location, and
+   how each seed spreads from there is driven by that species' own
+   properties and its competitive interaction with whatever other
+   species are already established.
+
+So the phase is genuinely three pieces of one methodology, not three
+separate features: real-time water-flow simulation + visualization,
+plus agent-based seed dispersal/competition running on top of it -
+which is exactly what a succession model needs, since succession is
+fundamentally about how plant communities shift over time under
+hydrology and inter-species competition. Grasshopper itself won't be
+used (Rhino-specific, not part of this C++/openFrameworks stack) - it's
+the *methodology* being adapted, not the tool.
+
+**Not scoped or designed yet.** When this phase starts, first steps are
+likely: (a) re-reading both source papers in full for the actual
+fluvial simulation math/algorithm Liu used (not just visual style), (b)
+deciding how a water-flow simulation should integrate with the existing
+elevation-band water/snow classification already in `VegetationField`,
+and (c) designing the seed-dispersal/competition model as a genuine
+extension of the three existing plant types rather than a replacement.
 
 ## Open technical thread: vegetation growth vs. consumption balance
 
