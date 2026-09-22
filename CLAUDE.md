@@ -193,20 +193,39 @@ clone):
   nothing left to strip cells bare, so growth itself is not happening at
   any rate - the "~120 agents outrunning regrowth" hypothesis is dead.
   Whatever's wrong is upstream of agents entirely.
-- **Open, more fundamental question this reopens:** is elevation ever
-  landing inside a growth band at all, or is the vegetation pipeline
-  itself not engaging? Blank white is ambiguous in this shader - it's
-  both the "nothing grown yet" base color AND the flat snow color when
-  `debugShowSnow` is off - so "blank white" alone doesn't distinguish
-  "no band ever satisfied" from "everything reads as snow" from "the
-  overlay isn't wired up." Follow-ups asked of the user (2026-09-18,
-  awaiting answer): (1) was there ANY variation at all - contour lines,
-  water tint - or literally uniform flat white everywhere; (2) was the
-  debug-snow toggle (`08a810a`) on during this test, and if so was the
-  pale-blue snow tint ever visible; (3) what did the Vegetation panel's
-  live readouts show (raw elevation at ROI center, water/snow line mm,
-  calibrated ceiling, band widths) at the time; (4) which build/commit
-  was this tested on. This is now a higher-priority thread than the
-  growth-mechanic question above, since it may be the same root cause
-  as the earlier "no height map at all" reports rather than anything
-  vegetation-specific.
+- **RESOLVED (2026-09-22) - the full pipeline is confirmed working on
+  real hardware.** A real hardware screenshot at Temperature=0.599 shows
+  all five classification outcomes simultaneously and correctly: teal
+  background (nut-dominant), a light-green ring (shrub-dominant), a
+  mottled red/pink patch (fruit-dominant, showing the same per-pixel
+  independent-growth speckle predicted from ELF's real per-tick
+  mechanic), and a pale-blue patch at a mound's peak matching
+  `DEBUG_SHOW_SNOW`'s exact tint `(0.75, 0.85, 1.0)` - confirmed genuine
+  snow, not the cosmetic elevation-whitening effect (see below). This
+  closes the "is the pipeline even engaging" question for good - it is,
+  and all three plant types plus water/snow are all independently
+  reachable and visually distinguishable.
+- **Root cause of "no water/snow" along the way: the elevation range
+  bounds, not Temperature.** Two real debugging rounds on hardware
+  (2026-09-22) found the elevation range sliders (bound A/B) had been
+  set to an arbitrary ±300mm, more than double the box's own measured
+  ceiling (145.7mm per `getCalibratedCeilingElevation()`). Since the
+  water/snow lines are fractions OF this range, an oversized range
+  makes the derived mm thresholds unreachable no matter how the sand is
+  reshaped, and raising Temperature to compensate doesn't fix it since
+  Temperature is still just a fraction of the same too-wide range.
+  Fixed on the user's hardware by clicking "Reset range to
+  ±calibrated ceiling," not a code change.
+- **Separately identified, not a bug:** a real mound can visually wash
+  from red toward white even with the debug-snow toggle off and even
+  when nowhere near the actual snow threshold. Traced to
+  `SandSurfaceRenderer`'s OWN `elevationNorm` (used only for cosmetic
+  color modulation, e.g. fruit's `(1.0, elevationNorm, elevationNorm)`
+  formula) - a completely separate scale from `VegetationField`'s
+  calibrated range, sourced from Magic Sand's stock
+  `bin/data/colorMaps/HeightColorMap.xml` (declared range -220mm to
+  +220mm, inherited unmodified, with a known min/max inversion already
+  flagged in `SandSurfaceRenderer.h`). A real elevation change can wash
+  a color toward white via this path well before it's anywhere near
+  triggering actual snow - the debug-snow toggle is the reliable way to
+  tell the two apart.
