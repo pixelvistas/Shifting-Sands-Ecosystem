@@ -329,11 +329,22 @@ void VegetationField::drawGui()
 	// guessing at elevation range/temperature values blind. This is what
 	// the calibrated-elevation-range sliders and Water/Snow line readout
 	// further down should be checked against, not the other way around.
+	//
+	// Sampled ONCE here and reused by the pipeline diagnostic below,
+	// rather than each querying elevationAtKinectCoord() independently -
+	// two separate real-time queries in the same draw call could
+	// legitimately disagree if the grabber thread writes a new depth
+	// frame between them, which would make this line and the
+	// classification below it describe two different elevations while
+	// both claiming to be "the ROI center."
+	bool haveRawElevation = false;
+	float rawElevationAtROICenter = 0.0f;
 	if (kinectProjector && kinectROI.width > 0) {
 		float cx = kinectROI.x + kinectROI.width / 2.0f;
 		float cy = kinectROI.y + kinectROI.height / 2.0f;
-		float rawElevation = kinectProjector->elevationAtKinectCoord(cx, cy);
-		ImGui::Text("Raw elevation at ROI center: %.1f mm (put a hand/dig/mound here to measure)", rawElevation);
+		rawElevationAtROICenter = kinectProjector->elevationAtKinectCoord(cx, cy);
+		haveRawElevation = true;
+		ImGui::Text("Raw elevation at ROI center: %.1f mm (put a hand/dig/mound here to measure)", rawElevationAtROICenter);
 	}
 	ImGui::Separator();
 	// Direct visibility into update()'s early-return gate and the actual
@@ -350,7 +361,7 @@ void VegetationField::drawGui()
 			stabilized ? "yes" : "NO", roiValid ? "yes" : "NO", gridReady ? "yes" : "NO", cols, rows);
 		if (!stabilized || !roiValid || !gridReady) {
 			ImGui::Text("*** update() is returning early right now - nothing below this line is running. ***");
-		} else if (roiValid) {
+		} else if (roiValid && haveRawElevation) {
 			int gx, gy;
 			float cx = kinectROI.x + kinectROI.width / 2.0f;
 			float cy = kinectROI.y + kinectROI.height / 2.0f;
@@ -358,8 +369,12 @@ void VegetationField::drawGui()
 				// Mirrors update()'s classification exactly (isWater/isSnow
 				// checked first, shrub has no upper bound) rather than a
 				// re-derived approximation, so this can't disagree with
-				// what update() actually computed for this same cell.
-				float elevFrac = normalizedElevation(kinectProjector->elevationAtKinectCoord(cx, cy));
+				// what update() actually computed for this same cell. Reuses
+				// the SAME sample the "Raw elevation" line above printed,
+				// rather than a second independent query that could race
+				// against a grabber-thread depth update and silently
+				// describe a different moment - see that line's comment.
+				float elevFrac = normalizedElevation(rawElevationAtROICenter);
 				float waterFrac = TEMPERATURE - LIVING_RANGE_FRACTION;
 				float snowFrac = TEMPERATURE;
 				bool isWater = elevFrac < waterFrac;
