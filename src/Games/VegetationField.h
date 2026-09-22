@@ -327,7 +327,17 @@ public:
 
 	// CA-style spread layer, added on top of ELF's per-cell-independent
 	// growth (see the header note's "Growth" section) - the first piece
-	// of the succession-model phase. Real-world mm radius to search for
+	// of the succession-model phase.
+	//
+	// Runtime kill switch for the whole layer, purely for A/B performance
+	// testing on real hardware: this session's fix for a measured 30-60x
+	// slowdown (see the header note and CLAUDE.md) got 1-2fps back up to
+	// only ~5fps, not the expected ~60 - meaning either the spread layer
+	// is still the bottleneck (in which case this toggled off should
+	// restore full frame rate immediately) or something else is (in
+	// which case it won't), without needing another rebuild to find out.
+	static bool ENABLE_SPREAD;
+	// Real-world mm radius to search for
 	// an already-established same-species neighbor before granting the
 	// spread-boosted chance below; converted to a grid-cell radius via
 	// the cached mmPerCell scale (see setKinectROI()) so it stays

@@ -57,7 +57,10 @@ float VegetationField::FRUIT_GROWTH_CHANCE_PCT = 3.0f;
 float VegetationField::NUT_GROWTH_CHANCE_PCT = 2.0f;
 // CA-style spread layer - see the header note. First-guess defaults,
 // untested on real hardware: a same-species neighbor within 40mm gives
-// 5x the spontaneous chance to grow.
+// 5x the spontaneous chance to grow. ENABLE_SPREAD defaults on; it's an
+// A/B performance kill switch, not a feature the user should need to
+// know about to use the panel normally.
+bool VegetationField::ENABLE_SPREAD = true;
 float VegetationField::SPREAD_RADIUS_MM = 40.0f;
 float VegetationField::SPREAD_CHANCE_MULTIPLIER = 5.0f;
 float VegetationField::FOOD_PER_FULL_CELL = 255.0f;
@@ -291,17 +294,17 @@ void VegetationField::update()
 				// a measured real-hardware regression.
 				if (inShrubBand && shrub < 1.0f) {
 					float chance = SHRUB_GROWTH_CHANCE_PCT;
-					if (ofRandom(1.0f) < SPREAD_CHECK_CHANCE && hasEstablishedNeighbor(gx, gy, shrubDensity)) chance *= SPREAD_CHANCE_MULTIPLIER;
+					if (ENABLE_SPREAD && ofRandom(1.0f) < SPREAD_CHECK_CHANCE && hasEstablishedNeighbor(gx, gy, shrubDensity)) chance *= SPREAD_CHANCE_MULTIPLIER;
 					if (ofRandom(100.0f) < chance) shrub = std::min(1.0f, shrub + GROWTH_INCREMENT);
 				}
 				if (inFruitBand && fruit < 1.0f) {
 					float chance = FRUIT_GROWTH_CHANCE_PCT;
-					if (ofRandom(1.0f) < SPREAD_CHECK_CHANCE && hasEstablishedNeighbor(gx, gy, fruitDensity)) chance *= SPREAD_CHANCE_MULTIPLIER;
+					if (ENABLE_SPREAD && ofRandom(1.0f) < SPREAD_CHECK_CHANCE && hasEstablishedNeighbor(gx, gy, fruitDensity)) chance *= SPREAD_CHANCE_MULTIPLIER;
 					if (ofRandom(100.0f) < chance) fruit = std::min(1.0f, fruit + GROWTH_INCREMENT);
 				}
 				if (inNutBand && nut < 1.0f) {
 					float chance = NUT_GROWTH_CHANCE_PCT;
-					if (ofRandom(1.0f) < SPREAD_CHECK_CHANCE && hasEstablishedNeighbor(gx, gy, nutDensity)) chance *= SPREAD_CHANCE_MULTIPLIER;
+					if (ENABLE_SPREAD && ofRandom(1.0f) < SPREAD_CHECK_CHANCE && hasEstablishedNeighbor(gx, gy, nutDensity)) chance *= SPREAD_CHANCE_MULTIPLIER;
 					if (ofRandom(100.0f) < chance) nut = std::min(1.0f, nut + GROWTH_INCREMENT);
 				}
 			}
@@ -561,6 +564,9 @@ void VegetationField::drawGui()
 	ImGui::Text("neighbor nearby, growth still falls back to the plain spontaneous");
 	ImGui::Text("chance above - the only way anything grows before the hydrology/");
 	ImGui::Text("seeding layer exists to plant a first seed.");
+	ImGui::Checkbox("Enable spread (uncheck to A/B test performance)", &ENABLE_SPREAD);
+	ImGui::Text("If frame rate jumps back up with this off, spread is still the");
+	ImGui::Text("bottleneck - if not, something else is. No rebuild needed to check.");
 	ImGui::SliderFloat("Spread radius (mm)", &SPREAD_RADIUS_MM, 0.0f, 200.0f);
 	ImGui::SliderFloat("Spread chance multiplier", &SPREAD_CHANCE_MULTIPLIER, 1.0f, 20.0f);
 	ImGui::Text("mm per grid cell (measured): %.2f -> spread radius is ~%d cells", mmPerCell, std::max(1, (int)(SPREAD_RADIUS_MM / mmPerCell)));
