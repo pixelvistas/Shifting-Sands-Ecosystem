@@ -1,5 +1,24 @@
 # Project notes for Claude
 
+## Reference point: "confirmed working checkpoint" = commit `1bbad8a`
+
+Last commit before the CA-style spread layer / succession-model phase
+began (`48cc880` onward). At `1bbad8a`, the ELF port itself was
+confirmed working end-to-end on real hardware: full structural fidelity
+audit complete, growth/eating/movement/fishing/hunting all verified
+against ELF's actual source, and the vegetation pipeline (water/snow/
+shrub/fruit/nut) confirmed correctly classifying and rendering on real
+hardware. Use this as the point to compare against or `git reset`/
+`git checkout` back to if the succession-model work needs reverting.
+
+An annotated git tag `confirmed-working-checkpoint` pointing at this
+commit exists locally but could NOT be pushed to origin from this
+session (HTTP 403 on tag refs specifically - branch pushes work fine,
+so this looks like a scoped-token restriction excluding tags, not a
+network issue). If a real pushed tag is wanted, run this from a machine
+with full push access:
+`git tag -a confirmed-working-checkpoint 1bbad8a -m "..." && git push origin confirmed-working-checkpoint`
+
 ## Structural fidelity audit vs. ELF source (2026-09-18)
 
 Full side-by-side re-read of our C++ port against ELF's actual Java
