@@ -212,15 +212,30 @@ Five concrete decisions made and implemented in `VegetationField.h/.cpp`:
    to plant real first seeds, so spontaneous growth is the only way to
    bootstrap and test anything on untouched sand until it does.
 
-**Known, flagged-but-unresolved engineering concern:** `hasEstablishedNeighbor()`
-samples a small fixed number of random points within the radius
-(`SPREAD_SAMPLE_COUNT=8`) rather than scanning it exhaustively, since an
-exhaustive scan for all three species at every in-band cell on a 500+-
-cell-wide native-resolution grid, every frame, would be a real cost.
-This is a deliberate stochastic approximation, **untested for
-performance on real hardware** - if it's too slow, the sample count is
-the first thing to reduce. `SPREAD_RADIUS_MM=40` and
-`SPREAD_CHANCE_MULTIPLIER=5` are first-guess defaults, also untested.
+**RESOLVED (2026-09-22) - the flagged performance risk was real: 60fps
+dropped to 1-2fps on real hardware immediately after this layer shipped.**
+Confirmed the cause by the numbers before touching anything: up to
+`cols*rows*3 species*SPREAD_SAMPLE_COUNT` = ~3.67 million sample
+iterations per frame (519x295 grid, 8 samples, 3 species), each doing
+2x `ofRandom`, `cos`, `sin`, `sqrt`, and a bounds-checked
+`cv::Mat::at<float>()` lookup - more than enough on its own to explain a
+30-60x slowdown. Three fixes, in order of actual impact:
+1. `hasEstablishedNeighbor()` now uses a raw pointer
+   (`density.ptr<float>(0)` + manual row-major indexing) instead of
+   `.at<float>()`, which recomputes strides/bounds-checks on every call.
+2. `SPREAD_SAMPLE_COUNT` cut from 8 to 3.
+3. **The actual main fix:** the neighbor search now only runs on a small
+   fraction of eligible ticks (`SPREAD_CHECK_CHANCE=0.1`, i.e. ~10%) -
+   the rest just use the plain spontaneous chance, skipping
+   `hasEstablishedNeighbor()` entirely. Cutting call volume beats cutting
+   cost-per-call, and growth unfolds over minutes regardless, so a cell
+   doesn't need its neighbor re-checked every single frame for the
+   spread layer to still function. Combined, roughly a ~25-50x reduction
+   in the new cost - expected to restore close to the original ~60fps,
+   not yet re-confirmed on hardware after this fix.
+`SPREAD_RADIUS_MM=40` and `SPREAD_CHANCE_MULTIPLIER=5` are still
+first-guess defaults, untested for whether they look right visually -
+that's a separate, remaining unknown from the performance one just fixed.
 
 **Still not done, and blocking full succession-model completion:** the
 actual hydrology/particle-flow water simulation and real hand-placed

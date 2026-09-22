@@ -73,8 +73,20 @@ namespace {
 	const float GROWTH_INCREMENT = 1.0f / 255.0f;
 	// Fixed sample count for hasEstablishedNeighbor()'s stochastic radius
 	// check - not user-tunable, see that method's header comment on why
-	// this is sampled rather than scanned exhaustively.
-	const int SPREAD_SAMPLE_COUNT = 8;
+	// this is sampled rather than scanned exhaustively. Cut from an
+	// initial 8 after a measured 30-60x real-hardware slowdown (60fps to
+	// 1-2fps) - this alone isn't what fixed it (see SPREAD_CHECK_CHANCE
+	// below for the bigger lever), but every sample here is a real cost.
+	const int SPREAD_SAMPLE_COUNT = 3;
+	// Only this fraction of a cell's growth-eligible ticks actually pay
+	// for the (still nontrivial) neighbor search at all - the rest just
+	// use the plain spontaneous chance, skipping hasEstablishedNeighbor()
+	// entirely. This is the main fix for the 30-60x real-hardware
+	// slowdown: cutting call volume beats cutting cost-per-call, and
+	// growth unfolds over minutes regardless (see the header note), so a
+	// cell doesn't need its neighbor re-checked every single frame for
+	// the spread layer to still work.
+	const float SPREAD_CHECK_CHANCE = 0.1f;
 }
 
 void VegetationField::setup(std::shared_ptr<KinectProjector> const& k)
@@ -121,6 +133,15 @@ float VegetationField::normalizedElevation(float elevationMM) const
 
 bool VegetationField::hasEstablishedNeighbor(int gx, int gy, cv::Mat const& density) const
 {
+	// Raw pointer access, not density.at<float>() - .at() recomputes
+	// strides and bounds-checks on every single call, which is fine at
+	// grid-build-once cost but was a measured, severe (30-60x, 60fps to
+	// 1-2fps on real hardware) regression at this call volume: up to
+	// cols*rows*3 species*SPREAD_SAMPLE_COUNT calls every frame. density
+	// is guaranteed continuous (freshly allocated via cv::Mat::zeros() in
+	// setKinectROI(), never reshaped afterward), so one row-major pointer
+	// is valid for the whole matrix.
+	const float * data = density.ptr<float>(0);
 	int cellRadius = std::max(1, (int)(SPREAD_RADIUS_MM / mmPerCell));
 	for (int i = 0; i < SPREAD_SAMPLE_COUNT; i++) {
 		// Uniform-within-a-disk sampling (sqrt on the radius fraction),
@@ -132,7 +153,7 @@ bool VegetationField::hasEstablishedNeighbor(int gx, int gy, cv::Mat const& dens
 		int ny = gy + (int)(std::sin(angle) * r);
 		if (nx < 0 || nx >= cols || ny < 0 || ny >= rows)
 			continue;
-		if (density.at<float>(ny, nx) > 0.0f)
+		if (data[ny * cols + nx] > 0.0f)
 			return true;
 	}
 	return false;
@@ -264,19 +285,23 @@ void VegetationField::update()
 				// otherwise it falls back to the plain spontaneous chance,
 				// which is the only way anything grows at all until the
 				// hydrology/seeding layer exists to plant the first seeds.
+				// The neighbor search itself only runs on a small fraction
+				// of ticks (SPREAD_CHECK_CHANCE) - see that constant's
+				// comment for why this was necessary, not optional, after
+				// a measured real-hardware regression.
 				if (inShrubBand && shrub < 1.0f) {
 					float chance = SHRUB_GROWTH_CHANCE_PCT;
-					if (hasEstablishedNeighbor(gx, gy, shrubDensity)) chance *= SPREAD_CHANCE_MULTIPLIER;
+					if (ofRandom(1.0f) < SPREAD_CHECK_CHANCE && hasEstablishedNeighbor(gx, gy, shrubDensity)) chance *= SPREAD_CHANCE_MULTIPLIER;
 					if (ofRandom(100.0f) < chance) shrub = std::min(1.0f, shrub + GROWTH_INCREMENT);
 				}
 				if (inFruitBand && fruit < 1.0f) {
 					float chance = FRUIT_GROWTH_CHANCE_PCT;
-					if (hasEstablishedNeighbor(gx, gy, fruitDensity)) chance *= SPREAD_CHANCE_MULTIPLIER;
+					if (ofRandom(1.0f) < SPREAD_CHECK_CHANCE && hasEstablishedNeighbor(gx, gy, fruitDensity)) chance *= SPREAD_CHANCE_MULTIPLIER;
 					if (ofRandom(100.0f) < chance) fruit = std::min(1.0f, fruit + GROWTH_INCREMENT);
 				}
 				if (inNutBand && nut < 1.0f) {
 					float chance = NUT_GROWTH_CHANCE_PCT;
-					if (hasEstablishedNeighbor(gx, gy, nutDensity)) chance *= SPREAD_CHANCE_MULTIPLIER;
+					if (ofRandom(1.0f) < SPREAD_CHECK_CHANCE && hasEstablishedNeighbor(gx, gy, nutDensity)) chance *= SPREAD_CHANCE_MULTIPLIER;
 					if (ofRandom(100.0f) < chance) nut = std::min(1.0f, nut + GROWTH_INCREMENT);
 				}
 			}
