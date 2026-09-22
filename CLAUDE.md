@@ -231,11 +231,24 @@ iterations per frame (519x295 grid, 8 samples, 3 species), each doing
    cost-per-call, and growth unfolds over minutes regardless, so a cell
    doesn't need its neighbor re-checked every single frame for the
    spread layer to still function. Combined, roughly a ~25-50x reduction
-   in the new cost - expected to restore close to the original ~60fps,
-   not yet re-confirmed on hardware after this fix.
+   in the new cost.
+
+**STILL NOT RESOLVED (2026-09-22 follow-up):** re-tested on hardware
+after the above fix - FPS went from 1-2 up to only ~5, not the expected
+~60. Checked `elevationAtKinectCoord()`'s real cost before guessing
+further (a 4x4 matrix-vector multiply + dot product, ~28 FLOPs/call,
+~4.3M FLOPs/frame total across the grid - too cheap on any modern CPU
+to be the bottleneck on its own), so this doesn't look like "the
+pre-existing native-resolution grid was secretly always the problem."
+Rather than keep tuning spread constants blind, added `ENABLE_SPREAD`
+(`c87caf3`) - a GUI checkbox that fully disables the spread layer with
+no rebuild needed, so toggling it and comparing frame rate gives a
+direct answer to whether spread is still the dominant cost or whether
+something else is. **Awaiting that A/B result** before deciding the
+next fix.
 `SPREAD_RADIUS_MM=40` and `SPREAD_CHANCE_MULTIPLIER=5` are still
 first-guess defaults, untested for whether they look right visually -
-that's a separate, remaining unknown from the performance one just fixed.
+a separate, remaining unknown from the performance one above.
 
 **Still not done, and blocking full succession-model completion:** the
 actual hydrology/particle-flow water simulation and real hand-placed
