@@ -55,6 +55,11 @@ float VegetationField::NUT_LINE_RATIO = 25.0f / 200.0f;
 float VegetationField::SHRUB_GROWTH_CHANCE_PCT = 1.0f;
 float VegetationField::FRUIT_GROWTH_CHANCE_PCT = 3.0f;
 float VegetationField::NUT_GROWTH_CHANCE_PCT = 2.0f;
+// CA-style spread layer - see the header note. First-guess defaults,
+// untested on real hardware: a same-species neighbor within 40mm gives
+// 5x the spontaneous chance to grow.
+float VegetationField::SPREAD_RADIUS_MM = 40.0f;
+float VegetationField::SPREAD_CHANCE_MULTIPLIER = 5.0f;
 float VegetationField::FOOD_PER_FULL_CELL = 255.0f;
 bool VegetationField::DEBUG_SHOW_SNOW = false;
 
@@ -66,6 +71,10 @@ namespace {
 	// int fields, constrainVal(0,255)); this class's is 0..1, so ELF's
 	// literal "+1" per successful growth tick is 1/255 here.
 	const float GROWTH_INCREMENT = 1.0f / 255.0f;
+	// Fixed sample count for hasEstablishedNeighbor()'s stochastic radius
+	// check - not user-tunable, see that method's header comment on why
+	// this is sampled rather than scanned exhaustively.
+	const int SPREAD_SAMPLE_COUNT = 8;
 }
 
 void VegetationField::setup(std::shared_ptr<KinectProjector> const& k)
@@ -82,6 +91,9 @@ void VegetationField::setup(std::shared_ptr<KinectProjector> const& k)
 	// first.
 	elevationMin = -220.0f;
 	elevationMax = 220.0f;
+	// Sane fallback until setKinectROI() computes a real value - avoids a
+	// degenerate zero-radius neighbor search if update() somehow runs first.
+	mmPerCell = 1.0f;
 }
 
 void VegetationField::setElevationRange(float minMM, float maxMM)
@@ -107,6 +119,25 @@ float VegetationField::normalizedElevation(float elevationMM) const
 	return ofClamp((elevationMM - lo) / range, 0.0f, 1.0f);
 }
 
+bool VegetationField::hasEstablishedNeighbor(int gx, int gy, cv::Mat const& density) const
+{
+	int cellRadius = std::max(1, (int)(SPREAD_RADIUS_MM / mmPerCell));
+	for (int i = 0; i < SPREAD_SAMPLE_COUNT; i++) {
+		// Uniform-within-a-disk sampling (sqrt on the radius fraction),
+		// not a square - SPREAD_RADIUS_MM reads as a real circular
+		// neighborhood, not a diamond/box one.
+		float angle = ofRandom(TWO_PI);
+		float r = std::sqrt(ofRandom(1.0f)) * cellRadius;
+		int nx = gx + (int)(std::cos(angle) * r);
+		int ny = gy + (int)(std::sin(angle) * r);
+		if (nx < 0 || nx >= cols || ny < 0 || ny >= rows)
+			continue;
+		if (density.at<float>(ny, nx) > 0.0f)
+			return true;
+	}
+	return false;
+}
+
 void VegetationField::setKinectROI(ofRectangle & KROI)
 {
 	kinectROI = KROI;
@@ -130,6 +161,21 @@ void VegetationField::setKinectROI(ofRectangle & KROI)
 	// off the freshly-zeroed matrix.
 	activityBaselineReady = false;
 	gridReady = true;
+
+	// Real-world mm spanned by one grid step, measured via two adjacent
+	// pixels' actual world coordinates rather than assumed - a Kinect
+	// pixel's real-world footprint depends on the installation's distance/
+	// calibration, not a fixed constant. See the header note on
+	// SPREAD_RADIUS_MM for why this needs to be a real distance.
+	if (kinectProjector) {
+		ofVec3f p0 = kinectProjector->kinectCoordToWorldCoord(kinectROI.x, kinectROI.y);
+		ofVec3f p1 = kinectProjector->kinectCoordToWorldCoord(kinectROI.x + step, kinectROI.y);
+		float dx = p1.x - p0.x;
+		float dy = p1.y - p0.y;
+		mmPerCell = std::sqrt(dx * dx + dy * dy);
+		if (mmPerCell < 0.01f)
+			mmPerCell = 1.0f; // guard against a degenerate/uncalibrated reading
+	}
 }
 
 void VegetationField::update()
@@ -212,10 +258,27 @@ void VegetationField::update()
 				// BDlocation.growShrubs()/growFruits()/growNuts() literally:
 				// a per-tick coin flip, not a continuous rate - one
 				// update() call is one tick, same convention Critter/
-				// HumanAgent already use. See the header note.
-				if (inShrubBand && ofRandom(100.0f) < SHRUB_GROWTH_CHANCE_PCT) shrub = std::min(1.0f, shrub + GROWTH_INCREMENT);
-				if (inFruitBand && ofRandom(100.0f) < FRUIT_GROWTH_CHANCE_PCT) fruit = std::min(1.0f, fruit + GROWTH_INCREMENT);
-				if (inNutBand && ofRandom(100.0f) < NUT_GROWTH_CHANCE_PCT) nut = std::min(1.0f, nut + GROWTH_INCREMENT);
+				// HumanAgent already use. See the header note. Each species'
+				// chance is boosted by SPREAD_CHANCE_MULTIPLIER when a
+				// same-species neighbor is already established nearby -
+				// otherwise it falls back to the plain spontaneous chance,
+				// which is the only way anything grows at all until the
+				// hydrology/seeding layer exists to plant the first seeds.
+				if (inShrubBand && shrub < 1.0f) {
+					float chance = SHRUB_GROWTH_CHANCE_PCT;
+					if (hasEstablishedNeighbor(gx, gy, shrubDensity)) chance *= SPREAD_CHANCE_MULTIPLIER;
+					if (ofRandom(100.0f) < chance) shrub = std::min(1.0f, shrub + GROWTH_INCREMENT);
+				}
+				if (inFruitBand && fruit < 1.0f) {
+					float chance = FRUIT_GROWTH_CHANCE_PCT;
+					if (hasEstablishedNeighbor(gx, gy, fruitDensity)) chance *= SPREAD_CHANCE_MULTIPLIER;
+					if (ofRandom(100.0f) < chance) fruit = std::min(1.0f, fruit + GROWTH_INCREMENT);
+				}
+				if (inNutBand && nut < 1.0f) {
+					float chance = NUT_GROWTH_CHANCE_PCT;
+					if (hasEstablishedNeighbor(gx, gy, nutDensity)) chance *= SPREAD_CHANCE_MULTIPLIER;
+					if (ofRandom(100.0f) < chance) nut = std::min(1.0f, nut + GROWTH_INCREMENT);
+				}
 			}
 
 			int idx = (gy * cols + gx) * 4;
@@ -464,5 +527,17 @@ void VegetationField::drawGui()
 	ImGui::SliderFloat("Shrub growth chance (% per tick)", &SHRUB_GROWTH_CHANCE_PCT, 0.0f, 20.0f);
 	ImGui::SliderFloat("Fruit growth chance (% per tick)", &FRUIT_GROWTH_CHANCE_PCT, 0.0f, 20.0f);
 	ImGui::SliderFloat("Nut growth chance (% per tick)", &NUT_GROWTH_CHANCE_PCT, 0.0f, 20.0f);
+	ImGui::Separator();
+	ImGui::Text("Spread (succession-model phase, layered on top of ELF's growth");
+	ImGui::Text("above): a same-species neighbor within this real-world radius");
+	ImGui::Text("multiplies that species' own growth chance for this cell - the");
+	ImGui::Text("1:3:2 shrub:fruit:nut ratio above carries through unchanged, since");
+	ImGui::Text("all three are scaled by the same multiplier. With no established");
+	ImGui::Text("neighbor nearby, growth still falls back to the plain spontaneous");
+	ImGui::Text("chance above - the only way anything grows before the hydrology/");
+	ImGui::Text("seeding layer exists to plant a first seed.");
+	ImGui::SliderFloat("Spread radius (mm)", &SPREAD_RADIUS_MM, 0.0f, 200.0f);
+	ImGui::SliderFloat("Spread chance multiplier", &SPREAD_CHANCE_MULTIPLIER, 1.0f, 20.0f);
+	ImGui::Text("mm per grid cell (measured): %.2f -> spread radius is ~%d cells", mmPerCell, std::max(1, (int)(SPREAD_RADIUS_MM / mmPerCell)));
 	ImGui::End();
 }

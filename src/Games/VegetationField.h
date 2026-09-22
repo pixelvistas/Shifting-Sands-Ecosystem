@@ -40,6 +40,27 @@ BDlocation.java/BDenvironment.java:
   in ELF's source path ever decrements them for leaving a band while
   still land).
 
+SPREAD LAYER (2026-09, succession-model phase, deliberate departure from
+ELF - see SPREAD_RADIUS_MM/SPREAD_CHANCE_MULTIPLIER below): the growth
+above is otherwise exactly ELF's, and ELF's own mechanic has no
+cell-to-neighbor coupling at all - a cell's growth chance depends only
+on its own elevation, the shared climate, and a private random roll,
+never on what's growing next to it. That's a deliberate, explicit
+divergence point from a true cellular automaton (a CA's defining trait
+is exactly that neighbor coupling), confirmed by reading BDlocation's
+source directly rather than assuming "cell" implied CA dynamics - ELF's
+"cell" means spatial discretization, not neighbor-rule dynamics.
+hasEstablishedNeighbor() adds that coupling on top, as the first piece
+of the ecological-succession phase (see CLAUDE.md's "Future phase"
+section): a same-species neighbor within a real-world radius multiplies
+that species' own growth chance, preserving the existing 1:3:2 shrub:
+fruit:nut ratio as the spread weight rather than adding a second
+competition parameter. The plain spontaneous chance is kept as a
+fallback specifically because the hydrology/particle-flow/seeding layer
+(also part of that same future phase, not yet built) doesn't exist yet
+to plant genuine first seeds - without it, a strict neighbor-only rule
+could never bootstrap growth on untouched sand at all.
+
 ELEVATION IS NORMALIZED, NOT RAW MILLIMETERS - this is the one place an
 earlier pass of this port genuinely diverged from ELF's actual physics
 rather than just its visual style, and it is the reason a hand-dug pit
@@ -297,10 +318,29 @@ public:
 	// Percent chance per tick (one update() call) of a +1/255 density
 	// increment while a cell is in-band - ELF's literal
 	// SHRUBGROWTH=1/FRUITGROWTH=3/NUTGROWTH=2, not a rescaled rate. See
-	// the header note.
+	// the header note. This is the SPONTANEOUS rate - what a cell uses
+	// when no same-species neighbor is established nearby - not the
+	// spread-boosted rate (see SPREAD_CHANCE_MULTIPLIER below).
 	static float SHRUB_GROWTH_CHANCE_PCT;
 	static float FRUIT_GROWTH_CHANCE_PCT;
 	static float NUT_GROWTH_CHANCE_PCT;
+
+	// CA-style spread layer, added on top of ELF's per-cell-independent
+	// growth (see the header note's "Growth" section) - the first piece
+	// of the succession-model phase. Real-world mm radius to search for
+	// an already-established same-species neighbor before granting the
+	// spread-boosted chance below; converted to a grid-cell radius via
+	// the cached mmPerCell scale (see setKinectROI()) so it stays
+	// meaningful regardless of a given installation's Kinect resolution.
+	static float SPREAD_RADIUS_MM;
+	// Multiplier applied to a species' own *_GROWTH_CHANCE_PCT when a
+	// same-species neighbor is found within SPREAD_RADIUS_MM. Scaling
+	// all three species by the same multiplier preserves their existing
+	// 1:3:2 relative ratio as the spread weight, rather than introducing
+	// a second, disconnected competition parameter - each species still
+	// rolls independently, same as the spontaneous case, just at a
+	// higher chance when it has something nearby to spread from.
+	static float SPREAD_CHANCE_MULTIPLIER;
 
 	// Debug aid only - normally snow renders as flat white, identical to
 	// un-grown negative-space land (see heightMapShader.frag's header
@@ -325,10 +365,29 @@ private:
 	// elevation" means.
 	float normalizedElevation(float elevationMM) const;
 
+	// True if a stochastic sample of nearby cells (within SPREAD_RADIUS_MM,
+	// converted to grid cells via mmPerCell) finds an already-established
+	// (density > 0) cell in the given species' density grid. Samples a
+	// small fixed number of random points within the radius rather than
+	// scanning it exhaustively - exhaustively scanning a real neighborhood
+	// on a 500+-cell-wide native-resolution grid, for all three species,
+	// every cell, every frame, would be a real per-frame cost; this is a
+	// deliberate stochastic approximation instead, untested for
+	// performance on real hardware - if it turns out too slow, the sample
+	// count (see the .cpp) is the first thing to reduce.
+	bool hasEstablishedNeighbor(int gx, int gy, cv::Mat const& density) const;
+
 	std::shared_ptr<KinectProjector> kinectProjector;
 	ofRectangle kinectROI;
 	int step, cols, rows;
 	bool gridReady;
+
+	// Real-world mm spanned by one grid cell (one Kinect pixel, since
+	// GRID_STEP==1) - cached once per grid (re)build in setKinectROI(),
+	// via KinectProjector::kinectCoordToWorldCoord(), so SPREAD_RADIUS_MM
+	// converts to a grid-cell radius that means the same real distance
+	// regardless of a given installation's Kinect resolution.
+	float mmPerCell;
 
 	// Calibrated elevation range (mm) - see setElevationRange().
 	float elevationMin, elevationMax;

@@ -139,13 +139,75 @@ hydrology and inter-species competition. Grasshopper itself won't be
 used (Rhino-specific, not part of this C++/openFrameworks stack) - it's
 the *methodology* being adapted, not the tool.
 
-**Not scoped or designed yet.** When this phase starts, first steps are
-likely: (a) re-reading both source papers in full for the actual
-fluvial simulation math/algorithm Liu used (not just visual style), (b)
-deciding how a water-flow simulation should integrate with the existing
-elevation-band water/snow classification already in `VegetationField`,
-and (c) designing the seed-dispersal/competition model as a genuine
-extension of the three existing plant types rather than a replacement.
+**Phase started 2026-09-22 - first slice implemented (`VegetationField`'s
+spread layer), still needs (a) re-reading both source papers in full
+for the actual fluvial simulation math/algorithm Liu used (not just
+visual style), and (b) the hydrology/particle-flow water simulation and
+real seed-placement mechanics, neither of which exist yet.**
+
+What triggered starting now: real hardware testing (2026-09-22) showed
+the vegetation field staying visibly speckled/scarred even after
+leaving it undisturbed for several minutes post-population-removal.
+Confirmed via direct source reading that this is NOT a bug: ELF's
+growth has zero cell-to-neighbor coupling at all (a cell's growth
+depends only on its own elevation, shared climate, and a private random
+roll - never on what's growing next to it) - i.e., ELF's growth is not
+a cellular automaton despite `BDlocation` being called a "cell" (that
+word means spatial discretization there, not CA dynamics). Given
+expected full-saturation time per cell is ~2.5-7 minutes even
+uninterrupted (see the growth-chance math above), and a heavily-grazed
+field needs nearly all of many thousands of cells to finish, "still
+speckled after a few minutes" is the mathematically expected result,
+confirmed by a live density readout ticking up between two checks
+(active, just slow) - not evidence of a flaw.
+
+**User's design decision, given this:** rather than just accept ELF's
+neighbor-blind pace, add real neighbor coupling on top, as the
+deliberate first piece of the succession-model phase (a CA is
+literally what a "spread to nearby cells, compete with established
+neighbors" model needs - see `CLAUDE.md`'s Liu source material above).
+Five concrete decisions made and implemented in `VegetationField.h/.cpp`:
+
+1. **Elevation eligibility stays the gate; neighbor-spread layers on
+   top**, not a replacement - a cell still has to be in-band before
+   spread can apply.
+2. **Neighborhood radius is a real-world mm value** (`SPREAD_RADIUS_MM`,
+   default 40mm), not a fixed cell count - converted via a measured
+   `mmPerCell` (cached per grid rebuild in `setKinectROI()`, from
+   `KinectProjector::kinectCoordToWorldCoord()`), so it means the same
+   physical distance regardless of a given installation's Kinect
+   resolution.
+3. **Empty/eligible cells check outward** each tick
+   (`hasEstablishedNeighbor()`), rather than established cells pushing
+   into neighbors - cheaper to compose with the existing per-cell loop.
+4. **Species competition reuses the existing 1:3:2 growth-chance ratio**
+   as the spread weight: a same-species neighbor within radius
+   multiplies that species' own `*_GROWTH_CHANCE_PCT` by
+   `SPREAD_CHANCE_MULTIPLIER` (default 5x) - since all three species are
+   scaled by the same multiplier, their relative 1:3:2 ratio carries
+   through unchanged, rather than adding a second, disconnected
+   competition parameter.
+5. **The plain spontaneous chance (ELF's original mechanic) is kept as
+   a fallback** when no established neighbor is found - explicitly
+   because the hydrology/particle-flow/seeding layer doesn't exist yet
+   to plant real first seeds, so spontaneous growth is the only way to
+   bootstrap and test anything on untouched sand until it does.
+
+**Known, flagged-but-unresolved engineering concern:** `hasEstablishedNeighbor()`
+samples a small fixed number of random points within the radius
+(`SPREAD_SAMPLE_COUNT=8`) rather than scanning it exhaustively, since an
+exhaustive scan for all three species at every in-band cell on a 500+-
+cell-wide native-resolution grid, every frame, would be a real cost.
+This is a deliberate stochastic approximation, **untested for
+performance on real hardware** - if it's too slow, the sample count is
+the first thing to reduce. `SPREAD_RADIUS_MM=40` and
+`SPREAD_CHANCE_MULTIPLIER=5` are first-guess defaults, also untested.
+
+**Still not done, and blocking full succession-model completion:** the
+actual hydrology/particle-flow water simulation and real hand-placed
+seeding (vs. the spontaneous-growth stand-in above) - this spread layer
+only covers the "compete with established neighbors" half of the
+methodology, not the "hydrology model" or "plant seeding" halves.
 
 ## Open technical thread: vegetation growth vs. consumption balance
 
