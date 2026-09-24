@@ -89,6 +89,13 @@ float VegetationField::NUT_GROWTH_CHANCE_PCT = 2.0f;
 bool VegetationField::ENABLE_SPREAD = true;
 float VegetationField::SPREAD_RADIUS_MM = 40.0f;
 float VegetationField::SPREAD_CHANCE_MULTIPLIER = 5.0f;
+// New departure from ELF's literal getCellColor(), see the header note -
+// 0.05 (~13/255, ~13 successful nut growth ticks) is a first-guess
+// starting point: enough to filter out a single-tick "flash to black"
+// while still committing well before nut's glacial multi-thousand-tick
+// path to full density. Untested on real hardware for whether it looks
+// right - live-tunable in the Vegetation panel.
+float VegetationField::NUT_VISIBILITY_THRESHOLD = 0.05f;
 float VegetationField::FOOD_PER_FULL_CELL = 255.0f;
 bool VegetationField::DEBUG_SHOW_SNOW = false;
 
@@ -596,5 +603,14 @@ void VegetationField::drawGui()
 	ImGui::SliderFloat("Spread radius (mm)", &SPREAD_RADIUS_MM, 0.0f, 200.0f);
 	ImGui::SliderFloat("Spread chance multiplier", &SPREAD_CHANCE_MULTIPLIER, 1.0f, 20.0f);
 	ImGui::Text("mm per grid cell (measured): %.2f -> spread radius is ~%d cells", mmPerCell, std::max(1, (int)(SPREAD_RADIUS_MM / mmPerCell)));
+	ImGui::Separator();
+	ImGui::Text("Nut visibility threshold (NOT in ELF): nut's color, (0,h,h),");
+	ImGui::Text("has no channel pinned bright like shrub/fruit do, so a single");
+	ImGui::Text("lucky growth tick at low elevation renders solid near-black -");
+	ImGui::Text("confirmed on real hardware as random black speckle scattered");
+	ImGui::Text("through otherwise-unrelated land, not a tie/negative-space cell");
+	ImGui::Text("and not a contour line. Below this density, nut stays negative");
+	ImGui::Text("space (like a real tie) instead of committing to that color.");
+	ImGui::SliderFloat("Nut visibility threshold", &NUT_VISIBILITY_THRESHOLD, 0.0f, 0.3f);
 	ImGui::End();
 }

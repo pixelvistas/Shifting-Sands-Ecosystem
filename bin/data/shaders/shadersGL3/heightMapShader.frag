@@ -80,6 +80,15 @@ uniform float vegetationGridStep;
 // this tints it pale blue instead so the two are visually separable
 // while diagnosing calibration.
 uniform int debugShowSnow;
+// New departure from ELF's literal getCellColor() (2026-09-24) - see
+// VegetationField.h's NUT_VISIBILITY_THRESHOLD comment. Nut's color
+// below, (0,h,h), has no channel pinned bright the way shrub/fruit do,
+// so without this a single successful nut growth tick at low elevation
+// renders solid near-black instantly - confirmed on real hardware as
+// random black speckle scattered through otherwise-unrelated land, not
+// a tie and not a contour line. Below this density, nut falls through
+// to the same negative-space default as a real tie instead.
+uniform float nutVisibilityThreshold;
 
 void main()
 {
@@ -129,16 +138,19 @@ void main()
             // Fruit-dominant - new Color(255, cellheight, cellheight).
             color.rgb = vec3(1.0, elevationNorm, elevationNorm);
         }
-        else if (veg.b > veg.g && veg.b > veg.r)
+        else if (veg.b > veg.g && veg.b > veg.r && veg.b > nutVisibilityThreshold)
         {
-            // Nut-dominant - new Color(0, cellheight, cellheight).
+            // Nut-dominant - new Color(0, cellheight, cellheight). Gated
+            // on nutVisibilityThreshold, unlike shrub/fruit above - see
+            // that uniform's comment.
             color.rgb = vec3(0.0, elevationNorm, elevationNorm);
         }
         // Tie (including the initial all-zero state, which is by far the
         // common one - most of the play area starts and often stays
-        // unvegetated): no branch above fires, so color is left exactly as
-        // set before classification - the plain white "no augmentation"
-        // base, i.e. genuine negative space.
+        // unvegetated) OR nut below nutVisibilityThreshold: no branch
+        // above fires, so color is left exactly as set before
+        // classification - the plain white "no augmentation" base, i.e.
+        // genuine negative space.
         //
         // getCellColor() returns flat Color.PINK on a tie in ELF's own
         // source, and running ELF's own TESTING-mode reference build

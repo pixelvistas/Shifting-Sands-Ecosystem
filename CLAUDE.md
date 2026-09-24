@@ -409,6 +409,41 @@ clone):
   starting point per the user's stated goal, untested on real hardware -
   still live-tunable in the Vegetation panel regardless of this code
   default.
+- **FIXED (2026-09-24) - random black speckle scattered across otherwise-
+  unrelated land, distinct from both contour lines and the confirmed
+  water body.** User pushed back on the water/temperature explanation
+  above: they weren't asking about contour lines (already understood)
+  or the one confirmed water body - they meant scattered black patches
+  elsewhere, and pointed at this project's own negative-space design
+  decision (`heightMapShader.frag`'s tie rule, untouched land renders
+  flat white) asking why these weren't also reading as negative space.
+  Traced to a real interaction the negative-space rule never covered:
+  that rule only applies to an EXACT all-zero tie - a cell with even one
+  successful growth tick (density=1/255) is not a tie, and the shader's
+  winner-take-all coloring has no fade (matching ELF's own
+  `getCellColor()` exactly - confirmed earlier in the fidelity audit),
+  so a channel that wins renders at FULL elevation-modulated saturation
+  regardless of how small its density actually is. For shrub `(h,1,h)`
+  and fruit `(1,h,h)` that's harmless even at low elevation (one channel
+  is always pinned to 1.0, already confirmed looking correct on real
+  hardware per the 2026-09-22 pipeline-confirmation note above) - but
+  nut's formula, `(0,h,h)`, has no pinned-bright channel, so a single
+  lucky nut tick at low elevationNorm renders that cell solid near-black
+  instantly, scattered wherever nut's independent per-pixel growth
+  happens to land first, indistinguishable by eye from a contour line or
+  real water.
+  Fix: added `NUT_VISIBILITY_THRESHOLD` (default `0.05`, live-tunable in
+  the Vegetation panel) - nut only wins the shader's color comparison
+  once its density clears this threshold; below it, the cell falls
+  through to the same negative-space default as a real tie. Wired as a
+  new `nutVisibilityThreshold` uniform in both `heightMapShader.frag`
+  variants (GL2 and GL3, kept in sync per that file's own header note)
+  and set from `SandSurfaceRenderer::drawSandbox()`. Deliberately scoped
+  to nut only, NOT applied to shrub/fruit - this is a new departure from
+  ELF's literal no-threshold `getCellColor()`, motivated purely by this
+  visual issue, and touching shrub/fruit's already-confirmed-correct
+  instant-speckle behavior wasn't asked for and risked undoing something
+  already validated on hardware.
 - **Separately identified, not a bug:** a real mound can visually wash
   from red toward white even with the debug-snow toggle off and even
   when nowhere near the actual snow threshold. Traced to

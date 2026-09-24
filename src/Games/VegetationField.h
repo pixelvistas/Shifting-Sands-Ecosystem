@@ -376,6 +376,43 @@ public:
 	// higher chance when it has something nearby to spread from.
 	static float SPREAD_CHANCE_MULTIPLIER;
 
+	// New departure from ELF's literal getCellColor() (2026-09-24, per
+	// explicit user request) - NOT present in ELF, and NOT the same
+	// mechanism as the white "negative space" tie rule in
+	// heightMapShader.frag (that rule only ever covered an EXACT
+	// all-zero tie; a cell with even one successful growth tick,
+	// density=1/255, is not a tie and was never covered by it).
+	//
+	// The problem this fixes: the shader's winner-take-all color rule
+	// has no fade - a channel that wins renders at FULL elevation-
+	// modulated saturation regardless of how small its actual density
+	// is, matching ELF's own getCellColor() exactly (see the header
+	// note). For shrub (h,1,h) and fruit (1,h,h) that's fine even at low
+	// elevation, since each has a channel pinned to 1.0 - but nut's
+	// formula, (0,h,h), has NO pinned-bright channel, so a single lucky
+	// nut growth tick at low elevationNorm renders that cell as solid
+	// near-BLACK instantly, indistinguishable from a contour line or
+	// real deep water to the eye, and scattered randomly wherever nut's
+	// independent per-pixel growth happens to land first - confirmed
+	// this is what the user was actually seeing (not contour lines,
+	// which they'd already ruled out, and not deep water, which only
+	// explains the one confirmed water body, not scattered patches
+	// throughout otherwise-unrelated land).
+	//
+	// The fix: nut specifically doesn't win the comparison (falls
+	// through to negative space, same as a true tie) until its density
+	// clears this threshold - so a barely-nonzero nut cell reads as
+	// still-blank land, same as the ties around it, rather than flashing
+	// to black the instant a single tick succeeds. Shrub/fruit are
+	// deliberately NOT touched - their instant full-saturation speckle
+	// at low density was already confirmed correct/expected on real
+	// hardware (see CLAUDE.md's 2026-09-22 pipeline-confirmation note),
+	// and this only targets the specific formula (no pinned-bright
+	// channel) that makes nut uniquely prone to reading as unwanted
+	// black speckle instead of visible teal. Read directly by the
+	// shader as a uniform - see SandSurfaceRenderer::drawSandbox().
+	static float NUT_VISIBILITY_THRESHOLD;
+
 	// Debug aid only - normally snow renders as flat white, identical to
 	// un-grown negative-space land (see heightMapShader.frag's header
 	// note), which makes it impossible to tell by eye whether a blank

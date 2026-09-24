@@ -45,6 +45,7 @@ uniform sampler2DRect vegetationSampler;
 uniform vec2 vegetationGridOrigin;
 uniform float vegetationGridStep;
 uniform int debugShowSnow; // see the matching GL3 shader's header note
+uniform float nutVisibilityThreshold; // see the matching GL3 shader's header note
 
 void main()
 {
@@ -73,13 +74,14 @@ void main()
         {
             color.rgb = vec3(1.0, elevationNorm, elevationNorm);
         }
-        else if (veg.b > veg.g && veg.b > veg.r)
+        else if (veg.b > veg.g && veg.b > veg.r && veg.b > nutVisibilityThreshold)
         {
             color.rgb = vec3(0.0, elevationNorm, elevationNorm);
         }
-        // Tie (including the initial all-zero state) - left uncolored as
-        // genuine negative space rather than ELF's literal Color.PINK
-        // return value; see the matching GL3 shader's header note for why.
+        // Tie (including the initial all-zero state) OR nut below
+        // nutVisibilityThreshold - left uncolored as genuine negative
+        // space rather than ELF's literal Color.PINK return value; see
+        // the matching GL3 shader's header note for why.
     }
 
     if (drawContourLines == 1)
