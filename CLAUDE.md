@@ -457,3 +457,105 @@ clone):
   a color toward white via this path well before it's anywhere near
   triggering actual snow - the debug-snow toggle is the reliable way to
   tell the two apart.
+
+## Accessible color palette pass (2026-09-24)
+
+User asked to redesign the color palette for accessibility (colorblind-
+safe) and visual appeal - a deliberate departure from ELF's literal
+primary colors (and from this fork's own first-pass choices, which just
+copied them), not a fidelity bug fix. Full color inventory done first
+(via subagent) across shaders, `Critter`/`HumanAgent`, and legacy code -
+confirmed 13 live color decisions across 3 groups (ecosystem terrain,
+agents, operator status/calibration UI) plus a chunk of confirmed-dead
+legacy `ofxDatGui` color code (colormap editor, `SaveModal`, commented-
+out status panels) not worth touching. **Scoped to ecosystem terrain +
+agents only**, per explicit user choice - the operator status/
+calibration red-green-4x issue is real but out of scope for now.
+
+**Two real problems found in the original scheme, not just "could look
+nicer":**
+- Fruit's peak color and `HUNTER_COLOR` were the *exact* same value,
+  `(255,0,0)` - confirmed as the direct, literal cause of a real user
+  question this session ("is all this red hunting humans?").
+- Fruit's peak `(255,0,0)` vs shrub's peak `(0,255,0)` is the textbook
+  worst-case pair for red-green colorblindness (the most common form) -
+  pure complementary red/green with no lightness or blue-channel
+  separation to fall back on.
+
+**Design approach, per explicit user decision:** keep each species'/
+role's original hue FAMILY (shrub green, fruit red/warm, nut teal/cool,
+deer cyan, hunter red/warm, gatherer yellow, fisher blue) rather than a
+free redesign - preserves ELF's own color intent and existing at-a-
+glance intuition. Two different source palettes, each used for what
+it's actually suited to:
+
+1. **Species/agent colors** (shrub/fruit/nut + deer/hunter/gatherer/
+   fisher) - hues from the **Okabe-Ito colorblind-safe categorical
+   palette** (the standard reference for discrete/unordered categories,
+   validated under deuteranopia/protanopia simulation): shrub→bluish-
+   green `(0,158,115)`, fruit→vermillion `(213,94,0)`, nut→teal
+   `(0,153,153)`, deer→a blue-shifted cyan `(0,180,216)` (distinct from
+   nut's more green-leaning teal despite same cool family), hunter→
+   crimson `(196,30,90)` (NOT vermillion - would've collided with
+   fruit), gatherer→Okabe-Ito yellow `(240,228,66)`, fisher→deep indigo
+   `(36,36,140)` (distinct from water's blue despite same family). Dead
+   states (both species) left as black/dark-gray - neutral, no
+   accessibility concern, not part of this pass.
+2. **Background/elevation color** (water, and now negative-space/tie
+   land too) - a **7-stop diverging ramp the user sourced themselves**
+   (`#00429d,#5c83a6,#a5c2bd,#ffffe0,#ffa59e,#dd4c65,#93003a`, also
+   confirmed colorblind-safe), applied via a new `terrainRamp()` GLSL
+   function (piecewise-linear through all 7 stops) fed by
+   `elevationNorm`. A sequential/diverging palette fits elevation
+   specifically because elevation is physically continuous - unlike
+   species identity, adjacent cells have similar height.
+
+**Explicit design question raised and resolved: does a continuous
+elevation ramp kill the "pixelated CA" look?** User asked directly
+whether switching to option 2 (fully replacing species hue with the
+elevation ramp) would still produce the pixelated cellular-automaton
+look they specifically like. Answer, reasoned from mechanism rather than
+guessed: **yes, it would be lost** if applied to actively-growing
+vegetation - that speckled look comes from (a) independent per-cell
+stochastic growth (no neighbor coupling in ELF's own mechanic, aside
+from this fork's own spread layer) and (b) no-fade winner-take-all
+coloring, both specific to the *vegetation* layer. Elevation itself has
+neither property (adjacent cells are physically similar in height), so
+a pure elevation ramp would look like a smooth gradient, and faking
+per-cell noise on top would be decorative rather than representing real
+simulation state - contrary to how every other visual in this system
+has been built. **Resolution, per explicit user choice: hybrid.** The
+diverging ramp is used ONLY for water and tie/negative-space land (both
+already purely elevation-driven, no CA state to lose) - shrub/fruit/nut
+keep the winner-take-all species-color mechanic entirely unchanged,
+still full saturation the instant a cell establishes, still no fade.
+Practical side effect: tie/negative-space land no longer renders flat
+"no augmentation" white - it now shows the ramp's elevation-appropriate
+tone, and vegetation still visibly claims a cell against that (arguably
+more visible than against flat white before, not less).
+
+**Nut's color formula changed at the root, not just gated.** Previously
+`(0,h,h)` (black at low elevation, the direct cause of the "random black
+speckle" bug fixed just above) - now `mix(peakTeal, white, elevationNorm)`,
+the SAME peak-to-white pattern shrub/fruit already used. Nut can no
+longer render black at any elevation. `NUT_VISIBILITY_THRESHOLD` is kept
+as a secondary guard against a single lucky tick flashing to full
+saturation instantly, not as the primary fix anymore - the formula
+itself is now the primary fix.
+
+**Left untouched, out of scope for this pass:** snow (flat white/debug
+pale blue - never part of the accessibility problem), contour lines
+(flat black - already understood, not confused with vegetation), all
+dead-agent-state colors (neutral grays/black), and the operator status/
+calibration UI's red-green-4x pattern (the single biggest colorblind
+risk found in the full inventory, deliberately deferred - user's
+explicit scope choice was ecosystem terrain + agents only).
+
+Implementation: `heightMapShader.frag` (both `shadersGL2` and
+`shadersGL3` variants, kept in sync per that file's own convention) -
+new `terrainRamp()` function, water/tie branches call it, shrub/fruit/
+nut branches use new `mix(peak, white, h)` formulas. `Critter.cpp`
+(`BODY_COLOR`) and `HumanAgent.cpp` (`FISHER_COLOR`/`HUNTER_COLOR`/
+`GATHERER_COLOR`) updated to match. All still fully live-tunable where
+a GUI control already existed (deer's `ImGui::ColorEdit3`); the rest
+remain compile-time constants, same as before this pass.

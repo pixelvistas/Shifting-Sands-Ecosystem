@@ -5,10 +5,24 @@ float HumanAgent::FOOD_DRAIN_PER_TICK = 1.0f;
 float HumanAgent::LIFE_OF_CORPSE = 500.0f;
 float HumanAgent::SPAWN_CHANCE_PER_TICK = 1.0f;
 float HumanAgent::MAX_FOOD = 255.0f;
-ofColor HumanAgent::FISHER_COLOR = ofColor(0, 0, 255);      // Color.BLUE
-ofColor HumanAgent::HUNTER_COLOR = ofColor(255, 0, 0);      // Color.RED
-ofColor HumanAgent::GATHERER_COLOR = ofColor(255, 255, 0);  // Color.YELLOW
-ofColor HumanAgent::DEAD_COLOR = ofColor(0, 0, 0);          // Color.BLACK
+// 2026-09-24, per explicit user request: colorblind-accessible palette
+// pass - see heightMapShader.frag's header note for the full rationale
+// (Okabe-Ito categorical palette, hue families kept where ELF's own
+// Color.BLUE/RED/YELLOW intent allows).
+// Fisher stays blue family, shifted to a deep indigo so it doesn't sit
+// on top of the terrain shader's water color (also blue family).
+ofColor HumanAgent::FISHER_COLOR = ofColor(36, 36, 140);
+// Hunter stays red/warm family, but NOT pure red: (255,0,0) was the
+// EXACT same value as fruit's old peak color - confirmed as the direct
+// cause of a real user's confusion this session ("is all this red
+// hunting humans?"). Okabe-Ito reddish-purple/crimson instead - still
+// reads as "red/danger," clearly distinct from fruit's new vermillion.
+ofColor HumanAgent::HUNTER_COLOR = ofColor(196, 30, 90);
+// Gatherer stays yellow family (also the default/fallback role - see
+// currentColor() below) - Okabe-Ito yellow, softened slightly off pure
+// (255,255,0) for less eye-strain, still unmistakably yellow.
+ofColor HumanAgent::GATHERER_COLOR = ofColor(240, 228, 66);
+ofColor HumanAgent::DEAD_COLOR = ofColor(0, 0, 0);          // Color.BLACK - neutral, untouched
 float HumanAgent::DOT_SIZE = 8.0f;
 
 HumanAgent::HumanAgent(int startGX, int startGY)

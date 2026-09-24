@@ -47,6 +47,26 @@ uniform float vegetationGridStep;
 uniform int debugShowSnow; // see the matching GL3 shader's header note
 uniform float nutVisibilityThreshold; // see the matching GL3 shader's header note
 
+// See the matching GL3 shader's terrainRamp() for the full rationale.
+vec3 terrainRamp(float t)
+{
+    vec3 c0 = vec3(0.000, 0.259, 0.616); // #00429d
+    vec3 c1 = vec3(0.361, 0.514, 0.651); // #5c83a6
+    vec3 c2 = vec3(0.647, 0.761, 0.741); // #a5c2bd
+    vec3 c3 = vec3(1.000, 1.000, 0.878); // #ffffe0
+    vec3 c4 = vec3(1.000, 0.647, 0.620); // #ffa59e
+    vec3 c5 = vec3(0.867, 0.298, 0.396); // #dd4c65
+    vec3 c6 = vec3(0.576, 0.000, 0.227); // #93003a
+
+    t = clamp(t, 0.0, 1.0) * 6.0;
+    if (t < 1.0) return mix(c0, c1, t);
+    if (t < 2.0) return mix(c1, c2, t - 1.0);
+    if (t < 3.0) return mix(c2, c3, t - 2.0);
+    if (t < 4.0) return mix(c3, c4, t - 3.0);
+    if (t < 5.0) return mix(c4, c5, t - 4.0);
+    return mix(c5, c6, t - 5.0);
+}
+
 void main()
 {
     float elevationNorm = clamp(depthfrag / heightMapNumEntries, 0.0, 1.0);
@@ -60,7 +80,8 @@ void main()
 
         if (veg.a > 0.75)
         {
-            color.rgb = vec3(0.0, 0.0, elevationNorm);
+            // Water - background ramp, see the matching GL3 shader's note.
+            color.rgb = terrainRamp(elevationNorm);
         }
         else if (veg.a > 0.25)
         {
@@ -68,20 +89,26 @@ void main()
         }
         else if (veg.r > veg.g && veg.r > veg.b)
         {
-            color.rgb = vec3(elevationNorm, 1.0, elevationNorm);
+            // Shrub-dominant - Okabe-Ito bluish-green, see GL3 note.
+            color.rgb = mix(vec3(0.0, 0.62, 0.45), vec3(1.0), elevationNorm);
         }
         else if (veg.g > veg.r && veg.g > veg.b)
         {
-            color.rgb = vec3(1.0, elevationNorm, elevationNorm);
+            // Fruit-dominant - Okabe-Ito vermillion, see GL3 note.
+            color.rgb = mix(vec3(0.835, 0.369, 0.0), vec3(1.0), elevationNorm);
         }
         else if (veg.b > veg.g && veg.b > veg.r && veg.b > nutVisibilityThreshold)
         {
-            color.rgb = vec3(0.0, elevationNorm, elevationNorm);
+            // Nut-dominant - teal, peak-to-white pattern (no longer
+            // black-at-low-elevation) - see GL3 note.
+            color.rgb = mix(vec3(0.0, 0.60, 0.60), vec3(1.0), elevationNorm);
         }
-        // Tie (including the initial all-zero state) OR nut below
-        // nutVisibilityThreshold - left uncolored as genuine negative
-        // space rather than ELF's literal Color.PINK return value; see
-        // the matching GL3 shader's header note for why.
+        else
+        {
+            // Tie OR nut below nutVisibilityThreshold - background ramp,
+            // see the matching GL3 shader's note.
+            color.rgb = terrainRamp(elevationNorm);
+        }
     }
 
     if (drawContourLines == 1)

@@ -21,32 +21,51 @@ You should have received a copy of the GNU General Public License along
 with the Magic Sand; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
---- Ecosystem fork: no procedural rock/lichen texture and no rainbow
-height-ramp - neither ever appeared in any reference material (the ELF
-photo, the ELF paper, the sound-sandbox/fluvial papers). Color here is a
-direct GLSL port of BDlocation.getCellColor(): water/snow/land are still
-picked on the CPU side (VegetationField.h), but this shader reproduces
-ELF's exact color logic and formulas rather than an approximation of
-them:
+--- Ecosystem fork: no procedural rock/lichen texture. Water/snow/land
+classification is still picked on the CPU side (VegetationField.h);
+this shader turns that classification into color. Land's winner-take-
+all comparison logic (strictly-dominant-channel, no blending between
+types, matching BDlocation.getCellColor()'s shrubs>fruits&&shrubs>nuts
+chain) is unchanged from the original ELF-literal version - see git
+history/CLAUDE.md if the ELF-formula backstory is needed. The actual
+COLOR VALUES below are a 2026-09-24 departure from ELF's literal ones
+(and from this fork's own first-pass primary-color choices), per
+explicit user request: a colorblind-accessible, visually cohesive
+palette. Two different palettes, each used for what it's suited to:
 
-- Land: strictly-dominant-channel comparison, same as
-  getCellColor()'s shrubs>fruits&&shrubs>nuts chain - no blending
-  between types, ever. A tie (including the initial all-zero state,
-  which is the common case: most of the play area starts, and often
-  stays, unvegetated) renders as negative space rather than
-  getCellColor()'s literal flat Color.PINK return value - see the
-  no-op tie branch below. This is confirmed NOT to match ELF's actual
-  behavior: running ELF's own TESTING-mode reference build shows
-  untouched land as solid, unmodulated pink exactly as the source
-  implies. Negative space here is a deliberate stylistic departure
-  from that confirmed reference, chosen by the project owner with the
-  real behavior already seen firsthand - not a fidelity claim.
-- Each winning type's color is modulated by elevationNorm exactly as
-  ELF's colors are modulated by cellheight (0..255 there, 0..1 here):
-  shrub = (h, 1, h), fruit = (1, h, h), nut = (0, h, h).
-- Water = (0, 0, h), also cellheight-modulated (a bathymetric gradient,
-  darker in deeper water) - not the flat color this used to be.
-- Snow = flat white, unmodulated, matching Color.WHITE exactly.
+1. SPECIES/AGENT COLORS (shrub/fruit/nut here; deer/hunter/gatherer/
+   fisher in Critter.cpp/HumanAgent.cpp) use hues drawn from the
+   Okabe-Ito colorblind-safe categorical palette (Okabe & Ito, 2008 -
+   the standard reference for categorical color that survives
+   deuteranopia/protanopia simulation), chosen to keep each species'
+   ORIGINAL hue family (shrub stays green, fruit stays red/warm, nut
+   stays teal/cool - user's explicit instruction) while fixing two
+   real problems the original primary-color scheme had: (a) fruit's
+   peak (255,0,0) and HUNTER_COLOR were the EXACT same pure red -
+   confirmed as the direct cause of a real user's confusion this
+   session ("is all this red hunting humans?"); (b) pure red vs pure
+   green (fruit's and shrub's original peaks) is the classic worst-case
+   pair for red-green colorblindness, the most common form. Each
+   winning type still renders at FULL saturation with NO fade
+   regardless of density (matching ELF's own no-threshold
+   getCellColor() exactly, still) - only the peak color values changed,
+   not the winner-take-all mechanic.
+2. BACKGROUND/ELEVATION COLOR (water, and now negative-space/tie land
+   too - see terrainRamp() below) uses a 7-stop diverging ramp the user
+   sourced themselves (also confirmed colorblind-safe) - a sequential/
+   diverging palette suits elevation specifically because elevation is
+   physically continuous (adjacent cells have similar height), unlike
+   species identity. Deliberately NOT applied to actively-growing
+   vegetation: doing so would replace the winner-take-all speckled "CA"
+   look (independent per-cell stochastic growth + no-fade coloring,
+   confirmed on real hardware as looking correct) with a smooth
+   gradient, since elevation doesn't have that per-cell independence -
+   this was an explicit design question the user raised and this is
+   the resolution: hybrid, not a full replacement.
+
+Snow remains flat white, unmodulated (matching Color.WHITE), except in
+debug mode (pale blue) - untouched by this palette work; it was never
+part of the accessibility problem being fixed.
 
 heightColorMapSampler is left bound but unused below, kept only so the
 existing colormap-editing GUI machinery doesn't need to be torn out to
@@ -90,6 +109,33 @@ uniform int debugShowSnow;
 // to the same negative-space default as a real tie instead.
 uniform float nutVisibilityThreshold;
 
+// Background/elevation ramp - see the header note (part 2). The user's
+// own 7-stop diverging palette (confirmed colorblind-safe), used for
+// water and negative-space/tie land: the parts of the picture that are
+// already purely elevation-driven and have no per-cell CA state to
+// preserve. Piecewise-linear through all 7 stops rather than just
+// picking two endpoints, so the full range - deep water up through
+// unvegetated high ground - has real tonal variety instead of a flat
+// wash. Values are the user-supplied hex codes converted to 0..1 float.
+vec3 terrainRamp(float t)
+{
+    vec3 c0 = vec3(0.000, 0.259, 0.616); // #00429d
+    vec3 c1 = vec3(0.361, 0.514, 0.651); // #5c83a6
+    vec3 c2 = vec3(0.647, 0.761, 0.741); // #a5c2bd
+    vec3 c3 = vec3(1.000, 1.000, 0.878); // #ffffe0
+    vec3 c4 = vec3(1.000, 0.647, 0.620); // #ffa59e
+    vec3 c5 = vec3(0.867, 0.298, 0.396); // #dd4c65
+    vec3 c6 = vec3(0.576, 0.000, 0.227); // #93003a
+
+    t = clamp(t, 0.0, 1.0) * 6.0;
+    if (t < 1.0) return mix(c0, c1, t);
+    if (t < 2.0) return mix(c1, c2, t - 1.0);
+    if (t < 3.0) return mix(c2, c3, t - 2.0);
+    if (t < 4.0) return mix(c3, c4, t - 3.0);
+    if (t < 5.0) return mix(c4, c5, t - 4.0);
+    return mix(c5, c6, t - 5.0);
+}
+
 void main()
 {
     // ELF's "cellheight" analog: a full-sensor-range normalized elevation
@@ -118,49 +164,73 @@ void main()
 
         if (veg.a > 0.75)
         {
-            // Water - BDlocation.getCellColor(): new Color(0, 0, cellheight).
-            color.rgb = vec3(0.0, 0.0, elevationNorm);
+            // Water - background ramp (part 2 of the header note), not a
+            // species color. Water's actual elevationNorm range is narrow
+            // (bounded above by the water line) so this mostly samples the
+            // ramp's deep-blue end - still a real depth gradient, darker
+            // in deeper water, same "gets darker with depth" convention
+            // the ELF reference figure the user provided confirmed as
+            // correct, just no longer literal (0,0,h) (which hit true
+            // black at h=0, confusable with contour lines/void).
+            color.rgb = terrainRamp(elevationNorm);
         }
         else if (veg.a > 0.25)
         {
             // Snow - BDlocation.getCellColor(): Color.WHITE, unmodulated -
             // except in debug mode, where it's tinted pale blue instead so
             // it doesn't read as identical to un-grown negative space.
+            // Untouched by the 2026-09-24 palette work - see the header note.
             color.rgb = (debugShowSnow == 1) ? vec3(0.75, 0.85, 1.0) : vec3(1.0, 1.0, 1.0);
         }
         else if (veg.r > veg.g && veg.r > veg.b)
         {
-            // Shrub-dominant - new Color(cellheight, 255, cellheight).
-            color.rgb = vec3(elevationNorm, 1.0, elevationNorm);
+            // Shrub-dominant - species color (part 1 of the header note),
+            // Okabe-Ito bluish-green, kept in shrub's original green
+            // family. Blends toward white as elevation rises, same
+            // pattern as fruit/nut below - full saturation at low
+            // elevation, same as ELF's own no-fade getCellColor().
+            color.rgb = mix(vec3(0.0, 0.62, 0.45), vec3(1.0), elevationNorm);
         }
         else if (veg.g > veg.r && veg.g > veg.b)
         {
-            // Fruit-dominant - new Color(255, cellheight, cellheight).
-            color.rgb = vec3(1.0, elevationNorm, elevationNorm);
+            // Fruit-dominant - species color, Okabe-Ito vermillion, kept
+            // in fruit's original red/warm family but shifted off pure
+            // red specifically so it no longer exactly matches
+            // HUNTER_COLOR (see the header note) or sit at the classic
+            // red/green colorblind-confusion extreme against shrub above.
+            color.rgb = mix(vec3(0.835, 0.369, 0.0), vec3(1.0), elevationNorm);
         }
         else if (veg.b > veg.g && veg.b > veg.r && veg.b > nutVisibilityThreshold)
         {
-            // Nut-dominant - new Color(0, cellheight, cellheight). Gated
-            // on nutVisibilityThreshold, unlike shrub/fruit above - see
-            // that uniform's comment.
-            color.rgb = vec3(0.0, elevationNorm, elevationNorm);
+            // Nut-dominant - species color, a clean teal, kept in nut's
+            // original cool family. Formula changed from the old
+            // black-at-h=0 pattern (0,h,h) to the SAME peak-to-white
+            // pattern shrub/fruit use above - this fixes the "random
+            // black speckle" problem at its root (see CLAUDE.md's
+            // 2026-09-24 note): nut can no longer render black at any
+            // elevation, so nutVisibilityThreshold below is now a belt-
+            // and-suspenders single-tick-flash guard, not the only fix.
+            color.rgb = mix(vec3(0.0, 0.60, 0.60), vec3(1.0), elevationNorm);
         }
-        // Tie (including the initial all-zero state, which is by far the
-        // common one - most of the play area starts and often stays
-        // unvegetated) OR nut below nutVisibilityThreshold: no branch
-        // above fires, so color is left exactly as set before
-        // classification - the plain white "no augmentation" base, i.e.
-        // genuine negative space.
-        //
-        // getCellColor() returns flat Color.PINK on a tie in ELF's own
-        // source, and running ELF's own TESTING-mode reference build
-        // confirms that's exactly what happens: untouched land renders as
-        // solid, unmodulated pink, densely and immediately, not sparse
-        // specks and not negative space (an earlier version of this
-        // comment guessed otherwise from a single photo - that guess was
-        // wrong). Negative space here is a deliberate stylistic choice by
-        // the project owner, made after seeing ELF's real behavior
-        // firsthand, not a claim that it matches.
+        else
+        {
+            // Tie (including the initial all-zero state, which is by far
+            // the common one - most of the play area starts and often
+            // stays unvegetated) OR nut below nutVisibilityThreshold:
+            // background ramp (part 2 of the header note), same as water
+            // above - untouched land now reads as a real hypsometric base
+            // color by elevation rather than flat "no augmentation" white,
+            // and vegetation still visibly claims a cell the instant it
+            // establishes (full-saturation species color against this
+            // more varied background, if anything MORE visible than
+            // against flat white before).
+            //
+            // getCellColor() returns flat Color.PINK on a tie in ELF's own
+            // source (confirmed by running ELF's own TESTING-mode
+            // reference build) - this was already a deliberate departure
+            // from that before this palette work, not a fidelity claim.
+            color.rgb = terrainRamp(elevationNorm);
+        }
     }
 
     if (drawContourLines == 1)
