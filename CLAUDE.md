@@ -378,6 +378,37 @@ clone):
   values stay fully live-tunable in the Vegetation panel regardless of
   these code defaults) - see `VegetationField.h`'s header note for ELF's
   own equivalent (`decTemp()`/`incTemp()`, the 'q'/'a' operator keys).
+- **REFINED (2026-09-24) - the ELF-literal revert above made water
+  exactly zero, confirmed to be ELF's own actual factory-default
+  behavior, not a new bug.** User provided a real ELF reference figure
+  ("Figure 7: ELF Dynamic System with higher temperatures. Very dark
+  blue areas represent areas under water") and asked for water/snow to
+  both show up "where it makes sense," pointing straight at why: with
+  `TEMPERATURE == LIVING_RANGE_FRACTION` (both ELF's literal 200/255,
+  from the revert above), `BDenvironment.stepCells()`'s water condition
+  (`height < temperature - LIVINGRANGE`) is literally `height < 0` -
+  impossible. Confirmed via direct source read of `incTemp()`/
+  `decTemp()` that this is deliberate: ELF's own operator is expected to
+  raise temperature above LIVINGRANGE with the 'q' key specifically to
+  open a water band - the reference figure's "higher temperatures" is
+  exactly that. (Also corrected a direction error in this file's own
+  prior comments, which had claimed the operator *lowers* temperature to
+  get water via `decTemp()`/'a' - it's `incTemp()`/'q' that raises it;
+  re-reading the source directly caught this rather than propagating the
+  earlier paraphrase.)
+  `TEMPERATURE`/`BASE_TEMPERATURE` moved from `200.0f/255.0f` to `0.9f` -
+  still using ELF's own lever (temperature started above
+  `LIVING_RANGE_FRACTION`, not a new mechanic), not ELF's literal
+  factory-default value, since that value is a documented zero-water
+  cold start by ELF's own design. With `LIVING_RANGE_FRACTION` at ELF's
+  literal ~0.784, only ~0.216 of the calibrated range is left as slack,
+  split between water headroom (`TEMPERATURE - LIVING_RANGE_FRACTION`)
+  and snow headroom (`1.0 - TEMPERATURE`) - the same budget, so both
+  can't be maximized simultaneously. `0.9` splits it to ~12% water / ~10%
+  snow of the total range - both present, neither dominant. First-guess
+  starting point per the user's stated goal, untested on real hardware -
+  still live-tunable in the Vegetation panel regardless of this code
+  default.
 - **Separately identified, not a bug:** a real mound can visually wash
   from red toward white even with the debug-snow toggle off and even
   when nowhere near the actual snow threshold. Traced to

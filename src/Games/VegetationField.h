@@ -137,19 +137,36 @@ LIVING_RANGE_FRACTION itself is tuned.
 
 TEMPERATURE/BASE_TEMPERATURE/MAX_TEMPERATURE_OFFSET are themselves
 fractions of the same calibrated range (0..1-ish, not millimeters).
-BASE_TEMPERATURE's starting value now matches ELF's literal default
-(temperature=200/255) too, per the same 2026-09-24 instruction - but
-note ELF's own literal value places the water line exactly at the
-calibrated floor with zero margin, which in ELF's own source is only
-usable because an operator manually lowers temperature via decTemp()
-('a') before/during a session to open a reachable water band for their
-specific installation. This port has no equivalent manual dial
-(TEMPERATURE only rises from BASE_TEMPERATURE with activity, per the
-note below), so if hand-sculpting can't reach the water/snow lines in
-practice at this literal default, BASE_TEMPERATURE is the value to place
-by hand instead - live against the real box, using the Vegetation GUI
-panel's Temperature readout plus watching what a real dig and a real
-mound actually do, the same way an ELF operator would have dialed
+BASE_TEMPERATURE's starting value is deliberately NOT ELF's literal
+default (temperature=200/255, i.e. exactly LIVING_RANGE_FRACTION) -
+confirmed directly from BDenvironment.stepCells() that this exact value
+makes water mathematically unreachable (`height < temperature -
+LIVINGRANGE` becomes `height < 0`), and confirmed via incTemp()/
+decTemp() (ELF's 'q'/'a' operator keys - incTemp() is what RAISES
+temperature, not decTemp(), an earlier version of this note had the
+direction backwards) that ELF's own design expects an operator to raise
+temperature above LIVINGRANGE at session start specifically to open a
+reachable water band - ELF ships in a deliberate zero-water cold start,
+not a bug this port needs to avoid reproducing. A real ELF reference
+figure the user provided directly confirms this: captioned "ELF Dynamic
+System with HIGHER TEMPERATURES... areas under water," i.e. that
+figure's visible water required an operator-raised temperature, this
+exact mechanism.
+
+Set to 0.9 (2026-09-24) - using ELF's own lever (temperature above
+LIVING_RANGE_FRACTION) rather than a new one. With LIVING_RANGE_FRACTION
+at ELF's literal ~0.784, only ~0.216 of the range is left as slack,
+split between water headroom (TEMPERATURE - LIVING_RANGE_FRACTION) and
+snow headroom (1.0 - TEMPERATURE) - the same budget, so both can't be
+maxed at once. 0.9 splits it so ~12% of the range is reachable as water
+and ~10% as snow - both present, neither dominant, per the user's
+explicit goal ("water where it makes sense, snow where it makes
+sense"). First-guess starting point, untested on real hardware - if
+hand-sculpting can't reach the water/snow lines in practice,
+BASE_TEMPERATURE is the value to place by hand next - live against the
+real box, using the Vegetation GUI panel's Temperature readout plus
+watching what a real dig and a real mound actually do, the same way an
+ELF operator would have dialed
 'q'/'a' once at setup time.
 
 A CPU-side grid sampled from elevationAtKinectCoord() each frame,

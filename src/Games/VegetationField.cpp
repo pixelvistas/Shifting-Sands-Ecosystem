@@ -5,28 +5,40 @@
 // the header note), not millimeters. Starts equal to BASE_TEMPERATURE so
 // there's no artificial startup transient easing up from 0.
 //
-// ELF's literal default (BDenvironment's `private int temperature = 200`,
-// on ELF's own 0..255 scale) = 200/255 - see BASE_TEMPERATURE's comment
-// below for why this now matches ELF exactly, per explicit user
-// instruction (2026-09-24), reverting an earlier session's 0.75/
-// LIVING_RANGE_FRACTION=0.5 departure.
-float VegetationField::TEMPERATURE = 200.0f / 255.0f;
-// ELF's literal default, matching BDenvironment's `temperature = 200`
-// field (0..255 scale) exactly: 200/255. A PREVIOUS session had changed
-// this to 0.75 (paired with LIVING_RANGE_FRACTION=0.5) after real
-// hardware testing found ELF's own literal ratio - temperature and
-// LIVINGRANGE both defaulting to 200/255 - leaves the water/snow lines
-// so close to the calibrated floor/ceiling that ordinary hand-sculpting
-// can't reach them (a hand-built mound never reached the snowline, a
-// hand-dug pit never reached the waterline, at ELF's literal ratio).
-// That finding is real and still stands - it isn't erased by this
-// revert. Reverted to ELF's literal value anyway per explicit user
-// instruction (2026-09-24): fix the defaults to match ELF FIRST, then
-// retune from that known-ELF-faithful baseline if hand-sculpting can't
-// reach the lines in practice, rather than starting from an already-
-// customized value. Both stay fully live-tunable in the Vegetation
-// panel regardless of this code default.
-float VegetationField::BASE_TEMPERATURE = 200.0f / 255.0f;
+// NOT literally 200/255 (ELF's factory-default `temperature` field) -
+// see BASE_TEMPERATURE's comment below for why that exact value makes
+// water mathematically unreachable, confirmed directly from
+// BDenvironment.stepCells()/incTemp(), and why this starts above
+// LIVING_RANGE_FRACTION instead, matching what an ELF operator is
+// expected to do at session start (2026-09-24).
+float VegetationField::TEMPERATURE = 0.9f;
+// ELF's own factory-default `temperature` field is literally 200/255,
+// the SAME value as LIVINGRANGE's 200/255 - which makes
+// BDenvironment.stepCells()'s water condition (`height < temperature -
+// LIVINGRANGE`) exactly `height < 0`, mathematically impossible (height
+// can't go negative). Confirmed this isn't an oversight: incTemp()/
+// decTemp() (ELF's 'q'/'a' operator keys) exist specifically so an
+// operator raises temperature above LIVINGRANGE during a session to
+// open a real water band - ELF ships in a deliberate zero-water cold
+// start, not a bug. A real ELF reference figure the user provided
+// (captioned "ELF Dynamic System with HIGHER TEMPERATURES... areas
+// under water") confirms this directly: substantial visible water there
+// required an operator-raised temperature, exactly this mechanism.
+//
+// So starting at ELF's literal 200/255 here would reproduce that same
+// zero-water cold start, not a usable default - this uses ELF's own
+// lever instead (temperature raised above LIVING_RANGE_FRACTION) rather
+// than inventing a new one. With LIVING_RANGE_FRACTION at ELF's literal
+// ~0.784 (see that field's comment), only 1-0.784=~0.216 of the range is
+// left as slack, split between water headroom (how far TEMPERATURE
+// exceeds LIVING_RANGE_FRACTION) and snow headroom (how far it stays
+// under 1.0) - the two draw from the same budget, so both can't be maxed
+// at once. 0.9 splits that budget so ~12% of the range is reachable as
+// water and ~10% as snow - both genuinely present, neither dominant, a
+// first-guess starting point per the user's explicit goal ("water where
+// it makes sense, snow where it makes sense") - untested on real
+// hardware, retune live in the Vegetation panel from here.
+float VegetationField::BASE_TEMPERATURE = 0.9f;
 // First-guess scale, untested on real hardware - see the header note.
 // Average per-cell elevation change during active sculpting is expected
 // to be a small fraction of a millimeter per frame (only cells near a
