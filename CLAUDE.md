@@ -233,22 +233,44 @@ iterations per frame (519x295 grid, 8 samples, 3 species), each doing
    spread layer to still function. Combined, roughly a ~25-50x reduction
    in the new cost.
 
-**STILL NOT RESOLVED (2026-09-22 follow-up):** re-tested on hardware
-after the above fix - FPS went from 1-2 up to only ~5, not the expected
-~60. Checked `elevationAtKinectCoord()`'s real cost before guessing
-further (a 4x4 matrix-vector multiply + dot product, ~28 FLOPs/call,
-~4.3M FLOPs/frame total across the grid - too cheap on any modern CPU
-to be the bottleneck on its own), so this doesn't look like "the
-pre-existing native-resolution grid was secretly always the problem."
-Rather than keep tuning spread constants blind, added `ENABLE_SPREAD`
-(`c87caf3`) - a GUI checkbox that fully disables the spread layer with
-no rebuild needed, so toggling it and comparing frame rate gives a
-direct answer to whether spread is still the dominant cost or whether
-something else is. **Awaiting that A/B result** before deciding the
-next fix.
+**RESOLVED (2026-09-24) - real root cause was the build configuration,
+not any code in this file.** Re-tested on hardware after the above fix -
+FPS went from 1-2 up to only ~5, not the expected ~60. Checked
+`elevationAtKinectCoord()`'s real cost first (a 4x4 matrix-vector
+multiply + dot product, ~28 FLOPs/call, ~4.3M FLOPs/frame total across
+the grid - too cheap to be the bottleneck on its own), then added
+`ENABLE_SPREAD` (`c87caf3`) as an A/B kill switch. User toggled it off on
+hardware: **no change, still ~5fps** - which, combined with a direct
+`git diff 1bbad8a HEAD --stat` showing only `VegetationField.cpp`/`.h`
+touched since the checkpoint at all, ruled out every line of code
+changed in this whole phase as the cause (with `ENABLE_SPREAD` off, the
+per-cell loop is functionally at least as cheap as the pre-CA baseline -
+it even short-circuits once a cell hits max density, which the old code
+didn't).
+
+That pointed outside the source tree. `config.make`/`Makefile` have no
+optimization overrides (defaults), and the user confirmed they run via
+Visual Studio's F5 (`Magic-Sand-Ecosystem.sln`/`.vcxproj` are the actual
+build the app runs from, not the Makefile) - F5 builds whichever
+configuration the Solution Configuration dropdown is set to, and it was
+sitting on **Debug**. Switching to **Release** and rebuilding: FPS went
+from ~5-6 to **~40**. Confirmed - this was never a spread-layer cost
+problem, it was an unoptimized-build problem that happened to surface
+right when a rebuild was first needed to pick up the new C++ code at
+all.
+
+**Not fully closed:** 40fps is well short of the ~70fps originally
+reported at the pre-CA baseline. Unknown yet whether that baseline
+number was itself measured in Release (in which case the spread layer
+does carry a real, if much smaller than originally feared, Release-mode
+cost worth profiling further) or Debug (in which case 40fps in Release
+may already be the honest full-featured number and nothing further is
+wrong). Not investigated yet - revisit if 40fps proves limiting in
+practice.
 `SPREAD_RADIUS_MM=40` and `SPREAD_CHANCE_MULTIPLIER=5` are still
 first-guess defaults, untested for whether they look right visually -
-a separate, remaining unknown from the performance one above.
+now actually testable on hardware for the first time, since the FPS
+regression previously made any real observation session impractical.
 
 **Still not done, and blocking full succession-model completion:** the
 actual hydrology/particle-flow water simulation and real hand-placed
