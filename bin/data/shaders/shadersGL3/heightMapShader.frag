@@ -34,22 +34,32 @@ explicit user request: a colorblind-accessible, visually cohesive
 palette. Two different palettes, each used for what it's suited to:
 
 1. SPECIES/AGENT COLORS (shrub/fruit/nut here; deer/hunter/gatherer/
-   fisher in Critter.cpp/HumanAgent.cpp) use hues drawn from the
-   Okabe-Ito colorblind-safe categorical palette (Okabe & Ito, 2008 -
-   the standard reference for categorical color that survives
-   deuteranopia/protanopia simulation), chosen to keep each species'
-   ORIGINAL hue family (shrub stays green, fruit stays red/warm, nut
-   stays teal/cool - user's explicit instruction) while fixing two
-   real problems the original primary-color scheme had: (a) fruit's
-   peak (255,0,0) and HUNTER_COLOR were the EXACT same pure red -
-   confirmed as the direct cause of a real user's confusion this
-   session ("is all this red hunting humans?"); (b) pure red vs pure
-   green (fruit's and shrub's original peaks) is the classic worst-case
-   pair for red-green colorblindness, the most common form. Each
-   winning type still renders at FULL saturation with NO fade
-   regardless of density (matching ELF's own no-threshold
-   getCellColor() exactly, still) - only the peak color values changed,
-   not the winner-take-all mechanic.
+   fisher in Critter.cpp/HumanAgent.cpp) keep each species' ORIGINAL
+   hue family (shrub green, fruit red/warm, nut teal/cool - user's
+   explicit instruction) but are deliberately NOT the muted Okabe-Ito
+   reference values an earlier pass of this work used - confirmed on
+   review that those changes were too conservative for several roles
+   (gatherer/deer/fruit moved only ~17-23% of the max possible RGB
+   distance from the originals - barely perceptible), because Okabe-Ito
+   is tuned to fix ONLY the specific red-green collision (fruit peak
+   and HUNTER_COLOR were the exact same (255,0,0), and fruit-vs-shrub's
+   pure-red/pure-green pair is the classic worst case for red-green
+   colorblindness, the most common form) without moving colors that
+   were never part of that problem (yellow, cyan, blue) far from their
+   familiar identity - a reasonable goal for data-viz, not the same
+   goal as looking bold/distinct, which was also asked for. These
+   values are bolder and more saturated instead, chosen to survive
+   deuteranopia by the same underlying principle Okabe-Ito uses -
+   separation via the RED and BLUE channels and overall lightness, not
+   hue alone (deuteranopia collapses the green-sensing cone, so two
+   colors differing only in "how green" still merge; they need to
+   differ in red/blue intensity to stay apart) - while matching the
+   jewel-toned saturation of the diverging ramp the user sourced
+   themselves (part 2 below), for a visually cohesive whole rather than
+   two mismatched palette styles. Each winning type still renders at
+   FULL saturation with NO fade regardless of density (matching ELF's
+   own no-threshold getCellColor() exactly, still) - only the peak
+   color values changed, not the winner-take-all mechanic.
 2. BACKGROUND/ELEVATION COLOR (water, and now negative-space/tie land
    too - see terrainRamp() below) uses a 7-stop diverging ramp the user
    sourced themselves (also confirmed colorblind-safe) - a sequential/
@@ -185,32 +195,37 @@ void main()
         else if (veg.r > veg.g && veg.r > veg.b)
         {
             // Shrub-dominant - species color (part 1 of the header note),
-            // Okabe-Ito bluish-green, kept in shrub's original green
-            // family. Blends toward white as elevation rises, same
-            // pattern as fruit/nut below - full saturation at low
-            // elevation, same as ELF's own no-fade getCellColor().
-            color.rgb = mix(vec3(0.0, 0.62, 0.45), vec3(1.0), elevationNorm);
+            // a rich emerald, kept in shrub's original green family, R=0
+            // so it never competes with fruit's high-red peak below.
+            // Blends toward white as elevation rises, same pattern as
+            // fruit/nut below - full saturation at low elevation, same
+            // as ELF's own no-fade getCellColor().
+            color.rgb = mix(vec3(0.0, 0.659, 0.349), vec3(1.0), elevationNorm);
         }
         else if (veg.g > veg.r && veg.g > veg.b)
         {
-            // Fruit-dominant - species color, Okabe-Ito vermillion, kept
-            // in fruit's original red/warm family but shifted off pure
-            // red specifically so it no longer exactly matches
-            // HUNTER_COLOR (see the header note) or sit at the classic
-            // red/green colorblind-confusion extreme against shrub above.
-            color.rgb = mix(vec3(0.835, 0.369, 0.0), vec3(1.0), elevationNorm);
+            // Fruit-dominant - species color, a bold orange-red, kept in
+            // fruit's original red/warm family but with high red AND
+            // enough green to sit clearly away from pure red - not the
+            // same value as HUNTER_COLOR (see the header note), and
+            // R=0.9/B=0.08 gives strong red-channel separation from
+            // shrub's R=0 above, which is what actually survives
+            // deuteranopia (hue alone wouldn't).
+            color.rgb = mix(vec3(0.902, 0.353, 0.078), vec3(1.0), elevationNorm);
         }
         else if (veg.b > veg.g && veg.b > veg.r && veg.b > nutVisibilityThreshold)
         {
-            // Nut-dominant - species color, a clean teal, kept in nut's
-            // original cool family. Formula changed from the old
-            // black-at-h=0 pattern (0,h,h) to the SAME peak-to-white
-            // pattern shrub/fruit use above - this fixes the "random
-            // black speckle" problem at its root (see CLAUDE.md's
-            // 2026-09-24 note): nut can no longer render black at any
-            // elevation, so nutVisibilityThreshold below is now a belt-
-            // and-suspenders single-tick-flash guard, not the only fix.
-            color.rgb = mix(vec3(0.0, 0.60, 0.60), vec3(1.0), elevationNorm);
+            // Nut-dominant - species color, a saturated teal, kept in
+            // nut's original cool family, R=0/B high so it separates
+            // from fruit via the same red/blue-channel logic. Formula
+            // changed from the old black-at-h=0 pattern (0,h,h) to the
+            // SAME peak-to-white pattern shrub/fruit use above - this
+            // fixes the "random black speckle" problem at its root (see
+            // CLAUDE.md's 2026-09-24 note): nut can no longer render
+            // black at any elevation, so nutVisibilityThreshold below is
+            // now a belt-and-suspenders single-tick-flash guard, not the
+            // only fix.
+            color.rgb = mix(vec3(0.0, 0.675, 0.675), vec3(1.0), elevationNorm);
         }
         else
         {

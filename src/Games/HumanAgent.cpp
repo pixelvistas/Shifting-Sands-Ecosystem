@@ -6,22 +6,31 @@ float HumanAgent::LIFE_OF_CORPSE = 500.0f;
 float HumanAgent::SPAWN_CHANCE_PER_TICK = 1.0f;
 float HumanAgent::MAX_FOOD = 255.0f;
 // 2026-09-24, per explicit user request: colorblind-accessible palette
-// pass - see heightMapShader.frag's header note for the full rationale
-// (Okabe-Ito categorical palette, hue families kept where ELF's own
-// Color.BLUE/RED/YELLOW intent allows).
-// Fisher stays blue family, shifted to a deep indigo so it doesn't sit
-// on top of the terrain shader's water color (also blue family).
-ofColor HumanAgent::FISHER_COLOR = ofColor(36, 36, 140);
+// pass - see heightMapShader.frag's header note for the full rationale.
+// Values below are bold/saturated rather than a muted reference-palette
+// pick - an earlier version of this shifted gatherer only ~17% and
+// fruit-vs-old-hunter only ~25% of the max possible RGB distance,
+// confirmed too close to the originals on review. Separation is via the
+// red/blue channels and lightness specifically (what survives
+// deuteranopia - the green-sensing cone dropping out merges colors that
+// only differ in "how green"), not hue alone.
+// Fisher stays blue family, a deep indigo - low red/green, moderate
+// blue, clearly darker than deer's bright cyan and the terrain shader's
+// water color despite sharing the same family.
+ofColor HumanAgent::FISHER_COLOR = ofColor(30, 30, 130);
 // Hunter stays red/warm family, but NOT pure red: (255,0,0) was the
 // EXACT same value as fruit's old peak color - confirmed as the direct
 // cause of a real user's confusion this session ("is all this red
-// hunting humans?"). Okabe-Ito reddish-purple/crimson instead - still
-// reads as "red/danger," clearly distinct from fruit's new vermillion.
-ofColor HumanAgent::HUNTER_COLOR = ofColor(196, 30, 90);
+// hunting humans?"). A bold crimson instead - high red, low green, real
+// blue component - separates from fruit's orange-red peak (high red,
+// moderate green, near-zero blue) via green/blue, not just hue.
+ofColor HumanAgent::HUNTER_COLOR = ofColor(200, 20, 90);
 // Gatherer stays yellow family (also the default/fallback role - see
-// currentColor() below) - Okabe-Ito yellow, softened slightly off pure
-// (255,255,0) for less eye-strain, still unmistakably yellow.
-ofColor HumanAgent::GATHERER_COLOR = ofColor(240, 228, 66);
+// currentColor() below) but a rich gold/amber rather than flat lemon
+// yellow - full red, strong green, zero blue - clearly warmer/more
+// saturated than the original (255,255,0) while staying unmistakably
+// "yellow."
+ofColor HumanAgent::GATHERER_COLOR = ofColor(255, 190, 0);
 ofColor HumanAgent::DEAD_COLOR = ofColor(0, 0, 0);          // Color.BLACK - neutral, untouched
 float HumanAgent::DOT_SIZE = 8.0f;
 

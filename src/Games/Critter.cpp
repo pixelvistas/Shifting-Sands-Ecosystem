@@ -6,13 +6,14 @@ float Critter::FOOD_DRAIN_PER_TICK = 1.0f;
 float Critter::LIFE_OF_CORPSE = 500.0f;
 float Critter::SPAWN_CHANCE_PER_TICK = 1.0f;
 // 2026-09-24, per explicit user request: colorblind-accessible palette
-// pass - see heightMapShader.frag's header note for the full rationale
-// (Okabe-Ito categorical palette, hue families kept). Deer stays in its
-// original cyan family (matching BDdeer.LIVE's intent) but shifted off
-// pure (0,255,255) - a deliberate, distinctly blue-leaning cyan so it
-// doesn't sit exactly on top of nut's teal peak (see the shader's nut
-// color) despite both being in the same cool-color family.
-ofColor Critter::BODY_COLOR = ofColor(0, 180, 216);
+// pass - see heightMapShader.frag's header note for the full rationale.
+// Deer stays in its original cyan family (matching BDdeer.LIVE's
+// intent) but pushed to a bold, high-blue "electric" cyan rather than a
+// muted reference-palette value (an earlier version of this shifted
+// only to (0,180,216), confirmed too close to the original (0,255,255)
+// on review) - distinctly brighter/bluer than nut's teal peak in the
+// shader despite both being in the same cool-color family.
+ofColor Critter::BODY_COLOR = ofColor(0, 190, 255);
 ofColor Critter::DEAD_COLOR = ofColor(64, 64, 64);    // matching java.awt.Color.DARK_GRAY - neutral, untouched
 float Critter::DOT_SIZE = 8.0f;
 

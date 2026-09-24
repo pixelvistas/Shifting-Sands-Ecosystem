@@ -89,19 +89,19 @@ void main()
         }
         else if (veg.r > veg.g && veg.r > veg.b)
         {
-            // Shrub-dominant - Okabe-Ito bluish-green, see GL3 note.
-            color.rgb = mix(vec3(0.0, 0.62, 0.45), vec3(1.0), elevationNorm);
+            // Shrub-dominant - bold emerald, see GL3 note.
+            color.rgb = mix(vec3(0.0, 0.659, 0.349), vec3(1.0), elevationNorm);
         }
         else if (veg.g > veg.r && veg.g > veg.b)
         {
-            // Fruit-dominant - Okabe-Ito vermillion, see GL3 note.
-            color.rgb = mix(vec3(0.835, 0.369, 0.0), vec3(1.0), elevationNorm);
+            // Fruit-dominant - bold orange-red, see GL3 note.
+            color.rgb = mix(vec3(0.902, 0.353, 0.078), vec3(1.0), elevationNorm);
         }
         else if (veg.b > veg.g && veg.b > veg.r && veg.b > nutVisibilityThreshold)
         {
-            // Nut-dominant - teal, peak-to-white pattern (no longer
-            // black-at-low-elevation) - see GL3 note.
-            color.rgb = mix(vec3(0.0, 0.60, 0.60), vec3(1.0), elevationNorm);
+            // Nut-dominant - saturated teal, peak-to-white pattern (no
+            // longer black-at-low-elevation) - see GL3 note.
+            color.rgb = mix(vec3(0.0, 0.675, 0.675), vec3(1.0), elevationNorm);
         }
         else
         {

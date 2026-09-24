@@ -559,3 +559,42 @@ nut branches use new `mix(peak, white, h)` formulas. `Critter.cpp`
 `GATHERER_COLOR`) updated to match. All still fully live-tunable where
 a GUI control already existed (deer's `ImGui::ColorEdit3`); the rest
 remain compile-time constants, same as before this pass.
+
+**Follow-up, same day: the first-pass species/agent colors above were
+too conservative - confirmed by the numbers, not just a subjective
+impression.** User pushed back ("the new colours are still quite close
+to the old ones"). Checked RGB distance from each original value before
+changing anything further: gatherer `(255,255,0)→(240,228,66)` moved
+only ~17% of the maximum possible RGB distance, fruit `(255,0,0)→
+(213,94,0)` ~23%, deer `(0,255,255)→(0,180,216)` ~19% - genuinely small
+moves, not a false impression. Root cause: Okabe-Ito is tuned to fix
+ONLY the specific red-green collision that was the actual accessibility
+bug (fruit/hunter identical, fruit/shrub the classic red-green
+worst-case pair) - it deliberately doesn't move colors that were never
+part of that problem (yellow, cyan, blue) far from their familiar
+identity, which serves data-viz legibility but not "look visually bold/
+distinct," which was also part of the original ask.
+
+Replaced with bolder, more saturated values chosen by the same
+principle that actually makes Okabe-Ito colorblind-safe - separation
+via the RED and BLUE channels and overall lightness, not hue alone
+(deuteranopia drops the green-sensing cone, so two colors differing
+only in "how green" still merge) - while matching the jewel-toned
+saturation of the diverging ramp the user sourced themselves, for one
+cohesive palette rather than a muted categorical set paired with a bold
+sequential one:
+- Shrub: rich emerald `(0,168,89)`, R=0.
+- Fruit: bold orange-red `(230,90,20)`, high R separates it from shrub;
+  real G/B keeps it off pure red.
+- Nut: saturated teal `(0,172,172)`, R=0/high B.
+- Deer: bright "electric" cyan `(0,190,255)`, distinctly bluer/brighter
+  than nut despite the same cool family.
+- Hunter: bold crimson `(200,20,90)` - real B component separates it
+  from fruit via blue, not just hue.
+- Gatherer: rich gold/amber `(255,190,0)` - full R, strong G, zero B -
+  clearly warmer/more saturated than flat lemon yellow.
+- Fisher: deep indigo `(30,30,130)` - notably darker than deer and
+  water despite the same blue family.
+
+Still untested on real hardware for how these actually project on
+sand - the same open question as the diverging ramp itself.
