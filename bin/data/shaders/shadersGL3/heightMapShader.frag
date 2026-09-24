@@ -161,11 +161,17 @@ void main()
     // they run at different times relative to each other.
     float elevationNorm = clamp(depthfrag / heightMapNumEntries, 0.0, 1.0);
 
-    // No colour cast before classification - full-brightness white, the
-    // standard "no augmentation" convention for a projector. Overwritten
-    // below whenever vegetation classifies the cell as something else;
-    // only shows through with vegetation disabled.
-    vec4 color = vec4(1.0, 1.0, 1.0, 1.0);
+    // Pre-classification default - per explicit user choice (2026-09-24),
+    // black rather than the previous full-brightness white: since a
+    // projector can't project true black, this reads as "add no light,
+    // let the sand's own tone show" rather than "cast a neutral white
+    // wash." Overwritten below whenever vegetation classifies the cell as
+    // something else. In practice this now only shows through briefly
+    // before hasVegetation first becomes true (the grid isn't ready yet)
+    // or with vegetation disabled entirely - NOT for ordinary untouched/
+    // tie land during real operation, which renders via terrainRamp() in
+    // the tie branch below instead (part of the 2026-09-24 palette work).
+    vec4 color = vec4(0.0, 0.0, 0.0, 1.0);
 
     if (hasVegetation == 1)
     {

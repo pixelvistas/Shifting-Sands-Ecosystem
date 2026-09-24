@@ -598,3 +598,78 @@ sequential one:
 
 Still untested on real hardware for how these actually project on
 sand - the same open question as the diverging ramp itself.
+
+## Discovered mid-session (2026-09-24): local hardware checkout was 6 commits
+behind, and likely explains earlier misdiagnoses
+
+User realized partway through the palette feedback round that they
+hadn't been running `git pull` on the machine actually used for
+hardware testing (Visual Studio, F5 build/run - never touches git on
+its own). Checked precisely rather than guessing: their local HEAD was
+`82dec04` ("Log that the FPS fix only got to 5fps..."), six commits
+behind this session's `54f63d0` at the time. Missing: the ELF-literal
+temperature revert (`f261c2b`), the 0.9 temperature raise (`289b6e8`),
+the nut visibility threshold/black-speckle fix (`a7bb03d`), and BOTH
+color palette passes (`e7ae619`, `54f63d0`) - `d59dcde` is CLAUDE.md-only,
+no code.
+
+**Real accounting of what that means for the intervening conversation:**
+- The Debug->Release build-config fix is unaffected (a local Visual
+  Studio setting, not tracked by git) - genuinely real.
+- The nut-black-speckle diagnosis was still correct, because at `82dec04`
+  nut's shader formula was still the original unfixed `(0,h,h)` - the
+  explanation matched what was actually running, even though the fix
+  itself hadn't been tested yet.
+- The "-135.6mm water line / no water showing / ELF reference figure"
+  investigation was conducted against the ORIGINAL `0.75`/`0.5`
+  temperature defaults, not ELF's literal `0.784`/`0.784` (which is what
+  the "water is mathematically impossible" diagnosis was actually
+  about) - `0.75`/`0.5` structurally has a reachable water band by
+  design, so whatever actually caused that round's black/no-water look
+  has a different, still-unconfirmed cause (most likely the elevation
+  range bounds drifting out of calibration again, the same class of bug
+  fixed once already this project via "Reset range to ±calibrated
+  ceiling") - reopened, not resolved, pending a real test on current code.
+- "The new colours are still quite close to the old ones" was accurate
+  but uninformative about the Okabe-Ito palette specifically - at
+  `82dec04` neither palette commit existed, so the colors being judged
+  were the completely unmodified ELF originals, not a real comparison.
+  The subsequent "push it bolder" revision (see above) is still
+  reasonable on its own merits, but wasn't actually validated against
+  the Okabe-Ito intermediate on hardware - that step got skipped
+  entirely, not rejected.
+
+**Separately found while diagnosing this: an uncommitted local edit that
+likely explains the ORIGINAL "black patches"/"is this negative space"
+investigation better than the nut-formula bug did.** `git diff` on the
+local checkout showed `heightMapShader.frag`'s pre-classification
+default color changed from the repo's `vec4(1,1,1,1)` (white) to
+`vec4(0,0,0,1)` (black), consistently in both GL2 and GL3 variants -
+present the whole time, never committed. Since (at `82dec04`) ties fell
+straight through to this default with no override, a black default
+meant nearly the entire unvegetated field rendered black, with only
+actual grown vegetation showing as colored specks - a much better match
+for "black background with scattered colored speckle" than isolated
+nut pixels would be. **User's explicit decision: keep the black
+default.** Committed as the new tracked value (was never going to
+survive a `git reset`/fresh clone otherwise) with updated comments
+explaining the projector-physics rationale (can't project true black -
+this reads as "add no light, let the sand show" rather than "cast a
+neutral white wash"). **Important caveat flagged to the user:** this
+default now only shows through briefly before `hasVegetation` first
+becomes true, or with vegetation disabled - the hybrid palette pass
+above already made ordinary tie/negative-space land render via
+`terrainRamp()` instead, regardless of this value, so black-vs-white
+here is now a much smaller-impact, near-cosmetic startup-flash choice
+than it would have been in the code the user was actually testing
+against when they first made this local edit.
+
+**Action item, not yet done:** user needs to `git pull
+origin ss/ecosim-model-visuals-kiqw12` (checked first that the three
+locally-modified settings XMLs - `calibration.xml`/
+`kinectProjectorSettings.xml`/`sandSurfaceRendererSettings.xml`, real
+auto-saved calibration data from running the app - aren't touched by
+any pending commit, so they're not a merge risk) and do a full Release
+rebuild before trusting ANY visual observation going forward. Until
+that happens, water/snow reachability in particular should be treated
+as re-opened, not resolved.

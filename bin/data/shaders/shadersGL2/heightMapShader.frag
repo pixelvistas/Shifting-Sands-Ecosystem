@@ -71,7 +71,10 @@ void main()
 {
     float elevationNorm = clamp(depthfrag / heightMapNumEntries, 0.0, 1.0);
 
-    vec4 color = vec4(1.0, 1.0, 1.0, 1.0);
+    // Pre-classification default - black, see the matching GL3 shader's
+    // note (2026-09-24 user choice; only shows through pre-startup/with
+    // vegetation disabled, not for ordinary tie land - see terrainRamp()).
+    vec4 color = vec4(0.0, 0.0, 0.0, 1.0);
 
     if (hasVegetation == 1)
     {
