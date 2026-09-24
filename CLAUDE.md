@@ -347,6 +347,37 @@ clone):
   Temperature is still just a fraction of the same too-wide range.
   Fixed on the user's hardware by clicking "Reset range to
   ±calibrated ceiling," not a code change.
+- **REVERTED (2026-09-24), per explicit user instruction - defaults now
+  match ELF's literal values, overriding the two departures above.**
+  Real-hardware testing (this session) after the FPS fix showed cranking
+  shrub growth way up eventually left the field looking mostly blank/
+  black with no reachable water, and the live Vegetation panel readout
+  showed Base Temperature had drifted to 0.623 from manual slider use -
+  producing a very low snow line (15.9mm) that most of the sand's real
+  relief already exceeded. Rather than re-tune sliders live, the user's
+  explicit instruction was to fix the CODE DEFAULTS to match ELF first.
+  Checked ELF's actual source directly (`BDenvironment.java`) rather
+  than trusting this file's own prior paraphrase: `private int
+  temperature = 200` and `LIVINGRANGE = 200`, both on ELF's 0..255
+  scale - i.e. both 200/255 (~0.784). `TEMPERATURE`/`BASE_TEMPERATURE`
+  (previously 0.75, a deliberate post-hardware-testing departure) and
+  `LIVING_RANGE_FRACTION` (previously 0.5, same departure) are now both
+  `200.0f/255.0f` exactly, matching ELF literally. `SHRUB_LINE_RATIO`/
+  `FRUIT_LINE_RATIO`/`NUT_LINE_RATIO` were already exactly ELF's literal
+  20/200, 60/200, 25/200 - no change needed there.
+  **The previously-documented real-hardware finding this reverts is not
+  wrong and is not erased by this change**: ELF's own literal ratio was
+  found, on this exact hardware, to leave the water line at the
+  calibrated floor and the snow line so high that ordinary hand-
+  sculpting couldn't reach either - this revert reintroduces that
+  specific risk deliberately, as the user's explicit choice to start
+  from a known-ELF-faithful baseline before any further customization,
+  not a claim that the old finding no longer applies. If hand-sculpting
+  can't reach the water/snow lines at this literal default on real
+  hardware, `BASE_TEMPERATURE` is the value to place by hand next (both
+  values stay fully live-tunable in the Vegetation panel regardless of
+  these code defaults) - see `VegetationField.h`'s header note for ELF's
+  own equivalent (`decTemp()`/`incTemp()`, the 'q'/'a' operator keys).
 - **Separately identified, not a bug:** a real mound can visually wash
   from red toward white even with the debug-snow toggle off and even
   when nowhere near the actual snow threshold. Traced to

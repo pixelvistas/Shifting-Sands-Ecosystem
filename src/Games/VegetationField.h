@@ -107,44 +107,50 @@ band and NUTLINE (0.125) makes nut almost as permissive as shrub's
 SHRUBLINE (0.10) - a shape an earlier pass of this port also got
 backwards by using symmetric, similarly-sized offsets for fruit and nut.
 
-LIVING_RANGE_FRACTION is the one deliberate departure from ELF's exact
-ratio: ELF's literal LIVINGRANGE=200/255 (~0.78) consumes so much of
-the range that water/snow are left with almost no margin (~11% each)
-within any realistically-sized calibrated range - confirmed on real
-hardware, not just worked out on paper: with this ratio, a hand-built
-mound never reached the snowline and a hand-dug pit never reached the
-waterline, regardless of the calibrated ceiling used. Loosened to 0.5 -
-still clearly the dominant fraction (most of the range is livable land,
-matching ELF's intent), but leaves 25% margin on each end so ordinary
-sculpting can actually reach both lines.
+LIVING_RANGE_FRACTION now matches ELF's literal LIVINGRANGE=200/255
+(~0.78) exactly, per explicit user instruction (2026-09-24): match ELF's
+defaults first, before any custom tuning. A PREVIOUS session had loosened
+this to 0.5 after finding, on real hardware, that ELF's literal ratio
+consumes so much of the range that water/snow are left with almost no
+margin (~11% each) within any realistically-sized calibrated range - a
+hand-built mound never reached the snowline and a hand-dug pit never
+reached the waterline, regardless of the calibrated ceiling used. That
+finding wasn't wrong and isn't erased by reverting this value - it's the
+first thing to revisit if hand-sculpting can't reach the lines in
+practice at ELF's literal ratio. See BASE_TEMPERATURE's note below for
+why ELF itself has an answer to this that this port doesn't yet use.
 
-Loosening LIVING_RANGE_FRACTION is exactly why SHRUB/FRUIT/NUT_LINE
-have to be ratios of it rather than fixed fractions of the total range:
-fruit's band width is livingRange - 2*fruitLineOffset. At ELF's own
-numbers that's 0.78 - 2*0.235 ~= 31% of the range - plenty. Holding
-FRUITLINE fixed at 0.235 of the *total* range while shrinking living
-range to 0.5 crushes that band to 0.5 - 2*0.235 = 0.03 - about 3% of
-the range, a near-hairline a real pixel rarely lands in - confirmed on
-real hardware as "little to no red [fruit] ever appears." Deriving
-FRUIT_LINE_FRACTION = FRUIT_LINE_RATIO * LIVING_RANGE_FRACTION each
-frame instead keeps fruit's band at the same ~31%-of-living-range width
-ELF's own ratio implies, however LIVING_RANGE_FRACTION itself is tuned.
+SHRUB/FRUIT/NUT_LINE are ratios OF LIVING_RANGE_FRACTION rather than
+fixed fractions of the total range specifically so they stay correct
+regardless of what LIVING_RANGE_FRACTION is set to (ELF's own literal
+value now, or a loosened one again later): fruit's band width is
+livingRange - 2*fruitLineOffset. At ELF's own numbers that's
+0.78 - 2*0.235 ~= 31% of the range - plenty. Holding FRUITLINE fixed at
+0.235 of the *total* range while shrinking living range to 0.5 (as a
+previous, now-reverted departure did) crushed that band to
+0.5 - 2*0.235 = 0.03 - about 3% of the range, a near-hairline a real
+pixel rarely lands in - confirmed on real hardware as "little to no red
+[fruit] ever appears." Deriving FRUIT_LINE_FRACTION = FRUIT_LINE_RATIO *
+LIVING_RANGE_FRACTION each frame instead keeps fruit's band at the same
+~31%-of-living-range width ELF's own ratio implies, however
+LIVING_RANGE_FRACTION itself is tuned.
 
-TEMPERATURE/BASE_TEMPERATURE/MAX_TEMPERATURE_OFFSET are themselves now
-fractions of the same calibrated range (0..1-ish, not millimeters) for
-the same reason. BASE_TEMPERATURE's starting value is NOT ELF's literal
-default (temperature=200/255) either, and not just because
-LIVING_RANGE_FRACTION changed: even at ELF's own ratio, that value
-places the water line exactly at the calibrated floor with zero margin,
-which in ELF's own source is only usable because an operator manually
-lowers temperature via decTemp() ('a') before/during a session to open
-a reachable water band for their specific installation. This port has
-no equivalent manual dial (TEMPERATURE only rises from BASE_TEMPERATURE
-with activity, per the note below), so BASE_TEMPERATURE needs that
-one-time manual placement instead, done live against the real box: the
-Vegetation GUI panel's Temperature readout plus watching what a real dig
-and a real mound actually do is the fastest way to place it, the same
-way an ELF operator would have dialed 'q'/'a' once at setup time.
+TEMPERATURE/BASE_TEMPERATURE/MAX_TEMPERATURE_OFFSET are themselves
+fractions of the same calibrated range (0..1-ish, not millimeters).
+BASE_TEMPERATURE's starting value now matches ELF's literal default
+(temperature=200/255) too, per the same 2026-09-24 instruction - but
+note ELF's own literal value places the water line exactly at the
+calibrated floor with zero margin, which in ELF's own source is only
+usable because an operator manually lowers temperature via decTemp()
+('a') before/during a session to open a reachable water band for their
+specific installation. This port has no equivalent manual dial
+(TEMPERATURE only rises from BASE_TEMPERATURE with activity, per the
+note below), so if hand-sculpting can't reach the water/snow lines in
+practice at this literal default, BASE_TEMPERATURE is the value to place
+by hand instead - live against the real box, using the Vegetation GUI
+panel's Temperature readout plus watching what a real dig and a real
+mound actually do, the same way an ELF operator would have dialed
+'q'/'a' once at setup time.
 
 A CPU-side grid sampled from elevationAtKinectCoord() each frame,
 uploaded as a single texture that SandSurfaceRenderer's heightMapShader
@@ -292,8 +298,9 @@ public:
 	// activity sum entirely - see the header note.
 	static float ACTIVITY_NOISE_FLOOR;
 
-	// BDenvironment's LIVINGRANGE/255 - see the header note on why
-	// LIVING_RANGE_FRACTION deliberately departs from ELF's literal ratio.
+	// BDenvironment's literal LIVINGRANGE/255 - see the header note (a
+	// previous session's departure to 0.5 was reverted 2026-09-24 per
+	// explicit user instruction to match ELF's defaults first).
 	static float LIVING_RANGE_FRACTION;
 
 	// SHRUB_LINE_RATIO/FRUIT_LINE_RATIO/NUT_LINE_RATIO are each species'

@@ -4,17 +4,29 @@
 // Fraction of the calibrated elevation range (see setElevationRange() and
 // the header note), not millimeters. Starts equal to BASE_TEMPERATURE so
 // there's no artificial startup transient easing up from 0.
-float VegetationField::TEMPERATURE = 0.75f;
-// NOT ELF's literal default (200/255): with LIVING_RANGE_FRACTION at
-// ELF's own literal ~0.784, ANY value here leaves the water/snow lines
+//
+// ELF's literal default (BDenvironment's `private int temperature = 200`,
+// on ELF's own 0..255 scale) = 200/255 - see BASE_TEMPERATURE's comment
+// below for why this now matches ELF exactly, per explicit user
+// instruction (2026-09-24), reverting an earlier session's 0.75/
+// LIVING_RANGE_FRACTION=0.5 departure.
+float VegetationField::TEMPERATURE = 200.0f / 255.0f;
+// ELF's literal default, matching BDenvironment's `temperature = 200`
+// field (0..255 scale) exactly: 200/255. A PREVIOUS session had changed
+// this to 0.75 (paired with LIVING_RANGE_FRACTION=0.5) after real
+// hardware testing found ELF's own literal ratio - temperature and
+// LIVINGRANGE both defaulting to 200/255 - leaves the water/snow lines
 // so close to the calibrated floor/ceiling that ordinary hand-sculpting
-// can't reach them - confirmed on real hardware, not just in theory (see
-// LIVING_RANGE_FRACTION's own comment below for the fix). 0.75 pairs
-// with LIVING_RANGE_FRACTION=0.5 to center the living zone with 25%
-// margin on both ends - still needs on-site placement against the real
-// box, but this is a much more usable starting point than ELF's own
-// ratio for realistic sculpting.
-float VegetationField::BASE_TEMPERATURE = 0.75f;
+// can't reach them (a hand-built mound never reached the snowline, a
+// hand-dug pit never reached the waterline, at ELF's literal ratio).
+// That finding is real and still stands - it isn't erased by this
+// revert. Reverted to ELF's literal value anyway per explicit user
+// instruction (2026-09-24): fix the defaults to match ELF FIRST, then
+// retune from that known-ELF-faithful baseline if hand-sculpting can't
+// reach the lines in practice, rather than starting from an already-
+// customized value. Both stay fully live-tunable in the Vegetation
+// panel regardless of this code default.
+float VegetationField::BASE_TEMPERATURE = 200.0f / 255.0f;
 // First-guess scale, untested on real hardware - see the header note.
 // Average per-cell elevation change during active sculpting is expected
 // to be a small fraction of a millimeter per frame (only cells near a
@@ -28,24 +40,26 @@ float VegetationField::TEMPERATURE_EASE_RATE = 0.5f;
 // set with headroom above that so a still sandbox reliably reads as zero
 // activity rather than chasing sensor jitter - see the header note.
 float VegetationField::ACTIVITY_NOISE_FLOOR = 3.0f;
-// ELF's literal LIVINGRANGE=200/255 (~0.78) leaves almost no margin for
-// water/snow within any realistically-sized calibrated range (confirmed
-// on real hardware: a hand-built mound never reached the snowline, a
-// hand-dug pit never reached the waterline, at this ratio). Loosened to
-// 0.5 - still clearly the dominant fraction (most of the range is
-// livable land, matching ELF's intent), but leaves 25% margin on each
-// end instead of ELF's ~11%, so ordinary sculpting can actually reach
-// both lines. This is a deliberate departure from ELF's exact ratio,
-// not a bug - see BASE_TEMPERATURE's comment for the pairing.
-float VegetationField::LIVING_RANGE_FRACTION = 0.5f;
+// ELF's literal LIVINGRANGE=200/255 (~0.78) - see BASE_TEMPERATURE's
+// comment above: a previous session loosened this to 0.5 (paired with
+// BASE_TEMPERATURE=0.75) after real hardware testing found this literal
+// ratio leaves almost no margin for water/snow within any realistically-
+// sized calibrated range (a hand-built mound never reached the snowline,
+// a hand-dug pit never reached the waterline). That finding still
+// stands. Reverted to ELF's literal value anyway per explicit user
+// instruction (2026-09-24) - match ELF's defaults first, retune from
+// there if needed. Live-tunable in the Vegetation panel regardless.
+float VegetationField::LIVING_RANGE_FRACTION = 200.0f / 255.0f;
 // BDenvironment's SHRUBLINE=20/FRUITLINE=60/NUTLINE=25 each divided by
 // LIVINGRANGE=200 - i.e. fractions OF THE LIVING RANGE, not of the
-// total calibrated range. See the header note on why that distinction
-// is what actually preserves ELF's relative band shape once
-// LIVING_RANGE_FRACTION is loosened away from ELF's own value - fixing
-// these as fractions of the total range instead left fruit's band
-// crushed to a near-hairline width (confirmed on real hardware: "little
-// to no red ever appears" once living range was loosened to 0.5).
+// total calibrated range - matching ELF exactly regardless of what
+// LIVING_RANGE_FRACTION itself is currently set to (ELF's own literal
+// value again as of 2026-09-24, see that field's comment - but this
+// fraction-of-living-range framing is what would keep these bands
+// correctly proportioned even if it's retuned away from ELF's value
+// again later; fixing these as fractions of the TOTAL range instead
+// previously left fruit's band crushed to a near-hairline width when
+// living range was loosened, confirmed on real hardware).
 float VegetationField::SHRUB_LINE_RATIO = 20.0f / 200.0f;
 float VegetationField::FRUIT_LINE_RATIO = 60.0f / 200.0f;
 float VegetationField::NUT_LINE_RATIO = 25.0f / 200.0f;
