@@ -46,6 +46,15 @@ uniform vec2 vegetationGridOrigin;
 uniform float vegetationGridStep;
 uniform int debugShowSnow; // see the matching GL3 shader's header note
 uniform float nutVisibilityThreshold; // see the matching GL3 shader's header note
+uniform float waterLevelFrac; // see the matching GL3 shader's header note
+
+// See the matching GL3 shader's waterRamp() for the full rationale.
+vec3 waterRamp(float t)
+{
+    vec3 deep = vec3(0.000, 0.259, 0.616);    // #00429d
+    vec3 shallow = vec3(0.294, 0.451, 0.635); // #4b73a2
+    return mix(deep, shallow, clamp(t, 0.0, 1.0));
+}
 
 // See the matching GL3 shader's terrainRamp() for the full rationale.
 // 8-stop version, revised 2026-09-25 to drop the near-white middle stop.
@@ -86,8 +95,10 @@ void main()
 
         if (veg.a > 0.75)
         {
-            // Water - background ramp, see the matching GL3 shader's note.
-            color.rgb = terrainRamp(elevationNorm);
+            // Water - dedicated waterRamp(), renormalized to water's own
+            // reachable depth range - see the matching GL3 shader's note.
+            float waterDepthT = clamp(elevationNorm / max(waterLevelFrac, 0.0001), 0.0, 1.0);
+            color.rgb = waterRamp(waterDepthT);
         }
         else if (veg.a > 0.25)
         {

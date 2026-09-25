@@ -118,6 +118,34 @@ uniform int debugShowSnow;
 // a tie and not a contour line. Below this density, nut falls through
 // to the same negative-space default as a real tie instead.
 uniform float nutVisibilityThreshold;
+// TEMPERATURE - LIVING_RANGE_FRACTION (see VegetationField.h) - the
+// fraction-of-range threshold below which a cell classifies as water.
+// Needed here (2026-09-25) to renormalize water's OWN color gradient to
+// its actual reachable depth range - see waterRamp() below for why.
+uniform float waterLevelFrac;
+
+// Water-only gradient - see the header note (part 2) and waterLevelFrac
+// above. Deliberately separate from terrainRamp(): water previously
+// shared that ramp at the raw global elevationNorm, but water's whole
+// reachable depth only spans 0..waterLevelFrac (a fraction of the full
+// ramp) - meaning water's SHALLOW edge sampled terrainRamp() at
+// essentially the same t as the adjacent tie land just above the water
+// line, so the two rendered nearly identically right at the shoreline.
+// Confirmed on real hardware: water wasn't reading as distinctly blue
+// enough to tell apart from negative space or shrub. Fix, per explicit
+// user request: dedicate just the ramp's first two stops to water, and
+// renormalize elevationNorm to water's OWN range (see main() below) so
+// the full deep-blue-to-medium-blue span is used regardless of how
+// narrow the actual reachable water band is - deepest water is always
+// the darkest stop, the shoreline's shallowest water is always the
+// lighter one, and neither ever bleeds into the paler stops the
+// adjacent tie land uses.
+vec3 waterRamp(float t)
+{
+    vec3 deep = vec3(0.000, 0.259, 0.616);    // #00429d
+    vec3 shallow = vec3(0.294, 0.451, 0.635); // #4b73a2
+    return mix(deep, shallow, clamp(t, 0.0, 1.0));
+}
 
 // Background/elevation ramp - see the header note (part 2). The user's
 // own 8-stop diverging palette (confirmed colorblind-safe; revised
@@ -186,15 +214,16 @@ void main()
 
         if (veg.a > 0.75)
         {
-            // Water - background ramp (part 2 of the header note), not a
-            // species color. Water's actual elevationNorm range is narrow
-            // (bounded above by the water line) so this mostly samples the
-            // ramp's deep-blue end - still a real depth gradient, darker
-            // in deeper water, same "gets darker with depth" convention
-            // the ELF reference figure the user provided confirmed as
-            // correct, just no longer literal (0,0,h) (which hit true
-            // black at h=0, confusable with contour lines/void).
-            color.rgb = terrainRamp(elevationNorm);
+            // Water - dedicated waterRamp() (2026-09-25), not the shared
+            // terrainRamp() - see that function's comment for why. Depth
+            // renormalized to water's OWN reachable range (0..
+            // waterLevelFrac), not the raw global elevationNorm, so the
+            // full deep-to-shallow blue gradient is actually used - same
+            // "gets darker with depth" convention the ELF reference
+            // figure the user provided confirmed as correct, just
+            // rescaled to stay distinctly blue at every reachable depth.
+            float waterDepthT = clamp(elevationNorm / max(waterLevelFrac, 0.0001), 0.0, 1.0);
+            color.rgb = waterRamp(waterDepthT);
         }
         else if (veg.a > 0.25)
         {

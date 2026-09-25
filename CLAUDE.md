@@ -721,3 +721,28 @@ elevation readout, subtract a few mm margin from each. (3) Convert both
 mm targets to fractions of the calibrated range. (4) `TEMPERATURE =
 BASE_TEMPERATURE = ` the snow target's fraction. (5)
 `LIVING_RANGE_FRACTION = TEMPERATURE - ` the water target's fraction.
+
+**FIXED (2026-09-25) - water wasn't reading as distinctly blue enough
+to tell apart from negative space or shrub, once actually reachable.**
+Root cause: water shared `terrainRamp()` with tie/negative-space land,
+sampled at the raw global `elevationNorm`. Water's whole reachable
+depth only spans `0..waterLevelFrac` (a fraction of the full ramp,
+`~0.377` with the current measured values) - so water's SHALLOW edge
+sampled the ramp at essentially the same `t` as the adjacent tie land
+just above the water line, meaning the two rendered nearly identically
+right at the shoreline instead of showing a clear edge.
+
+Fix, per explicit user request: water now uses its own dedicated
+2-stop gradient (`#00429d`/`#4b73a2` - the user's first two ramp
+stops), via a new `waterRamp()` GLSL function, with `elevationNorm`
+renormalized to water's OWN reachable range
+(`elevationNorm / waterLevelFrac`) rather than the raw global one - so
+the full deep-blue-to-medium-blue span is always used regardless of how
+narrow the actual reachable water band is. Deepest water is always the
+darkest stop, shallowest reachable water is always the lighter one,
+neither ever bleeds into the paler stops tie land uses. Requires
+`waterLevelFrac` (`TEMPERATURE - LIVING_RANGE_FRACTION`) as a new
+uniform, computed in `SandSurfaceRenderer::drawSandbox()` and passed to
+both `heightMapShader.frag` variants (GL2/GL3, kept in sync). Tie/
+negative-space land is unaffected - still the full 8-stop `terrainRamp()`
+at the global `elevationNorm`.
