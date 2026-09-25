@@ -746,3 +746,33 @@ uniform, computed in `SandSurfaceRenderer::drawSandbox()` and passed to
 both `heightMapShader.frag` variants (GL2/GL3, kept in sync). Tie/
 negative-space land is unaffected - still the full 8-stop `terrainRamp()`
 at the global `elevationNorm`.
+
+**SECOND BUG in the same fix, found when actually tested on hardware
+(2026-09-25): water rendered as one flat, uniform color - no gradient
+visible at all.** The renormalization above (`elevationNorm /
+waterLevelFrac`) silently assumed water's elevation can reach all the
+way down to `elevationNorm=0` - the calibrated FLOOR (`elevationMin`).
+But `elevationMin` is never actually measured (`setElevationRange()`'s
+own header note: it just mirrors the calibrated CEILING symmetrically)
+- on this box it sits at `-142.606mm`, while the user's real measured
+max dig is only `-41.8mm`. Water's actual reachable `elevationNorm`
+therefore only ever spans `~0.353-0.377` - a tiny sliver near the TOP
+of the theoretical `0..waterLevelFrac=0.377` range the fix assumed -
+so `waterDepthT` stayed pinned near `1.0` (the lightest shade) no
+matter how deep the user actually dug.
+
+Fix: added `WATER_GRADIENT_FLOOR_FRAC` (default `0.353`, live-tunable)
+- the user's own measured `-41.8mm` dig limit expressed as a fraction
+of the current calibrated range, the same conversion already used for
+`waterLevelFrac` itself. Deliberately a SEPARATE, cosmetic-only
+constant, not a change to `elevationMin`/`elevationMax` themselves -
+changing those would have shifted the total calibrated range and
+invalidated the already-correct `TEMPERATURE=0.745`/
+`LIVING_RANGE_FRACTION=0.368` derivation (classification was already
+right; only the gradient's cosmetic renormalization was broken).
+`waterDepthT` now interpolates between `WATER_GRADIENT_FLOOR_FRAC`
+(darkest) and `waterLevelFrac` (lightest) instead of between `0` and
+`waterLevelFrac`. New `waterGradientFloorFrac` uniform, same wiring
+pattern as `waterLevelFrac`. Same caveat as the other measured
+constants: if this box's calibration or physical sand depth changes,
+re-measure the real dig limit and re-derive the fraction the same way.

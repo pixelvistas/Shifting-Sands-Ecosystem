@@ -123,23 +123,31 @@ uniform float nutVisibilityThreshold;
 // Needed here (2026-09-25) to renormalize water's OWN color gradient to
 // its actual reachable depth range - see waterRamp() below for why.
 uniform float waterLevelFrac;
+// See VegetationField::WATER_GRADIENT_FLOOR_FRAC's header note
+// (2026-09-25) - the elevationNorm fraction below which water is
+// already rendered at its darkest shade. NOT elevationNorm=0: that's
+// the calibrated floor, which is never actually measured and sits far
+// deeper than any real dig reaches (confirmed on real hardware: without
+// this, the gradient stayed pinned near its lightest shade the entire
+// time, since the reachable depth range never got close to 0). This is
+// the user's own measured real dig limit instead.
+uniform float waterGradientFloorFrac;
 
-// Water-only gradient - see the header note (part 2) and waterLevelFrac
-// above. Deliberately separate from terrainRamp(): water previously
-// shared that ramp at the raw global elevationNorm, but water's whole
-// reachable depth only spans 0..waterLevelFrac (a fraction of the full
-// ramp) - meaning water's SHALLOW edge sampled terrainRamp() at
-// essentially the same t as the adjacent tie land just above the water
-// line, so the two rendered nearly identically right at the shoreline.
-// Confirmed on real hardware: water wasn't reading as distinctly blue
-// enough to tell apart from negative space or shrub. Fix, per explicit
-// user request: dedicate just the ramp's first two stops to water, and
-// renormalize elevationNorm to water's OWN range (see main() below) so
-// the full deep-blue-to-medium-blue span is used regardless of how
-// narrow the actual reachable water band is - deepest water is always
-// the darkest stop, the shoreline's shallowest water is always the
-// lighter one, and neither ever bleeds into the paler stops the
-// adjacent tie land uses.
+// Water-only gradient - see the header note (part 2) and waterLevelFrac/
+// waterGradientFloorFrac above. Deliberately separate from
+// terrainRamp(): water previously shared that ramp at the raw global
+// elevationNorm, but water's whole reachable depth only spans a narrow
+// band near the water line - meaning water's SHALLOW edge sampled
+// terrainRamp() at essentially the same t as the adjacent tie land just
+// above the water line, so the two rendered nearly identically right at
+// the shoreline. Confirmed on real hardware: water wasn't reading as
+// distinctly blue enough to tell apart from negative space or shrub.
+// Fix, per explicit user request: dedicate just the ramp's first two
+// stops to water, and renormalize elevationNorm to water's OWN
+// REACHABLE range (waterGradientFloorFrac..waterLevelFrac, see main()
+// below) - not the theoretical 0..waterLevelFrac range, which is what
+// caused the SECOND bug (flat/uniform water, no visible gradient at
+// all) once the first fix was actually tested on hardware.
 vec3 waterRamp(float t)
 {
     vec3 deep = vec3(0.000, 0.259, 0.616);    // #00429d
@@ -216,13 +224,20 @@ void main()
         {
             // Water - dedicated waterRamp() (2026-09-25), not the shared
             // terrainRamp() - see that function's comment for why. Depth
-            // renormalized to water's OWN reachable range (0..
-            // waterLevelFrac), not the raw global elevationNorm, so the
-            // full deep-to-shallow blue gradient is actually used - same
-            // "gets darker with depth" convention the ELF reference
-            // figure the user provided confirmed as correct, just
-            // rescaled to stay distinctly blue at every reachable depth.
-            float waterDepthT = clamp(elevationNorm / max(waterLevelFrac, 0.0001), 0.0, 1.0);
+            // renormalized to water's OWN REACHABLE range
+            // (waterGradientFloorFrac..waterLevelFrac), not the
+            // theoretical 0..waterLevelFrac range (that was the fix's
+            // first version - confirmed on real hardware to still look
+            // flat, since the calibrated floor at elevationNorm=0 is
+            // never actually reachable by a real dig) - so the full
+            // deep-to-shallow blue gradient spans exactly what a real
+            // dig can produce. Same "gets darker with depth" convention
+            // the ELF reference figure the user provided confirmed as
+            // correct, just rescaled to stay distinctly blue AND show
+            // real variation at every reachable depth.
+            float waterDepthT = clamp(
+                (elevationNorm - waterGradientFloorFrac) / max(waterLevelFrac - waterGradientFloorFrac, 0.0001),
+                0.0, 1.0);
             color.rgb = waterRamp(waterDepthT);
         }
         else if (veg.a > 0.25)

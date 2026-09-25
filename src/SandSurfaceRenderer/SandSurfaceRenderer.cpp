@@ -266,6 +266,10 @@ void SandSurfaceRenderer::drawSandbox() {
     // renormalize its own color gradient to its actual reachable depth
     // range instead of the raw global elevationNorm.
     heightMapShader.setUniform1f("waterLevelFrac", VegetationField::TEMPERATURE - VegetationField::LIVING_RANGE_FRACTION);
+    // See VegetationField::WATER_GRADIENT_FLOOR_FRAC's header note -
+    // the second half of that same fix, since the theoretical 0..
+    // waterLevelFrac range alone still rendered flat on real hardware.
+    heightMapShader.setUniform1f("waterGradientFloorFrac", VegetationField::WATER_GRADIENT_FLOOR_FRAC);
 
     mesh.draw();
     heightMapShader.end();

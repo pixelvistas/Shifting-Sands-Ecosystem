@@ -94,6 +94,30 @@ float VegetationField::SPREAD_CHANCE_MULTIPLIER = 5.0f;
 // path to full density. Untested on real hardware for whether it looks
 // right - live-tunable in the Vegetation panel.
 float VegetationField::NUT_VISIBILITY_THRESHOLD = 0.05f;
+// Cosmetic-only, NOT a classification threshold (waterLevelFrac still
+// decides what IS water) - see the header note. Added 2026-09-25 to fix
+// the water gradient reading as flat/uniform with no visible depth
+// variation. The bug: the gradient was renormalized as
+// elevationNorm/waterLevelFrac, which silently assumes water can reach
+// all the way down to elevationNorm=0 - the calibrated FLOOR
+// (elevationMin). But elevationMin is never actually measured (see
+// setElevationRange()'s header note - it just mirrors the calibrated
+// CEILING symmetrically), so on this box elevationMin=-142.606mm while
+// the user's real measured max dig is only -41.8mm. Water's actual
+// reachable elevationNorm therefore only ever spans ~0.353-0.377 (a
+// sliver near the TOP of the 0..waterLevelFrac range the old code
+// assumed), so the old renormalization stayed pinned near the lightest
+// shade the entire time - confirmed on real hardware as "no gradient
+// visible, water looks flat."
+// 0.353f = the user's measured -41.8mm dig limit expressed as a
+// fraction of the CURRENT calibrated range (-142.606..142.606mm) - see
+// waterLevelFrac's own derivation for the same conversion. This is a
+// real-world measurement, not a guess, but it's tied to the CURRENT
+// calibrated range the same way TEMPERATURE/LIVING_RANGE_FRACTION are -
+// if elevationMin/elevationMax or the box's real dig depth change,
+// this needs re-deriving the same way (measure the real dig limit,
+// convert to a fraction of the then-current range).
+float VegetationField::WATER_GRADIENT_FLOOR_FRAC = 0.353f;
 float VegetationField::FOOD_PER_FULL_CELL = 255.0f;
 bool VegetationField::DEBUG_SHOW_SNOW = false;
 
@@ -610,5 +634,16 @@ void VegetationField::drawGui()
 	ImGui::Text("and not a contour line. Below this density, nut stays negative");
 	ImGui::Text("space (like a real tie) instead of committing to that color.");
 	ImGui::SliderFloat("Nut visibility threshold", &NUT_VISIBILITY_THRESHOLD, 0.0f, 0.3f);
+	ImGui::Separator();
+	ImGui::Text("Water gradient floor (cosmetic only - does NOT affect what");
+	ImGui::Text("counts as water, only how dark the deepest reachable water");
+	ImGui::Text("renders). The water color gradient assumes it can reach down");
+	ImGui::Text("to this elevation fraction; below it, water is already at the");
+	ImGui::Text("darkest shade. Set from a real measured max dig, not the");
+	ImGui::Text("calibrated floor (which is never actually measured - see the");
+	ImGui::Text("header note) - if the gradient looks flat/uniform again, dig");
+	ImGui::Text("as deep as you physically can, read elevationNorm off the raw");
+	ImGui::Text("elevation readout above, and set this to match.");
+	ImGui::SliderFloat("Water gradient floor (fraction)", &WATER_GRADIENT_FLOOR_FRAC, 0.0f, 1.0f);
 	ImGui::End();
 }

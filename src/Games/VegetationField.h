@@ -421,6 +421,20 @@ public:
 	// shader as a uniform - see SandSurfaceRenderer::drawSandbox().
 	static float NUT_VISIBILITY_THRESHOLD;
 
+	// Cosmetic-only water-gradient floor (2026-09-25) - NOT a
+	// classification threshold, waterLevelFrac still decides what IS
+	// water. Fixes the water gradient reading as flat/uniform: it was
+	// renormalized as elevationNorm/waterLevelFrac, silently assuming
+	// water reaches down to elevationNorm=0 (the calibrated floor,
+	// elevationMin) - but that floor is never actually measured (just
+	// mirrors the calibrated ceiling symmetrically, see
+	// setElevationRange()'s header note), so it sits far deeper than
+	// any real dig can reach. This is the user's own measured real dig
+	// limit instead, expressed as a fraction of the current calibrated
+	// range - see the .cpp for the exact derivation. Read directly by
+	// the shader as a uniform - see SandSurfaceRenderer::drawSandbox().
+	static float WATER_GRADIENT_FLOOR_FRAC;
+
 	// Debug aid only - normally snow renders as flat white, identical to
 	// un-grown negative-space land (see heightMapShader.frag's header
 	// note), which makes it impossible to tell by eye whether a blank
