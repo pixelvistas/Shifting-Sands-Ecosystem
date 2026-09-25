@@ -120,30 +120,36 @@ uniform int debugShowSnow;
 uniform float nutVisibilityThreshold;
 
 // Background/elevation ramp - see the header note (part 2). The user's
-// own 7-stop diverging palette (confirmed colorblind-safe), used for
-// water and negative-space/tie land: the parts of the picture that are
-// already purely elevation-driven and have no per-cell CA state to
-// preserve. Piecewise-linear through all 7 stops rather than just
-// picking two endpoints, so the full range - deep water up through
-// unvegetated high ground - has real tonal variety instead of a flat
-// wash. Values are the user-supplied hex codes converted to 0..1 float.
+// own 8-stop diverging palette (confirmed colorblind-safe; revised
+// 2026-09-25 from an earlier 7-stop version specifically to drop the
+// near-white middle stop that risked washing out against light-colored
+// sand under a projector that can only add light, never subtract it -
+// every stop here keeps real saturation), used for water and negative-
+// space/tie land: the parts of the picture that are already purely
+// elevation-driven and have no per-cell CA state to preserve.
+// Piecewise-linear through all 8 stops rather than just picking two
+// endpoints, so the full range - deep water up through unvegetated high
+// ground - has real tonal variety instead of a flat wash. Values are the
+// user-supplied hex codes converted to 0..1 float.
 vec3 terrainRamp(float t)
 {
     vec3 c0 = vec3(0.000, 0.259, 0.616); // #00429d
-    vec3 c1 = vec3(0.361, 0.514, 0.651); // #5c83a6
-    vec3 c2 = vec3(0.647, 0.761, 0.741); // #a5c2bd
-    vec3 c3 = vec3(1.000, 1.000, 0.878); // #ffffe0
-    vec3 c4 = vec3(1.000, 0.647, 0.620); // #ffa59e
-    vec3 c5 = vec3(0.867, 0.298, 0.396); // #dd4c65
-    vec3 c6 = vec3(0.576, 0.000, 0.227); // #93003a
+    vec3 c1 = vec3(0.294, 0.451, 0.635); // #4b73a2
+    vec3 c2 = vec3(0.494, 0.639, 0.690); // #7ea3b0
+    vec3 c3 = vec3(0.729, 0.824, 0.773); // #bad2c5
+    vec3 c4 = vec3(0.847, 0.792, 0.749); // #d8cabf
+    vec3 c5 = vec3(0.737, 0.580, 0.596); // #bc9498
+    vec3 c6 = vec3(0.651, 0.357, 0.420); // #a65b6b
+    vec3 c7 = vec3(0.576, 0.000, 0.227); // #93003a
 
-    t = clamp(t, 0.0, 1.0) * 6.0;
+    t = clamp(t, 0.0, 1.0) * 7.0;
     if (t < 1.0) return mix(c0, c1, t);
     if (t < 2.0) return mix(c1, c2, t - 1.0);
     if (t < 3.0) return mix(c2, c3, t - 2.0);
     if (t < 4.0) return mix(c3, c4, t - 3.0);
     if (t < 5.0) return mix(c4, c5, t - 4.0);
-    return mix(c5, c6, t - 5.0);
+    if (t < 6.0) return mix(c5, c6, t - 5.0);
+    return mix(c6, c7, t - 6.0);
 }
 
 void main()
