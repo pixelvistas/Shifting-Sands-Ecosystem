@@ -776,3 +776,21 @@ right; only the gradient's cosmetic renormalization was broken).
 pattern as `waterLevelFrac`. Same caveat as the other measured
 constants: if this box's calibration or physical sand depth changes,
 re-measure the real dig limit and re-derive the fraction the same way.
+
+**RETUNED again (2026-09-25), same day, once actually tested on
+hardware:** `0.353` (the exact measured dig limit) turned out too
+strict. The water line sits at `~-35.1mm` and the absolute dig limit is
+`-41.8mm`, so the FULL gradient only had `~6.8mm` of real depth to work
+with - reaching full dark required near-maximal digging every time,
+with almost no margin. User's exact words: "I really have to dig for
+it... seeing a lot of the lighter shade, and very little of the darker
+shade." Retargeted to full dark at just **3mm past the water line**
+instead of the absolute dig limit - comfortably, reliably reachable,
+leaving `~3.8mm` of margin below that where water simply stays fully
+dark rather than needing to be re-found on every dig.
+`WATER_GRADIENT_FLOOR_FRAC` is now `0.366` (`waterLevelMM - 3mm`
+expressed as a fraction of the current calibrated range). General
+lesson for any future retuning of this value: target a few mm past the
+water line, not the absolute measured dig limit - the dig limit answers
+"is any gradient reachable at all," not "where should full darkness
+sit."

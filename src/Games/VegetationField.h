@@ -429,10 +429,15 @@ public:
 	// elevationMin) - but that floor is never actually measured (just
 	// mirrors the calibrated ceiling symmetrically, see
 	// setElevationRange()'s header note), so it sits far deeper than
-	// any real dig can reach. This is the user's own measured real dig
-	// limit instead, expressed as a fraction of the current calibrated
-	// range - see the .cpp for the exact derivation. Read directly by
-	// the shader as a uniform - see SandSurfaceRenderer::drawSandbox().
+	// any real dig can reach.
+	// NOT set to the user's absolute measured dig limit either (a first
+	// attempt at this value was, and still required near-maximal
+	// digging with almost no margin - see the .cpp for the real-hardware
+	// feedback that caught this). Set instead to just a few mm past the
+	// water line - comfortably, reliably reachable - expressed as a
+	// fraction of the current calibrated range; see the .cpp for the
+	// exact derivation. Read directly by the shader as a uniform - see
+	// SandSurfaceRenderer::drawSandbox().
 	static float WATER_GRADIENT_FLOOR_FRAC;
 
 	// Debug aid only - normally snow renders as flat white, identical to

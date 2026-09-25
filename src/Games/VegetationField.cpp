@@ -109,15 +109,23 @@ float VegetationField::NUT_VISIBILITY_THRESHOLD = 0.05f;
 // assumed), so the old renormalization stayed pinned near the lightest
 // shade the entire time - confirmed on real hardware as "no gradient
 // visible, water looks flat."
-// 0.353f = the user's measured -41.8mm dig limit expressed as a
-// fraction of the CURRENT calibrated range (-142.606..142.606mm) - see
-// waterLevelFrac's own derivation for the same conversion. This is a
-// real-world measurement, not a guess, but it's tied to the CURRENT
-// calibrated range the same way TEMPERATURE/LIVING_RANGE_FRACTION are -
-// if elevationMin/elevationMax or the box's real dig depth change,
-// this needs re-deriving the same way (measure the real dig limit,
-// convert to a fraction of the then-current range).
-float VegetationField::WATER_GRADIENT_FLOOR_FRAC = 0.353f;
+// RETUNED 2026-09-25, superseding an initial 0.353f. That value put the
+// floor at the user's exact measured -41.8mm dig limit - but the water
+// line itself sits at ~-35.1mm, so the FULL gradient only had ~6.8mm of
+// real depth to work with, and reaching full dark required near-
+// maximal digging every time with almost no margin. Confirmed on real
+// hardware: "I really have to dig for it... seeing a lot of the
+// lighter shade, and very little of the darker shade." Retargeted to
+// full dark at just 3mm past the water line instead of the absolute
+// dig limit - comfortably reachable, not an edge-of-ability effort,
+// leaving ~3.8mm of margin below that where water simply stays fully
+// dark. 0.366f = (waterLevelMM - 3) expressed as a fraction of the
+// CURRENT calibrated range (-142.606..142.606mm) - see waterLevelFrac's
+// own derivation for the same conversion. Same caveat as the other
+// measured constants: if elevationMin/elevationMax, TEMPERATURE, or
+// LIVING_RANGE_FRACTION change, re-derive this the same way (a few mm
+// past whatever the water line then is, not the absolute dig limit).
+float VegetationField::WATER_GRADIENT_FLOOR_FRAC = 0.366f;
 float VegetationField::FOOD_PER_FULL_CELL = 255.0f;
 bool VegetationField::DEBUG_SHOW_SNOW = false;
 
