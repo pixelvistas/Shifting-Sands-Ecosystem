@@ -107,18 +107,21 @@ band and NUTLINE (0.125) makes nut almost as permissive as shrub's
 SHRUBLINE (0.10) - a shape an earlier pass of this port also got
 backwards by using symmetric, similarly-sized offsets for fruit and nut.
 
-LIVING_RANGE_FRACTION now matches ELF's literal LIVINGRANGE=200/255
-(~0.78) exactly, per explicit user instruction (2026-09-24): match ELF's
-defaults first, before any custom tuning. A PREVIOUS session had loosened
-this to 0.5 after finding, on real hardware, that ELF's literal ratio
-consumes so much of the range that water/snow are left with almost no
-margin (~11% each) within any realistically-sized calibrated range - a
-hand-built mound never reached the snowline and a hand-dug pit never
-reached the waterline, regardless of the calibrated ceiling used. That
-finding wasn't wrong and isn't erased by reverting this value - it's the
-first thing to revisit if hand-sculpting can't reach the lines in
-practice at ELF's literal ratio. See BASE_TEMPERATURE's note below for
-why ELF itself has an answer to this that this port doesn't yet use.
+LIVING_RANGE_FRACTION is 0.368 (2026-09-25), departed from ELF's literal
+LIVINGRANGE=200/255 (~0.78) a second time, per explicit user
+confirmation - the first revert (2026-09-24, matching ELF's literal
+value) turned out impractical on real hardware, this time confirmed by
+direct measurement rather than just the earlier general finding: on
+this box's calibrated range (-142.606..142.606mm), the user's own
+maximum hand-dig only reaches -41.8mm, and even TEMPERATURE pushed to
+its practical ceiling of 1.0 (higher makes snow literally unreachable)
+only gets the water line to -81mm at ELF's literal fraction - no amount
+of TEMPERATURE tuning alone can close a 39mm+ gap, confirming
+LIVING_RANGE_FRACTION itself had to move, not just BASE_TEMPERATURE.
+0.368 is solved directly from two real measurements (dig limit -41.8mm,
+mound limit +80mm, from which BASE_TEMPERATURE=0.745 is also solved -
+see that field's comment) rather than guessed the way the original 0.5
+departure was.
 
 SHRUB/FRUIT/NUT_LINE are ratios OF LIVING_RANGE_FRACTION rather than
 fixed fractions of the total range specifically so they stay correct
@@ -153,21 +156,26 @@ System with HIGHER TEMPERATURES... areas under water," i.e. that
 figure's visible water required an operator-raised temperature, this
 exact mechanism.
 
-Set to 0.9 (2026-09-24) - using ELF's own lever (temperature above
-LIVING_RANGE_FRACTION) rather than a new one. With LIVING_RANGE_FRACTION
-at ELF's literal ~0.784, only ~0.216 of the range is left as slack,
-split between water headroom (TEMPERATURE - LIVING_RANGE_FRACTION) and
-snow headroom (1.0 - TEMPERATURE) - the same budget, so both can't be
-maxed at once. 0.9 splits it so ~12% of the range is reachable as water
-and ~10% as snow - both present, neither dominant, per the user's
-explicit goal ("water where it makes sense, snow where it makes
-sense"). First-guess starting point, untested on real hardware - if
-hand-sculpting can't reach the water/snow lines in practice,
-BASE_TEMPERATURE is the value to place by hand next - live against the
-real box, using the Vegetation GUI panel's Temperature readout plus
-watching what a real dig and a real mound actually do, the same way an
-ELF operator would have dialed
-'q'/'a' once at setup time.
+Set to 0.745 (2026-09-25), superseding an earlier first-guess of 0.9 -
+still using ELF's own lever (temperature above LIVING_RANGE_FRACTION)
+rather than a new one, but now solved directly from two real hardware
+measurements instead of guessed. The 0.9/LIVING_RANGE_FRACTION=0.784
+pairing put the water line at -104.5mm, confirmed unreachable (max
+hand-dig -41.8mm) with no fix available from TEMPERATURE alone (see
+LIVING_RANGE_FRACTION's comment for why). With both fields now solved
+together from measured targets - water line -35mm (7mm margin under
+the -41.8mm dig limit) and snow line +70mm (10mm margin under a
+measured +80mm mound limit) - on this box's calibrated range
+(-142.606..142.606mm): snowLevelFrac = TEMPERATURE directly gives
+0.745, and waterLevelFrac = TEMPERATURE - LIVING_RANGE_FRACTION gives
+LIVING_RANGE_FRACTION = 0.368.
+This is still a per-installation placement, same as ELF's own operator
+dialing 'q'/'a' at setup time, just measured properly this time rather
+than guessed - if this box's calibration or physical sand depth changes
+later, both values should be re-derived the same way: measure the real
+dig/mound limits via the Vegetation panel's raw elevation readout, then
+solve for TEMPERATURE/LIVING_RANGE_FRACTION from those two targets
+directly, rather than hand-tuning sliders by feel.
 
 A CPU-side grid sampled from elevationAtKinectCoord() each frame,
 uploaded as a single texture that SandSurfaceRenderer's heightMapShader

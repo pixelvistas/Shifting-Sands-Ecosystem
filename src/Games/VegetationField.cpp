@@ -8,10 +8,8 @@
 // NOT literally 200/255 (ELF's factory-default `temperature` field) -
 // see BASE_TEMPERATURE's comment below for why that exact value makes
 // water mathematically unreachable, confirmed directly from
-// BDenvironment.stepCells()/incTemp(), and why this starts above
-// LIVING_RANGE_FRACTION instead, matching what an ELF operator is
-// expected to do at session start (2026-09-24).
-float VegetationField::TEMPERATURE = 0.9f;
+// BDenvironment.stepCells()/incTemp().
+float VegetationField::TEMPERATURE = 0.745f;
 // ELF's own factory-default `temperature` field is literally 200/255,
 // the SAME value as LIVINGRANGE's 200/255 - which makes
 // BDenvironment.stepCells()'s water condition (`height < temperature -
@@ -20,25 +18,24 @@ float VegetationField::TEMPERATURE = 0.9f;
 // decTemp() (ELF's 'q'/'a' operator keys) exist specifically so an
 // operator raises temperature above LIVINGRANGE during a session to
 // open a real water band - ELF ships in a deliberate zero-water cold
-// start, not a bug. A real ELF reference figure the user provided
-// (captioned "ELF Dynamic System with HIGHER TEMPERATURES... areas
-// under water") confirms this directly: substantial visible water there
-// required an operator-raised temperature, exactly this mechanism.
+// start, not a bug.
 //
-// So starting at ELF's literal 200/255 here would reproduce that same
-// zero-water cold start, not a usable default - this uses ELF's own
-// lever instead (temperature raised above LIVING_RANGE_FRACTION) rather
-// than inventing a new one. With LIVING_RANGE_FRACTION at ELF's literal
-// ~0.784 (see that field's comment), only 1-0.784=~0.216 of the range is
-// left as slack, split between water headroom (how far TEMPERATURE
-// exceeds LIVING_RANGE_FRACTION) and snow headroom (how far it stays
-// under 1.0) - the two draw from the same budget, so both can't be maxed
-// at once. 0.9 splits that budget so ~12% of the range is reachable as
-// water and ~10% as snow - both genuinely present, neither dominant, a
-// first-guess starting point per the user's explicit goal ("water where
-// it makes sense, snow where it makes sense") - untested on real
-// hardware, retune live in the Vegetation panel from here.
-float VegetationField::BASE_TEMPERATURE = 0.9f;
+// RETUNED 2026-09-25 with real hardware measurements, superseding the
+// 0.9 first-guess this was set to the day before. That 0.9 value paired
+// with LIVING_RANGE_FRACTION at ELF's literal ~0.784 put the water line
+// at -104.5mm on this box's calibrated range (-142.606..142.606mm) -
+// confirmed by direct measurement that the user's own max hand-dig only
+// reaches -41.8mm, and even TEMPERATURE=1.0 (the practical ceiling -
+// anything higher makes snow literally unreachable) only gets water to
+// -81mm. No amount of TEMPERATURE tuning alone could close that gap -
+// LIVING_RANGE_FRACTION itself needed to move (see that field's
+// comment). With the user's second real measurement (max hand-built
+// mound reaches +80mm), both lines are now solved for directly from
+// measured targets rather than guessed: water line -35mm (7mm margin
+// under the -41.8mm dig limit), snow line +70mm (10mm margin under the
+// +80mm mound limit). Solving snowLevelFrac=TEMPERATURE for a snow line
+// of 70mm on this range gives 0.745.
+float VegetationField::BASE_TEMPERATURE = 0.745f;
 // First-guess scale, untested on real hardware - see the header note.
 // Average per-cell elevation change during active sculpting is expected
 // to be a small fraction of a millimeter per frame (only cells near a
@@ -52,16 +49,17 @@ float VegetationField::TEMPERATURE_EASE_RATE = 0.5f;
 // set with headroom above that so a still sandbox reliably reads as zero
 // activity rather than chasing sensor jitter - see the header note.
 float VegetationField::ACTIVITY_NOISE_FLOOR = 3.0f;
-// ELF's literal LIVINGRANGE=200/255 (~0.78) - see BASE_TEMPERATURE's
-// comment above: a previous session loosened this to 0.5 (paired with
-// BASE_TEMPERATURE=0.75) after real hardware testing found this literal
-// ratio leaves almost no margin for water/snow within any realistically-
-// sized calibrated range (a hand-built mound never reached the snowline,
-// a hand-dug pit never reached the waterline). That finding still
-// stands. Reverted to ELF's literal value anyway per explicit user
-// instruction (2026-09-24) - match ELF's defaults first, retune from
-// there if needed. Live-tunable in the Vegetation panel regardless.
-float VegetationField::LIVING_RANGE_FRACTION = 200.0f / 255.0f;
+// ELF's literal LIVINGRANGE=200/255 (~0.78) departed from again on
+// 2026-09-25, per explicit user confirmation, after hardware measurement
+// (not just the general finding from before) confirmed it impractical
+// on this box - see BASE_TEMPERATURE's comment for the exact numbers
+// (max hand-dig -41.8mm couldn't reach even a TEMPERATURE=1.0 water
+// line of -81mm; the fraction itself had to move). Solved directly from
+// two real measurements this time (dig limit -41.8mm, mound limit
+// +80mm) rather than guessed: LIVING_RANGE_FRACTION = TEMPERATURE(0.745)
+// - waterLevelFrac(for a -35mm water line on this box's calibrated
+// range) = 0.368. Live-tunable in the Vegetation panel regardless.
+float VegetationField::LIVING_RANGE_FRACTION = 0.368f;
 // BDenvironment's SHRUBLINE=20/FRUITLINE=60/NUTLINE=25 each divided by
 // LIVINGRANGE=200 - i.e. fractions OF THE LIVING RANGE, not of the
 // total calibrated range - matching ELF exactly regardless of what

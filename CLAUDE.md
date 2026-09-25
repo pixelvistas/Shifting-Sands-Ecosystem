@@ -673,3 +673,51 @@ any pending commit, so they're not a merge risk) and do a full Release
 rebuild before trusting ANY visual observation going forward. Until
 that happens, water/snow reachability in particular should be treated
 as re-opened, not resolved.
+
+**UPDATE (2026-09-25) - pull completed, water/snow reachability re-
+investigated on current code and genuinely resolved this time, with
+real measurements instead of guesses.** First check on current code:
+elevation range bounds A/B were STILL at an arbitrary `-300.000`/
+`300.000` mm - the exact same recurring bug as before (Magic Sand's own
+measured ceiling reads 142.6mm) - so the very first real observation
+after finally syncing reproduced a known, already-understood issue.
+Fixed the same way as before: "Reset range to ±calibrated ceiling"
+button, snapping to `-142.606`/`142.606`.
+
+That alone wasn't enough - even with a correctly calibrated range,
+`TEMPERATURE=0.9`/`LIVING_RANGE_FRACTION` at ELF's literal `~0.784`
+(from the 2026-09-24 revert) put the water line at `-104.5mm`. Rather
+than guess whether that's reachable, asked the user to directly measure
+their box's real limits via the Vegetation panel's raw-elevation
+readout: **max hand-dig = -41.8mm, max hand-built mound = +80mm**.
+-41.8mm doesn't even reach the best case achievable via TEMPERATURE
+alone (TEMPERATURE=1.0, sacrificing all snow headroom, only gets water
+to -81mm) - confirming with direct measurement, not just the earlier
+general finding, that ELF's literal `LIVING_RANGE_FRACTION` is
+impractical on this specific box and needed to move, not just
+`BASE_TEMPERATURE`.
+
+**Both values now solved algebraically from the two real measurements**
+rather than guessed the way the original `0.5` departure and the `0.9`
+first-guess both were: target water line -35mm (7mm margin under the
+dig limit), target snow line +70mm (10mm margin under the mound limit).
+On this box's calibrated range, `snowLevelFrac = TEMPERATURE` solves
+directly to **0.745**, and `waterLevelFrac = TEMPERATURE -
+LIVING_RANGE_FRACTION` solves to **LIVING_RANGE_FRACTION = 0.368**.
+User explicitly confirmed reverting `LIVING_RANGE_FRACTION` away from
+ELF's literal value a second time, now with direct measured
+justification rather than a general prior finding. Both constants
+updated in `VegetationField.cpp`/`.h` with the full derivation in
+comments, so if this box's calibration or physical sand depth changes
+later, the same method (measure dig/mound limits via the panel, solve
+for both fractions from the two targets) can be redone rather than
+hand-tuning sliders by feel again.
+
+**Template for redoing this on a different installation, or if this
+box's setup changes:** (1) click "Reset range to ±calibrated ceiling"
+first, always - rules out the recurring miscalibration bug before
+touching anything else. (2) Measure real dig/mound limits via the raw-
+elevation readout, subtract a few mm margin from each. (3) Convert both
+mm targets to fractions of the calibrated range. (4) `TEMPERATURE =
+BASE_TEMPERATURE = ` the snow target's fraction. (5)
+`LIVING_RANGE_FRACTION = TEMPERATURE - ` the water target's fraction.
