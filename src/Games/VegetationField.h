@@ -306,18 +306,6 @@ public:
 	// operator can see what's driving it, not for agents to query.
 	float getActivityLevel() const { return activityLevel; }
 
-	// Raw mm elevation of the current water/snow line - the same
-	// derivation drawGui()'s "Water line: X mm  Snow line: Y mm" readout
-	// already does (reorders elevationMin/elevationMax by actual value,
-	// same guard normalizedElevation() uses), now exposed so
-	// SandSurfaceRenderer can render live threshold-highlight rings on
-	// the sand itself (2026-09-28 legibility pass - see CLAUDE.md),
-	// instead of this being panel-only. Live values, not snapshots - both
-	// move as TEMPERATURE eases with sculpting activity, same as the
-	// panel readout does.
-	float getWaterLineMM() const;
-	float getSnowLineMM() const;
-
 	// Scales a full (1.0) density's worth of eaten plant into food -
 	// matches ELF's counts being added to food directly on a 0..255 scale.
 	static float FOOD_PER_FULL_CELL;

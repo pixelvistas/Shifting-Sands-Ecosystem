@@ -173,15 +173,6 @@ private:
     // Contourlines
     float contourLineDistance, contourLineFactor;
     bool drawContourLines; // Flag if topographic contour lines are enabled
-    // Live-highlighted rings tracing the CURRENT water/snow line exactly
-    // (not a fixed interval like the topo lines above) - 2026-09-28
-    // legibility pass, see CLAUDE.md. Reuses the same contour-FBO
-    // pipeline as drawContourLines, just tested against
-    // VegetationField::getWaterLineMM()/getSnowLineMM() instead of a
-    // fixed mm spacing - see heightMapShader.frag's drawThresholdLines
-    // block. Defaults ON, unlike drawContourLines (off by default for an
-    // unrelated aesthetic reason) - this IS the deliverable.
-    bool drawThresholdLines;
     
     // GUI Main interface and Modal
     bool displayGui;

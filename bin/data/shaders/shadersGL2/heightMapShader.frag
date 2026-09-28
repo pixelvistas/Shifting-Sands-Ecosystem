@@ -49,11 +49,6 @@ uniform float nutVisibilityThreshold; // see the matching GL3 shader's header no
 uniform float waterLevelFrac; // see the matching GL3 shader's header note
 uniform float waterGradientFloorFrac; // see the matching GL3 shader's header note
 uniform float snowLevelFrac; // see the matching GL3 shader's header note
-uniform int drawThresholdLines; // see the matching GL3 shader's header note
-uniform float waterLineMM; // see the matching GL3 shader's header note
-uniform float snowLineMM; // see the matching GL3 shader's header note
-uniform float contourLineFboScale; // see the matching GL3 shader's header note
-uniform float contourLineFboOffset; // see the matching GL3 shader's header note
 
 // See the matching GL3 shader's waterRamp() for the full rationale.
 vec3 waterRamp(float t)
@@ -144,72 +139,44 @@ void main()
         }
     }
 
-    if (drawContourLines == 1 || drawThresholdLines == 1)
+    if (drawContourLines == 1)
     {
-        // Shared corner fetch - see the matching GL3 shader's note.
-        float raw0=texture2DRect(pixelCornerElevationSampler,vec2(gl_FragCoord.x,gl_FragCoord.y)).r;
-        float raw1=texture2DRect(pixelCornerElevationSampler,vec2(gl_FragCoord.x+1.0,gl_FragCoord.y)).r;
-        float raw2=texture2DRect(pixelCornerElevationSampler,vec2(gl_FragCoord.x,gl_FragCoord.y+1.0)).r;
-        float raw3=texture2DRect(pixelCornerElevationSampler,vec2(gl_FragCoord.x+1.0,gl_FragCoord.y+1.0)).r;
+        // Contour line computation
+        /* Calculate the contour line interval containing each pixel corner by evaluating the half-pixel offset elevation texture: */
+        float corner0=floor(texture2DRect(pixelCornerElevationSampler,vec2(gl_FragCoord.x,gl_FragCoord.y)).r*contourLineFactor);
+        float corner1=floor(texture2DRect(pixelCornerElevationSampler,vec2(gl_FragCoord.x+1.0,gl_FragCoord.y)).r*contourLineFactor);
+        float corner2=floor(texture2DRect(pixelCornerElevationSampler,vec2(gl_FragCoord.x,gl_FragCoord.y+1.0)).r*contourLineFactor);
+        float corner3=floor(texture2DRect(pixelCornerElevationSampler,vec2(gl_FragCoord.x+1.0,gl_FragCoord.y+1.0)).r*contourLineFactor);
 
-        if (drawContourLines == 1)
+        /* Find all pixel edges that cross at least one contour line: */
+        int edgeMask=0;
+        int numEdges=0;
+        if(corner0!=corner1)
         {
-            // Contour line computation
-            /* Calculate the contour line interval containing each pixel corner: */
-            float corner0=floor(raw0*contourLineFactor);
-            float corner1=floor(raw1*contourLineFactor);
-            float corner2=floor(raw2*contourLineFactor);
-            float corner3=floor(raw3*contourLineFactor);
-
-            /* Find all pixel edges that cross at least one contour line: */
-            int edgeMask=0;
-            int numEdges=0;
-            if(corner0!=corner1)
-            {
-                edgeMask+=1;
-                ++numEdges;
-            }
-            if(corner2!=corner3)
-            {
-                edgeMask+=2;
-                ++numEdges;
-            }
-            if(corner0!=corner2)
-            {
-                edgeMask+=4;
-                ++numEdges;
-            }
-            if(corner1!=corner3)
-            {
-                edgeMask+=8;
-                ++numEdges;
-            }
-
-            /* Check for all cases in which the pixel should be colored as a topographic contour line: */
-            if(numEdges>2||edgeMask==3||edgeMask==12||(numEdges==2&&mod(floor(gl_FragCoord.x)+floor(gl_FragCoord.y),2.0)==0.0))
-            {
-                /* Topographic contour lines are rendered in black: */
-                color=vec4(0.0,0.0,0.0,1.0);
-            }
+            edgeMask+=1;
+            ++numEdges;
+        }
+        if(corner2!=corner3)
+        {
+            edgeMask+=2;
+            ++numEdges;
+        }
+        if(corner0!=corner2)
+        {
+            edgeMask+=4;
+            ++numEdges;
+        }
+        if(corner1!=corner3)
+        {
+            edgeMask+=8;
+            ++numEdges;
         }
 
-        // Threshold rings - see the matching GL3 shader's note.
-        if (drawThresholdLines == 1 && hasVegetation == 1)
+        /* Check for all cases in which the pixel should be colored as a topographic contour line: */
+        if(numEdges>2||edgeMask==3||edgeMask==12||(numEdges==2&&mod(floor(gl_FragCoord.x)+floor(gl_FragCoord.y),2.0)==0.0))
         {
-            float e0=raw0*contourLineFboScale+contourLineFboOffset;
-            float e1=raw1*contourLineFboScale+contourLineFboOffset;
-            float e2=raw2*contourLineFboScale+contourLineFboOffset;
-            float e3=raw3*contourLineFboScale+contourLineFboOffset;
-
-            bool crossesWater = (e0<waterLineMM)!=(e1<waterLineMM) || (e2<waterLineMM)!=(e3<waterLineMM)
-                              || (e0<waterLineMM)!=(e2<waterLineMM) || (e1<waterLineMM)!=(e3<waterLineMM);
-            bool crossesSnow  = (e0<snowLineMM )!=(e1<snowLineMM ) || (e2<snowLineMM )!=(e3<snowLineMM )
-                              || (e0<snowLineMM )!=(e2<snowLineMM ) || (e1<snowLineMM )!=(e3<snowLineMM );
-
-            if (crossesWater)
-                color = vec4(0.549, 0.078, 0.863, 1.0); // bright violet
-            else if (crossesSnow)
-                color = vec4(0.863, 0.706, 1.000, 1.0); // pale lilac
+            /* Topographic contour lines are rendered in black: */
+            color=vec4(0.0,0.0,0.0,1.0);
         }
     }
 

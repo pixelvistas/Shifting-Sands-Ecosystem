@@ -141,26 +141,6 @@ uniform float waterGradientFloorFrac;
 // addition to waterLevelFrac.
 uniform float snowLevelFrac;
 
-// Threshold rings (2026-09-28 legibility pass, see CLAUDE.md) - live
-// highlighted rings tracing exactly where the CURRENT water/snow line
-// sits, distinct from the fixed-interval topographic contour lines
-// above. Deliberately compared in raw millimeters, not yet another
-// normalized 0..1 scale - this codebase already has THREE different
-// elevation scales in play (VegetationField's calibrated range, this
-// contour FBO's own generic colormap-derived range, and raw mm), and
-// mixing them up has been the root cause of nearly every bug found this
-// session; comparing corners and thresholds both in real mm sidesteps
-// that class of bug entirely rather than adding a fourth scale.
-uniform int drawThresholdLines;
-uniform float waterLineMM; // VegetationField::getWaterLineMM() - live, moves as TEMPERATURE eases
-uniform float snowLineMM;  // VegetationField::getSnowLineMM()
-// Inverts a pixelCornerElevationSampler value back to raw mm:
-// elevation = raw*contourLineFboScale + contourLineFboOffset - see
-// elevationShader.vert's depthfrag computation, which is the exact
-// inverse of this.
-uniform float contourLineFboScale;
-uniform float contourLineFboOffset;
-
 // Water-only gradient - see the header note (part 2) and waterLevelFrac/
 // waterGradientFloorFrac above. Deliberately separate from
 // terrainRamp(): water previously shared that ramp at the raw global
@@ -353,81 +333,44 @@ void main()
         }
     }
 
-    if (drawContourLines == 1 || drawThresholdLines == 1)
+    if (drawContourLines == 1)
     {
-        // Shared corner fetch - both the fixed-interval topo lines below
-        // and the water/snow threshold rings need the same 4 neighboring
-        // pixelCornerElevationSampler texels, so fetch once rather than
-        // duplicating 4 texture reads per feature.
-        float raw0=texture(pixelCornerElevationSampler,vec2(gl_FragCoord.x,gl_FragCoord.y)).r;
-        float raw1=texture(pixelCornerElevationSampler,vec2(gl_FragCoord.x+1.0,gl_FragCoord.y)).r;
-        float raw2=texture(pixelCornerElevationSampler,vec2(gl_FragCoord.x,gl_FragCoord.y+1.0)).r;
-        float raw3=texture(pixelCornerElevationSampler,vec2(gl_FragCoord.x+1.0,gl_FragCoord.y+1.0)).r;
+        // Contour line computation
+        /* Calculate the contour line interval containing each pixel corner by evaluating the half-pixel offset elevation texture: */
+        float corner0=floor(texture(pixelCornerElevationSampler,vec2(gl_FragCoord.x,gl_FragCoord.y)).r*contourLineFactor);
+        float corner1=floor(texture(pixelCornerElevationSampler,vec2(gl_FragCoord.x+1.0,gl_FragCoord.y)).r*contourLineFactor);
+        float corner2=floor(texture(pixelCornerElevationSampler,vec2(gl_FragCoord.x,gl_FragCoord.y+1.0)).r*contourLineFactor);
+        float corner3=floor(texture(pixelCornerElevationSampler,vec2(gl_FragCoord.x+1.0,gl_FragCoord.y+1.0)).r*contourLineFactor);
 
-        if (drawContourLines == 1)
+        /* Find all pixel edges that cross at least one contour line: */
+        int edgeMask=0;
+        int numEdges=0;
+        if(corner0!=corner1)
         {
-            // Contour line computation
-            /* Calculate the contour line interval containing each pixel corner: */
-            float corner0=floor(raw0*contourLineFactor);
-            float corner1=floor(raw1*contourLineFactor);
-            float corner2=floor(raw2*contourLineFactor);
-            float corner3=floor(raw3*contourLineFactor);
-
-            /* Find all pixel edges that cross at least one contour line: */
-            int edgeMask=0;
-            int numEdges=0;
-            if(corner0!=corner1)
-            {
-                edgeMask+=1;
-                ++numEdges;
-            }
-            if(corner2!=corner3)
-            {
-                edgeMask+=2;
-                ++numEdges;
-            }
-            if(corner0!=corner2)
-            {
-                edgeMask+=4;
-                ++numEdges;
-            }
-            if(corner1!=corner3)
-            {
-                edgeMask+=8;
-                ++numEdges;
-            }
-
-            /* Check for all cases in which the pixel should be colored as a topographic contour line: */
-            if(numEdges>2||edgeMask==3||edgeMask==12||(numEdges==2&&mod(floor(gl_FragCoord.x)+floor(gl_FragCoord.y),2.0)==0.0))
-            {
-                /* Topographic contour lines are rendered in black: */
-                color=vec4(0.0,0.0,0.0,1.0);
-            }
+            edgeMask+=1;
+            ++numEdges;
+        }
+        if(corner2!=corner3)
+        {
+            edgeMask+=2;
+            ++numEdges;
+        }
+        if(corner0!=corner2)
+        {
+            edgeMask+=4;
+            ++numEdges;
+        }
+        if(corner1!=corner3)
+        {
+            edgeMask+=8;
+            ++numEdges;
         }
 
-        // Threshold rings - see the uniform declarations' header note.
-        // Gated on hasVegetation: waterLineMM/snowLineMM are only ever
-        // set by SandSurfaceRenderer when hasVegetation is true, same as
-        // every other vegetation-derived uniform in this shader.
-        if (drawThresholdLines == 1 && hasVegetation == 1)
+        /* Check for all cases in which the pixel should be colored as a topographic contour line: */
+        if(numEdges>2||edgeMask==3||edgeMask==12||(numEdges==2&&mod(floor(gl_FragCoord.x)+floor(gl_FragCoord.y),2.0)==0.0))
         {
-            float e0=raw0*contourLineFboScale+contourLineFboOffset;
-            float e1=raw1*contourLineFboScale+contourLineFboOffset;
-            float e2=raw2*contourLineFboScale+contourLineFboOffset;
-            float e3=raw3*contourLineFboScale+contourLineFboOffset;
-
-            bool crossesWater = (e0<waterLineMM)!=(e1<waterLineMM) || (e2<waterLineMM)!=(e3<waterLineMM)
-                              || (e0<waterLineMM)!=(e2<waterLineMM) || (e1<waterLineMM)!=(e3<waterLineMM);
-            bool crossesSnow  = (e0<snowLineMM )!=(e1<snowLineMM ) || (e2<snowLineMM )!=(e3<snowLineMM )
-                              || (e0<snowLineMM )!=(e2<snowLineMM ) || (e1<snowLineMM )!=(e3<snowLineMM );
-
-            // Water wins if a pixel somehow crosses both (low-stakes -
-            // topo lines are off by default, and these two lines are
-            // never at the same elevation in practice).
-            if (crossesWater)
-                color = vec4(0.549, 0.078, 0.863, 1.0); // bright violet - unique hue family, not used anywhere else in this palette
-            else if (crossesSnow)
-                color = vec4(0.863, 0.706, 1.000, 1.0); // pale lilac - same family, clearly different lightness
+            /* Topographic contour lines are rendered in black: */
+            color=vec4(0.0,0.0,0.0,1.0);
         }
     }
 
