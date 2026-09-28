@@ -109,6 +109,10 @@ float VegetationField::POOL_RECOMPUTE_INTERVAL_SEC = 1.0f;
 // same mm-to-fraction pattern as WATER_GRADIENT_FLOOR_FRAC. First guess,
 // untested for feel - live-tunable in the Vegetation panel.
 float VegetationField::MAX_POOL_RISE_FRAC = 0.05f;
+// FOUND (2026-09-28) - see the header note. ~4mm-equivalent on this
+// box's ~285mm calibrated range, a bit past ACTIVITY_NOISE_FLOOR's ~3mm
+// so it reliably beats the same physical sensor noise, not just usually.
+float VegetationField::WATER_HYSTERESIS_FRAC = 0.014f;
 // New departure from ELF's literal getCellColor(), see the header note -
 // 0.05 (~13/255, ~13 successful nut growth ticks) is a first-guess
 // starting point: enough to filter out a single-tick "flash to black"
@@ -398,6 +402,11 @@ void VegetationField::setKinectROI(ofRectangle & KROI)
 	// POOL_RECOMPUTE_INTERVAL_SEC after every ROI rebuild; this forces a
 	// real recompute on the very next update() call instead.
 	poolRecomputeTimer = POOL_RECOMPUTE_INTERVAL_SEC;
+	// Starts at "not water" everywhere - a sane default matching how
+	// nothing is classified before update() has run at all; the very
+	// first frame's hysteresis check has no meaningful prior state to
+	// protect anyway, so this settles correctly within that first frame.
+	waterState = cv::Mat::zeros(rows, cols, CV_32F);
 	// A regenerated grid has no valid "last frame" to diff against yet -
 	// update() seeds previousElevation on its first pass and skips the
 	// activity computation that frame rather than reading a fake spike
@@ -484,7 +493,18 @@ void VegetationField::update()
 			// defaults to waterLevelFrac everywhere (see setKinectROI()),
 			// so this collapses to the exact old flat check for any cell
 			// not part of an enclosed basin.
-			bool isWater = ENABLE_POOLING ? (elevFrac < poolLevel.at<float>(gy, gx)) : (elevFrac < waterLevelFrac);
+			float waterThreshold = ENABLE_POOLING ? poolLevel.at<float>(gy, gx) : waterLevelFrac;
+			// Hysteresis - see WATER_HYSTERESIS_FRAC's header note
+			// (found 2026-09-28: raw instantaneous comparisons flicker at
+			// the shoreline from ordinary sensor noise). A cell has to
+			// cross clearly past the threshold to change state; otherwise
+			// it keeps whatever it already was.
+			float & waterFlag = waterState.at<float>(gy, gx);
+			bool wasWater = waterFlag > 0.5f;
+			bool isWater = wasWater
+				? (elevFrac < waterThreshold + WATER_HYSTERESIS_FRAC)
+				: (elevFrac < waterThreshold - WATER_HYSTERESIS_FRAC);
+			waterFlag = isWater ? 1.0f : 0.0f;
 			bool isSnow = !isWater && elevFrac > snowLevelFrac;
 
 			float & shrub = shrubDensity.at<float>(gy, gx);
@@ -637,14 +657,20 @@ bool VegetationField::isWaterAt(float kx, float ky) const
 {
 	if (!kinectProjector)
 		return false;
-	float elevFrac = normalizedElevation(kinectProjector->elevationAtKinectCoord(kx, ky));
-	// Same pooling-aware check as update() - see that function's comment.
-	// Movement-blocking (Critter/HumanAgent) and fishing eligibility both
-	// go through this, so agents correctly treat a filled pool as real
-	// water too, not just what's visually rendered.
+	// Reads the SAME hysteresis-stabilized waterState update() already
+	// maintains once per cell per frame - see WATER_HYSTERESIS_FRAC's
+	// header note - rather than an independent raw check, so movement-
+	// blocking/fishing (Critter/HumanAgent) always agrees with what's
+	// actually rendered, and doesn't reintroduce the shoreline-flicker
+	// bug on its own separate path. update() always runs before
+	// critterController.update() each frame (see ofApp::update()), so
+	// this is always this frame's fresh value, not stale.
 	int gx, gy;
-	if (ENABLE_POOLING && cellIndexAt(kx, ky, gx, gy))
-		return elevFrac < poolLevel.at<float>(gy, gx);
+	if (cellIndexAt(kx, ky, gx, gy))
+		return waterState.at<float>(gy, gx) > 0.5f;
+	// Outside the grid entirely (shouldn't normally happen for a valid
+	// agent position) - fall back to the flat instantaneous check.
+	float elevFrac = normalizedElevation(kinectProjector->elevationAtKinectCoord(kx, ky));
 	return elevFrac < (TEMPERATURE - LIVING_RANGE_FRACTION);
 }
 
@@ -853,6 +879,13 @@ void VegetationField::drawGui()
 	ImGui::Text("lighter 'shallow' water shade (the depth gradient is still anchored");
 	ImGui::Text("to the flat water line) - it still reads clearly as water, just not");
 	ImGui::Text("with its own internal depth shading yet. See CLAUDE.md.");
+	ImGui::Text("Water hysteresis (FOUND 2026-09-28 - 'flickering around the");
+	ImGui::Text("waterline'): a raw instantaneous elevation check flickers at any");
+	ImGui::Text("boundary from ordinary ~1-2mm sensor noise alone. A cell must cross");
+	ImGui::Text("clearly past the threshold by this margin to change state at all -");
+	ImGui::Text("raise it if flicker is still visible, lower it if the shoreline feels");
+	ImGui::Text("sluggish to respond to real digging.");
+	ImGui::SliderFloat("Water hysteresis (fraction)", &WATER_HYSTERESIS_FRAC, 0.0f, 0.05f);
 	ImGui::Separator();
 	ImGui::Text("Nut visibility threshold (NOT in ELF): nut's color, (0,h,h),");
 	ImGui::Text("has no channel pinned bright like shrub/fruit do, so a single");

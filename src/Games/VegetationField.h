@@ -440,6 +440,30 @@ public:
 	// Default ~15mm-equivalent - a first guess, untested, tune from here
 	// if pools feel too small/large in practice.
 	static float MAX_POOL_RISE_FRAC;
+	// FOUND (2026-09-28), reported directly on real hardware right after
+	// the fix above: "it's flickering around the waterline" - a
+	// DIFFERENT bug from the one MAX_POOL_RISE_FRAC fixed (that one was
+	// huge swaths of the board flipping once a second; this is the
+	// water's edge itself flickering fast, every frame). Root cause:
+	// isWater was always a raw instantaneous comparison against live
+	// elevation, with NO hysteresis at all - a cell sitting within
+	// Kinect's own known ~1-2mm depth noise floor (see
+	// ACTIVITY_NOISE_FLOOR's header note - same physical noise, used
+	// there for TEMPERATURE) of whatever threshold applies flickers in
+	// and out of "water" every single frame purely from sensor jitter,
+	// completely independent of pooling - this would have been true of
+	// the ORIGINAL flat-threshold check too, just not previously reported
+	// (a thin, fast-flickering boundary line is far less visually jarring
+	// than "half the board flooding," so it likely went unnoticed until
+	// attention was specifically on the shoreline).
+	// Fix: standard Schmitt-trigger hysteresis (see waterState below) - a
+	// cell must cross clearly PAST the threshold by this margin to
+	// change state at all, not just brush it, and otherwise keeps
+	// whatever state it already had. Fraction of the calibrated range,
+	// same mm-to-fraction pattern as the other tunables here; default
+	// ~4mm-equivalent (a bit more than ACTIVITY_NOISE_FLOOR's ~3mm, since
+	// this needs to reliably beat the noise, not just usually).
+	static float WATER_HYSTERESIS_FRAC;
 
 	// New departure from ELF's literal getCellColor() (2026-09-24, per
 	// explicit user request) - NOT present in ELF, and NOT the same
@@ -582,6 +606,15 @@ private:
 	// be a real per-GUI-frame cost over the full grid).
 	float lastPoolRecomputeMs;
 	int lastPooledCellCount;
+
+	// Persistent per-cell "is this currently classified as water" state
+	// (0.0/1.0, CV_32F) - see WATER_HYSTERESIS_FRAC's header note. Not
+	// just a cache: the hysteresis decision needs to know what a cell
+	// WAS last frame to decide whether it's changed enough to flip.
+	// Updated once per cell per frame in update(); isWaterAt() just reads
+	// it (update() always runs first each frame - see ofApp::update()),
+	// so rendering and agent movement/fishing always agree.
+	cv::Mat waterState;
 
 	ofTexture combinedTex;
 };

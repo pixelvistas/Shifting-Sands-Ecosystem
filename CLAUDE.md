@@ -1034,4 +1034,40 @@ board. GUI slider added alongside the existing pooling controls
 explaining the fix, in case pools still look too broad/unstable at the
 first-guess default and need tightening further.
 
-Not yet re-tested on real hardware after this fix.
+**FOUND same visit, a DIFFERENT bug from the one above (that one was huge
+swaths of the board flipping once a second; this one is the water's edge
+itself flickering fast, every frame): "it's flickering around the
+waterline."** Root cause: `isWater` was always a raw instantaneous
+comparison against live elevation, with no hysteresis at all - a cell
+sitting within Kinect's own known ~1-2mm depth noise floor (the same
+physical noise `ACTIVITY_NOISE_FLOOR` already exists to filter, in the
+unrelated context of the temperature/activity computation) of whatever
+threshold applies flickers in and out of "water" every single frame from
+sensor jitter alone. This would have been true of the ORIGINAL flat-
+threshold check too, before pooling ever existed - just apparently never
+reported, most likely because a thin, fast-flickering boundary line is
+far less visually jarring than "half the board flooding," so it went
+unnoticed until attention was specifically on the shoreline (prompted by
+fixing the bigger bug above).
+
+**Fix: standard Schmitt-trigger hysteresis.** New `waterState` (persistent
+per-cell `cv::Mat`, "is this currently water") plus `WATER_HYSTERESIS_FRAC`
+(default `0.014`, ~4mm-equivalent, a bit past `ACTIVITY_NOISE_FLOOR`'s
+~3mm so it reliably beats the same noise, not just usually) - a cell must
+cross clearly PAST the threshold by this margin to change state at all;
+otherwise it keeps whatever state it already had. Applied in `update()`'s
+per-cell loop (feeding both the density-zeroing and the alpha-channel
+texture write) and reused as-is in `isWaterAt()` (movement-blocking/
+fishing) rather than that function doing its own separate raw check -
+previously `isWaterAt()` and `update()` computed water status
+independently, which given this bug could in principle have disagreed
+with each other on any given frame; reading the one shared, already-
+stabilized `waterState` fixes both the flicker and that latent
+inconsistency at once. `recomputePools()`'s own seeding is UNCHANGED
+(still a raw check against the flat line) - deliberately scoped out of
+this fix since the reported symptom reads as a fast, continuous flicker
+(consistent with the per-frame path above), not a once-a-second pop
+(which would implicate the recompute cycle's seeding instead); revisit
+if flicker is still visible specifically at that ~1s cadence after this.
+
+Not yet re-tested on real hardware after either fix.
