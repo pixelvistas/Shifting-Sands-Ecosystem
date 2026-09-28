@@ -1071,3 +1071,79 @@ this fix since the reported symptom reads as a fast, continuous flicker
 if flicker is still visible specifically at that ~1s cadence after this.
 
 Not yet re-tested on real hardware after either fix.
+
+## Legibility pass: live water/snow-line threshold rings on the sand (2026-09-28)
+
+Not a bug fix or new mechanic - a deliberate pause on new succession-model
+pieces (seeding/flow) to address a legibility gap identified earlier the
+same day: the water line and snow line are the two thresholds that most
+directly answer "what will digging/mounding here do," and they were only
+ever readable off `VegetationField::drawGui()`'s "Water line: X mm  Snow
+line: Y mm" text on the operator's laptop - never visible in the sandbox
+itself, and they silently drift as `TEMPERATURE` eases with sculpting
+activity (see the "interaction mechanic legibility" discussion above -
+this was called out as the single most load-bearing invisible-state gap).
+
+**Reused `SandSurfaceRenderer`'s existing topographic contour-line
+pipeline rather than building a new one.** Traced the real mechanism from
+source first: `elevationShader.vert` computes each vertex's real mm
+elevation and normalizes it via `contourLineFboScale`/
+`contourLineFboOffset` (`SandSurfaceRenderer`'s OWN generic colormap-
+declared range - confirmed NOT the same scale as `VegetationField`'s
+calibrated range) into `contourLineFramebufferObject`; `heightMapShader.
+frag`'s contour block samples 4 neighboring corners from
+`pixelCornerElevationSampler` and lights up a pixel where adjacent
+corners fall into different `floor(value * contourLineFactor)` bins -
+i.e. detects crossings of a *fixed-interval* grid of elevations,
+`contourLineDistance` mm apart.
+
+The new rings reuse the same 4-corner sample and the same edge-crossing
+*pattern*, but test crossings of two *specific* elevations (the water and
+snow lines) instead of a fixed interval - and compare everything in real
+millimeters throughout, specifically to avoid the "which normalized 0..1
+scale is this actually on" confusion that caused nearly every bug this
+session (this codebase now has THREE different elevation scales live:
+`VegetationField`'s calibrated range, this contour-FBO's own generic
+range, and raw mm - comparing in raw mm sidesteps that entirely rather
+than adding a fourth). New `VegetationField::getWaterLineMM()`/
+`getSnowLineMM()` (reusing, not duplicating, `drawGui()`'s existing
+derivation - that function now calls these too) expose the same live
+values the panel already showed; `SandSurfaceRenderer::drawSandbox()`
+passes them plus `contourLineFboScale`/`contourLineFboOffset` (so the
+shader can invert a sampled corner back to raw mm) as new uniforms.
+`heightMapShader.frag`'s contour block was refactored so both features
+share one set of corner texture fetches instead of duplicating them, with
+the new ring logic gated on `hasVegetation` (same convention as every
+other vegetation-derived uniform here).
+
+**Color:** a hue family not used anywhere else in the palette, so it
+reads unambiguously as "this is a threshold indicator," not a species/
+agent/water color - bright violet for the water line, pale lilac (same
+family, clearly different lightness) for the snow line, chosen for
+red+blue-channel separation under deuteranopia per this project's
+established color rule, not hue alone. First pass, easiest thing to
+retune once seen on real sand, same pattern as every color choice this
+session.
+
+**`drawThresholdLines` defaults ON** (new `SandSurfaceRenderer` member,
+GUI checkbox next to the existing "Draw contour lines" toggle) - unlike
+`drawContourLines`, which defaults off for an unrelated aesthetic reason
+("black topo lines are as much a 'generic AR sandbox' tell as the
+rainbow ramp was"). This new toggle is deliberately NOT persisted to
+`sandSurfaceRendererSettings.xml` - an existing saved settings file
+predates this field, and `ofXml`'s `getBoolValue()` on a missing child
+would silently read `false`, defeating the "defaults on" intent on
+anyone's very first load after pulling this; it stays a pure runtime
+default instead.
+
+**Performance:** negligible, and categorically different from this
+session's real regressions (CA spread, pooling) - those were CPU-side,
+whole-grid-every-frame compute; this is a handful of extra GPU ALU ops
+per fragment reusing texture fetches the contour pipeline already makes
+when either toggle is on. Not worth an A/B kill switch on cost grounds
+the way `ENABLE_SPREAD`/`ENABLE_POOLING` needed one.
+
+Not yet tested on real hardware - the actual payoff to verify is that
+both rings visibly move as `TEMPERATURE` drifts with sculpting activity,
+turning the session's single most illegible mechanic into something
+watchable directly on the sand.

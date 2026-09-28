@@ -682,6 +682,24 @@ bool VegetationField::isSnowAt(float kx, float ky) const
 	return elevFrac >= (TEMPERATURE - LIVING_RANGE_FRACTION) && elevFrac > TEMPERATURE;
 }
 
+float VegetationField::getWaterLineMM() const
+{
+	// Reorder by actual value, same as normalizedElevation() -
+	// elevationMin is NOT guaranteed the smaller of the two, see
+	// setElevationRange()'s header note.
+	float lo = std::min(elevationMin, elevationMax);
+	float hi = std::max(elevationMin, elevationMax);
+	float waterLevelFrac = TEMPERATURE - LIVING_RANGE_FRACTION;
+	return lo + waterLevelFrac * (hi - lo);
+}
+
+float VegetationField::getSnowLineMM() const
+{
+	float lo = std::min(elevationMin, elevationMax);
+	float hi = std::max(elevationMin, elevationMax);
+	return lo + TEMPERATURE * (hi - lo);
+}
+
 void VegetationField::drawGui()
 {
 	ImGui::Begin("Vegetation");
@@ -769,10 +787,10 @@ void VegetationField::drawGui()
 	// straight from elevationMax-elevationMin without that reordering.
 	float lo = std::min(elevationMin, elevationMax);
 	float hi = std::max(elevationMin, elevationMax);
-	float waterLevelFrac = TEMPERATURE - LIVING_RANGE_FRACTION;
-	float waterLevelMM = lo + waterLevelFrac * (hi - lo);
-	float snowLevelMM = lo + TEMPERATURE * (hi - lo);
-	ImGui::Text("Water line: %.1f mm   Snow line: %.1f mm", waterLevelMM, snowLevelMM);
+	// See getWaterLineMM()/getSnowLineMM() - same derivation, now the one
+	// authoritative place for it (also used by SandSurfaceRenderer's
+	// threshold-ring rendering).
+	ImGui::Text("Water line: %.1f mm   Snow line: %.1f mm", getWaterLineMM(), getSnowLineMM());
 	ImGui::Text("Sustained sculpting raises it - floods more land, shrinks the snowcap.");
 	ImGui::Checkbox("Debug: render snow as pale blue (not flat white)", &DEBUG_SHOW_SNOW);
 	ImGui::Text("Snow normally looks identical to un-grown land - both flat white -");

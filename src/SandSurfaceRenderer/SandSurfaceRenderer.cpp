@@ -42,6 +42,7 @@ void SandSurfaceRenderer::setup(bool sdisplayGui){
     // Sandbox contourlines
     drawContourLines = false; // Flag if topographic contour lines are enabled - off by default, since black topo lines are as much a "generic AR sandbox" tell as the rainbow ramp was; still toggleable in the GUI
 	contourLineDistance = 10.0; // Elevation distance between adjacent topographic contour lines in millimiters
+    drawThresholdLines = true; // See the header note - defaults on, this is the actual legibility deliverable
     
     // Initialize the fbos and images
     projResX = projWindow->getWidth();
@@ -219,7 +220,7 @@ void SandSurfaceRenderer::update(){
         updateConversionMatrices();
     
     // Draw sandbox
-    if (drawContourLines)
+    if (drawContourLines || drawThresholdLines) // threshold rings reuse the same FBO - see the header note
         prepareContourLinesFbo();
     drawSandbox();
     
@@ -250,6 +251,13 @@ void SandSurfaceRenderer::drawSandbox() {
     heightMapShader.setUniform1i("drawContourLines", drawContourLines);
     heightMapShader.setUniform1f("heightMapNumEntries", (float)heightMap.getNumEntries());
     heightMapShader.setUniform1f("time", ofGetElapsedTimef());
+    heightMapShader.setUniform1i("drawThresholdLines", drawThresholdLines);
+    // Lets the shader invert a sampled pixelCornerElevationSampler value
+    // back to raw mm (corner = raw*contourLineFboScale+contourLineFboOffset)
+    // - see heightMapShader.frag's drawThresholdLines block header note on
+    // why comparing in raw mm, not yet another normalized 0..1 scale.
+    heightMapShader.setUniform1f("contourLineFboScale", contourLineFboScale);
+    heightMapShader.setUniform1f("contourLineFboOffset", contourLineFboOffset);
 
     bool hasVegetation = vegetationField && vegetationField->getTexture().isAllocated();
     heightMapShader.setUniform1i("hasVegetation", hasVegetation);
@@ -257,6 +265,12 @@ void SandSurfaceRenderer::drawSandbox() {
         heightMapShader.setUniformTexture("vegetationSampler", vegetationField->getTexture(), 5);
         heightMapShader.setUniform2f("vegetationGridOrigin", vegetationField->getGridOrigin());
         heightMapShader.setUniform1f("vegetationGridStep", vegetationField->getGridStep());
+        // Live water/snow-line elevations for the threshold rings -
+        // 2026-09-28 legibility pass, see CLAUDE.md. Real mm, from
+        // VegetationField's own calibrated range - see
+        // getWaterLineMM()/getSnowLineMM()'s header note.
+        heightMapShader.setUniform1f("waterLineMM", vegetationField->getWaterLineMM());
+        heightMapShader.setUniform1f("snowLineMM", vegetationField->getSnowLineMM());
     }
     // Debug aid - see VegetationField::DEBUG_SHOW_SNOW's header note.
     heightMapShader.setUniform1i("debugShowSnow", VegetationField::DEBUG_SHOW_SNOW ? 1 : 0);
@@ -564,6 +578,14 @@ void SandSurfaceRenderer::drawGui() {
 	if (ImGui::SliderFloat("Contour line distance (mm)", &contourLineDistance, 1.0f, 30.0f)) {
 		contourLineFactor = contourLineFboScale / contourLineDistance;
 	}
+	ImGui::Separator();
+	ImGui::Text("Threshold rings (2026-09-28 legibility pass) - live highlighted");
+	ImGui::Text("rings tracing exactly where the CURRENT water/snow line sits, not");
+	ImGui::Text("a fixed interval like the contour lines above. Watch them move as");
+	ImGui::Text("Temperature drifts with sculpting activity (Vegetation panel) -");
+	ImGui::Text("previously that drift was only readable off this panel, never");
+	ImGui::Text("visible on the sand itself. Violet = water line, lilac = snow line.");
+	ImGui::Checkbox("Draw threshold rings", &drawThresholdLines);
 	ImGui::End();
 }
 
