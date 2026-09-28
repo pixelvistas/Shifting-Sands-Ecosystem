@@ -1071,3 +1071,32 @@ this fix since the reported symptom reads as a fast, continuous flicker
 if flicker is still visible specifically at that ~1s cadence after this.
 
 Not yet re-tested on real hardware after either fix.
+
+## Threshold-ring legibility pass tried and reverted (2026-09-28)
+
+The live water/snow-line threshold rings described above (violet/lilac
+outlines tracing the current water and snow lines, reusing the contour-
+line pipeline) were implemented and pushed, then tested on real hardware
+the same day. User's verdict, with a screenshot: **"it looks terrible.
+I want to go back to the way it was before."** Reverted cleanly via
+`git revert` (commit `5e83973`, reverting `c865fd3`) rather than editing
+around it - a clean revert of the whole feature, not a partial walk-back,
+since the feedback was a flat rejection of the visual result, not a
+specific tunable (color, thickness, etc.) to adjust.
+
+**Not investigated further before reverting** - the user's own screenshot
+showed jagged, sketchy-looking violet/lilac outlines that read as messy
+line noise rather than clean rings, but no attempt was made to diagnose
+why (line rendering shape/anti-aliasing? the specific color choice? the
+concept of highlighted rings itself, regardless of execution?) before
+reverting, per the user's explicit "back to the way it was" instruction -
+that's a revert-first, ask-later situation, not one to negotiate a
+smaller fix in the moment.
+
+**Open question for if/when legibility work resumes:** was the problem
+the *specific implementation* (jagged line quality, color choice) or the
+*concept* (any highlighted ring at all, regardless of how clean)? Worth
+asking directly before attempting a second pass at the same underlying
+goal (making the water/snow lines visible in the sandbox itself) - that
+goal and the legibility concern behind it are unchanged by this revert,
+only this particular execution of it.
