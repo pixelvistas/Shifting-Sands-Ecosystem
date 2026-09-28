@@ -103,6 +103,12 @@ bool VegetationField::ENABLE_POOLING = true;
 // keeps pools feeling responsive to reshaping without paying that cost 60
 // times a second.
 float VegetationField::POOL_RECOMPUTE_INTERVAL_SEC = 1.0f;
+// FOUND AND FIXED same day, confirmed broken on real hardware (widespread
+// blue speckle across ordinary terrain, plus visible blinking) - see the
+// header note. ~15mm-equivalent on this box's ~285mm calibrated range,
+// same mm-to-fraction pattern as WATER_GRADIENT_FLOOR_FRAC. First guess,
+// untested for feel - live-tunable in the Vegetation panel.
+float VegetationField::MAX_POOL_RISE_FRAC = 0.05f;
 // New departure from ELF's literal getCellColor(), see the header note -
 // 0.05 (~13/255, ~13 successful nut growth ticks) is a first-guess
 // starting point: enough to filter out a single-tick "flash to black"
@@ -260,14 +266,19 @@ bool VegetationField::hasEstablishedNeighbor(int gx, int gy, cv::Mat const& dens
 // Seeded from every cell already below the flat waterLevelFrac line
 // (rather than the grid's outer edge, the usual real-DEM seed) since
 // that's this grid's actual known "sea" - there's no guarantee the ROI's
-// border is water. Floods outward, capping at snowLevelFrac (pools never
-// extend into snow-eligible ground - a cheap, natural bound rather than
-// an arbitrary one). Each newly-reached cell's poolLevel becomes
-// max(the path's running level so far, this cell's own elevation) - the
-// standard construction that makes poolLevel end up as exactly the
-// elevation water would have to reach, via the cheapest reachable path
-// from the sea, to get there: i.e. that cell's real pour-point-bounded
-// pool level.
+// border is water. Floods outward, capped both at snowLevelFrac (pools
+// never extend into snow-eligible ground) AND at MAX_POOL_RISE_FRAC above
+// waterLevelFrac (see that field's header note - the snow-line cap ALONE
+// isn't a real bound, since "land between water and snow" is most of the
+// terrain; without the rise cap too this computes a full watershed
+// pour-point flood across nearly the whole connected landmass instead of
+// small local dips - confirmed broken on real hardware). Each newly-
+// reached cell's poolLevel becomes max(the path's running level so far,
+// this cell's own elevation) - the standard construction that makes
+// poolLevel end up as exactly the elevation water would have to reach,
+// via the cheapest reachable path from the sea, to get there: i.e. that
+// cell's real pour-point-bounded pool level, now additionally bounded by
+// MAX_POOL_RISE_FRAC so that "pour point" stays local.
 void VegetationField::recomputePools(float waterLevelFrac, float snowLevelFrac)
 {
 	float startMs = (float)ofGetElapsedTimeMillis();
@@ -322,15 +333,29 @@ void VegetationField::recomputePools(float waterLevelFrac, float snowLevelFrac)
 			float neighborElevFrac = normalizedElevation(elev[nidx]);
 			if (neighborElevFrac >= snowLevelFrac)
 				continue; // never pool into snow-eligible ground
-			visited[nidx] = 1;
 			float filled = std::max(n.elevation, neighborElevFrac);
+			// FOUND AND FIXED (2026-09-28) - see MAX_POOL_RISE_FRAC's
+			// header note. Without this cap, the flood doesn't stop until
+			// the snow line - but "land between the water and snow
+			// lines" IS most of the terrain, so it was computing a full
+			// watershed pour-point flood across nearly the whole
+			// connected landmass instead of small local dips. Skip
+			// WITHOUT marking visited: priority-flood's invariant means
+			// this cell's cheapest possible fill already exceeded the
+			// cap, so no other path could do better - it just stays
+			// unpooled (the flat default from the reset above) and the
+			// flood correctly stops propagating past it here.
+			if (filled - waterLevelFrac > MAX_POOL_RISE_FRAC)
+				continue;
+			visited[nidx] = 1;
 			pool[nidx] = filled;
 			pq.push({ filled, nx, ny });
 		}
 	}
 	// Any cell the flood never reaches (fully walled off from the
-	// existing sea by ground at or above the snow line on every side)
-	// keeps the flat waterLevelFrac reset above - correctly "no pool,"
+	// existing sea by ground at or above the snow line, or beyond
+	// MAX_POOL_RISE_FRAC, on every side) keeps the flat waterLevelFrac
+	// reset above - correctly "no pool,"
 	// not stale data.
 
 	// Diagnostics for the GUI - see the header comment on why these are
@@ -806,6 +831,16 @@ void VegetationField::drawGui()
 	ImGui::Text("established pool still reacts to digging/mounding instantly; only");
 	ImGui::Text("whether a NEW basin exists at all lags by up to this interval.");
 	ImGui::SliderFloat("Pool recompute interval (sec)", &POOL_RECOMPUTE_INTERVAL_SEC, 0.1f, 5.0f);
+	ImGui::Text("Max pool rise (fraction of range) - FOUND AND FIXED 2026-09-28:");
+	ImGui::Text("without this cap, pools weren't bounded by anything but the snow");
+	ImGui::Text("line - since 'land between water and snow' IS most of the terrain,");
+	ImGui::Text("that flooded huge, unstable swaths of ordinary ground instead of");
+	ImGui::Text("small local dips (confirmed on hardware: widespread blue speckle");
+	ImGui::Text("plus visible blinking as elevation noise flipped distant saddle");
+	ImGui::Text("points). This caps how far above the flat water line a pool may");
+	ImGui::Text("rise - raise it for bigger ponds, lower it if pools still look");
+	ImGui::Text("too broad/unstable.");
+	ImGui::SliderFloat("Max pool rise (fraction)", &MAX_POOL_RISE_FRAC, 0.0f, 0.15f);
 	if (ImGui::Button("Recompute pools now")) {
 		float waterLevelFrac = TEMPERATURE - LIVING_RANGE_FRACTION;
 		recomputePools(waterLevelFrac, TEMPERATURE);

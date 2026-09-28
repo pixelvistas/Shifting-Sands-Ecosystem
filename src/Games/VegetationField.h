@@ -418,6 +418,28 @@ public:
 	// free the way that earlier mistake assumed unbounded per-frame cost
 	// was fine.
 	static float POOL_RECOMPUTE_INTERVAL_SEC;
+	// FOUND AND FIXED (2026-09-28, same day, confirmed broken on real
+	// hardware): the flood in recomputePools() originally only stopped at
+	// the snow line - but "land between the water and snow lines" IS most
+	// of the terrain by definition, so instead of filling small enclosed
+	// bowls it was computing a full watershed pour-point flood across
+	// nearly the entire connected landmass (confirmed on hardware as
+	// widespread blue speckle across ordinary terrain, plus visible
+	// "blinking" - with the flood essentially unbounded, a couple mm of
+	// ordinary sensor noise at some saddle point could flip whether huge
+	// swaths of the board were reachable, once per recompute cycle). This
+	// caps how far ABOVE THE FLAT WATER LINE a pool is allowed to rise
+	// (fraction of the calibrated range, same mm-to-fraction conversion
+	// as WATER_GRADIENT_FLOOR_FRAC) - the flood simply stops relaxing a
+	// neighbor once filling it would exceed this, which bounds pools to
+	// genuinely small, locally-enclosed dips near the water line instead
+	// of the whole reachable landmass, and as a side effect makes the
+	// result far less sensitive to elevation noise (a saddle far below
+	// this cap won't flip on a few mm of jitter the way an unbounded
+	// flood's much-higher, much-more-distant saddle points could).
+	// Default ~15mm-equivalent - a first guess, untested, tune from here
+	// if pools feel too small/large in practice.
+	static float MAX_POOL_RISE_FRAC;
 
 	// New departure from ELF's literal getCellColor() (2026-09-24, per
 	// explicit user request) - NOT present in ELF, and NOT the same

@@ -1001,3 +1001,37 @@ plants something. Also still open: giving perched pools their own depth
 gradient (see the limitation above), and revisiting whether a real-time
 flow/velocity layer is worth the regression risk once this simpler slice
 is confirmed working on hardware.
+
+**FOUND AND FIXED same day, confirmed broken on real hardware almost
+immediately: this was a real design mistake, not a hardware/tuning
+issue.** User reported "blinking, and flat areas are filling up with
+water," with a screenshot showing blue speckle scattered widely across
+ordinary terrain, not small contained ponds. Root cause: the flood above
+only stopped at the snow line - but "land between the water line and the
+snow line" is most of the terrain by definition, so instead of filling
+small enclosed bowls it was computing a full watershed pour-point flood
+across nearly the entire connected landmass. A priority-flood correctly
+computes, for every reachable cell, the elevation water would need to
+reach via the CHEAPEST path from the sea - which is the right tool for
+"what would this DEM look like under infinite rainfall," but the wrong
+one for "highlight small ponds a person just sculpted," because on any
+normal, not-fully-partitioned terrain nearly everything eventually
+connects to the sea via SOME saddle point below the snow line. The
+"blinking" is the same bug from a different angle: with the flood
+essentially unbounded, a couple mm of ordinary sensor noise at some
+distant saddle point could flip whether huge swaths of the board were
+reachable, once per ~1-second recompute cycle.
+
+**Fix: `MAX_POOL_RISE_FRAC`** (default `0.05`, ~15mm-equivalent on this
+box's calibrated range, live-tunable) - caps how far ABOVE the flat water
+line a pool is allowed to rise. The flood simply stops relaxing a
+neighbor once filling it would exceed this, bounding pools to genuinely
+small, locally-enclosed dips near the water line instead of the whole
+reachable landmass. Same fix incidentally also addresses the blinking:
+bounding the flood's reach means a noise-driven flip at some saddle point
+now only affects a small, local pond rather than potentially the whole
+board. GUI slider added alongside the existing pooling controls
+explaining the fix, in case pools still look too broad/unstable at the
+first-guess default and need tightening further.
+
+Not yet re-tested on real hardware after this fix.
