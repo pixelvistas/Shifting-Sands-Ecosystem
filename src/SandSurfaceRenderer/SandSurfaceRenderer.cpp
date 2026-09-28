@@ -274,6 +274,11 @@ void SandSurfaceRenderer::drawSandbox() {
     // - a fixed absolute floor drifted out of reach as soon as that
     // happened, confirmed on real hardware).
     heightMapShader.setUniform1f("waterGradientFloorFrac", waterLevelFrac - VegetationField::WATER_GRADIENT_FLOOR_FRAC);
+    // See the shader's landT header note (2026-09-28) - land vegetation
+    // (shrub/fruit/nut) only ever classifies between waterLevelFrac and
+    // TEMPERATURE (the snow line), so their peak-to-white elevation
+    // gradient needs both ends of that band, not just the water one.
+    heightMapShader.setUniform1f("snowLevelFrac", VegetationField::TEMPERATURE);
 
     mesh.draw();
     heightMapShader.end();

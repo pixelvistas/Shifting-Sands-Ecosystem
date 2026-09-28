@@ -135,6 +135,11 @@ uniform float waterLevelFrac;
 // drawSandbox() as `waterLevelFrac - WATER_GRADIENT_FLOOR_FRAC`, so it
 // always sits a fixed SPAN below wherever the water line currently is.
 uniform float waterGradientFloorFrac;
+// TEMPERATURE (see VegetationField.h) - the fraction-of-range threshold
+// above which a cell classifies as snow. Added 2026-09-28 alongside
+// landT below - see that comment for why land vegetation needs this in
+// addition to waterLevelFrac.
+uniform float snowLevelFrac;
 
 // Water-only gradient - see the header note (part 2) and waterLevelFrac/
 // waterGradientFloorFrac above. Deliberately separate from
@@ -206,6 +211,24 @@ void main()
     // they run at different times relative to each other.
     float elevationNorm = clamp(depthfrag / heightMapNumEntries, 0.0, 1.0);
 
+    // Land-vegetation-only renormalization (2026-09-28). Shrub/fruit/nut
+    // can only ever classify between the water line and the snow line
+    // (VegetationField's own water/snow band tests gate them out
+    // everywhere else) - so their peak-to-white mix below was spending
+    // almost its whole 0..1 domain on elevationNorm values land can never
+    // actually have. Measured on this box's real tuned values
+    // (waterLevelFrac~0.377, snowLevelFrac~0.745): land only ever sees
+    // elevationNorm in [0.377, 0.745], which lands the mix between
+    // roughly (0.94,0.60,0.43) and (0.98,0.84,0.77) for fruit - both
+    // already most of the way to white, with the fully-saturated peak
+    // color (0.90,0.35,0.08) never reachable at all. Confirmed on real
+    // hardware as "the gradient is just barely noticeable." landT
+    // renormalizes to the actual reachable land band, so the peak color
+    // shows in full right at the water line and reaches pure white right
+    // at the snow line, same as terrainRamp()/waterRamp() already do for
+    // their own reachable ranges.
+    float landT = clamp((elevationNorm - waterLevelFrac) / max(snowLevelFrac - waterLevelFrac, 0.0001), 0.0, 1.0);
+
     // Pre-classification default - per explicit user choice (2026-09-24),
     // black rather than the previous full-brightness white: since a
     // projector can't project true black, this reads as "add no light,
@@ -256,10 +279,11 @@ void main()
             // Shrub-dominant - species color (part 1 of the header note),
             // a rich emerald, kept in shrub's original green family, R=0
             // so it never competes with fruit's high-red peak below.
-            // Blends toward white as elevation rises, same pattern as
-            // fruit/nut below - full saturation at low elevation, same
-            // as ELF's own no-fade getCellColor().
-            color.rgb = mix(vec3(0.0, 0.659, 0.349), vec3(1.0), elevationNorm);
+            // Blends toward white as elevation rises through the
+            // REACHABLE land band (landT, see above - 2026-09-28), not
+            // raw elevationNorm - full saturation at the water line, same
+            // as ELF's own no-fade getCellColor() at low elevation.
+            color.rgb = mix(vec3(0.0, 0.659, 0.349), vec3(1.0), landT);
         }
         else if (veg.g > veg.r && veg.g > veg.b)
         {
@@ -269,8 +293,9 @@ void main()
             // same value as HUNTER_COLOR (see the header note), and
             // R=0.9/B=0.08 gives strong red-channel separation from
             // shrub's R=0 above, which is what actually survives
-            // deuteranopia (hue alone wouldn't).
-            color.rgb = mix(vec3(0.902, 0.353, 0.078), vec3(1.0), elevationNorm);
+            // deuteranopia (hue alone wouldn't). landT, not raw
+            // elevationNorm - see the 2026-09-28 note above.
+            color.rgb = mix(vec3(0.902, 0.353, 0.078), vec3(1.0), landT);
         }
         else if (veg.b > veg.g && veg.b > veg.r && veg.b > nutVisibilityThreshold)
         {
@@ -283,8 +308,9 @@ void main()
             // CLAUDE.md's 2026-09-24 note): nut can no longer render
             // black at any elevation, so nutVisibilityThreshold below is
             // now a belt-and-suspenders single-tick-flash guard, not the
-            // only fix.
-            color.rgb = mix(vec3(0.0, 0.675, 0.675), vec3(1.0), elevationNorm);
+            // only fix. landT, not raw elevationNorm - see the
+            // 2026-09-28 note above.
+            color.rgb = mix(vec3(0.0, 0.675, 0.675), vec3(1.0), landT);
         }
         else
         {

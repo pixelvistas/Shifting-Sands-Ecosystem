@@ -828,3 +828,60 @@ snapshotted as an absolute elevation - those two fractions are live,
 moving quantities by design (that's what makes Temperature "participant-
 driven" at all), not one-time calibration constants like
 `elevationMin`/`elevationMax`.
+
+## Species elevation gradient (shrub/fruit/nut) barely visible (2026-09-28)
+
+Same root-cause CLASS as the water-gradient bugs above, found on the
+same visit while explaining the fruit peak-to-white gradient's design:
+user reported it's "just barely noticeable" on a real mound. Checked
+the actual reachable numbers before assuming it's a hardware/projector
+limit (per this file's own standing rule) rather than retuning by feel.
+
+`mix(peakColor, white, elevationNorm)` (shrub/fruit/nut in
+`heightMapShader.frag`) uses the RAW global `elevationNorm` (0..1 across
+the whole calibrated sensor range) as its mix parameter. But shrub/
+fruit/nut can only ever classify as themselves between the water line
+and the snow line - `VegetationField`'s own band tests exclude
+everywhere else. On this box's tuned values (`waterLevelFrac~0.377`,
+`snowLevelFrac` = `TEMPERATURE~0.745`), that means land vegetation NEVER
+actually sees `elevationNorm` outside `[0.377, 0.745]` - a ~0.368-wide
+slice sitting well above 0, not the full `0..1` domain the mix assumed.
+
+Computed fruit's mix at both real endpoints to confirm quantitatively:
+at `elevationNorm=0.377` (right at the water line, the lowest land ever
+gets), fruit renders `(0.94, 0.60, 0.43)` - already mostly washed to
+white. At `elevationNorm=0.745` (right at the snow line, the highest
+land ever gets before becoming snow), it's `(0.98, 0.84, 0.77)` - a
+near-white peach. The fully-saturated peak `(0.90, 0.35, 0.08)` -
+what the "orange" in "soft orange gradient" is actually supposed to
+look like - is mathematically unreachable by any real land cell, since
+that only happens at `elevationNorm=0`, the calibrated floor, which
+classifies as water long before a cell gets anywhere near it. The RGB
+distance between the two real endpoints is ~37% of the full peak-to-
+white distance, and that visible 37% is entirely within the
+already-pale half - i.e., "barely noticeable" is the correct, expected
+result of the code as it stood, not a perception issue or a hardware
+limitation.
+
+**Fix: renormalize shrub/fruit/nut's mix parameter to the actual
+reachable land band**, the same technique already used for water
+(`waterRamp`) and already proven on hardware. New `landT`:
+```glsl
+float landT = clamp((elevationNorm - waterLevelFrac) / max(snowLevelFrac - waterLevelFrac, 0.0001), 0.0, 1.0);
+```
+computed once in `main()` right after `elevationNorm`, and used in place
+of `elevationNorm` in all three species' `mix()` calls. Requires a new
+`snowLevelFrac` uniform (`= TEMPERATURE`, ELF's own snow threshold - see
+`VegetationField.h`), set alongside `waterLevelFrac` in
+`SandSurfaceRenderer::drawSandbox()`. `terrainRamp()` (tie/negative-space
+land) is deliberately UNCHANGED - it's meant to represent the whole
+elevation spectrum including water and above-snow-line high ground, and
+is already confirmed correct on hardware; this renormalization only
+applies to the three species' own peak-to-white modulation. Both shader
+variants (GL2/GL3) updated in sync, per this file's usual convention.
+
+Not yet tested on real hardware. Same live-tracking property as the
+water-gradient fix applies here too, automatically: since `landT` is
+computed from `waterLevelFrac`/`snowLevelFrac` fresh every frame rather
+than any snapshotted constant, it stays correct as `TEMPERATURE` eases
+with sculpting activity, with no separate fix needed later.
