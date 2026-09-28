@@ -421,23 +421,27 @@ public:
 	// shader as a uniform - see SandSurfaceRenderer::drawSandbox().
 	static float NUT_VISIBILITY_THRESHOLD;
 
-	// Cosmetic-only water-gradient floor (2026-09-25) - NOT a
-	// classification threshold, waterLevelFrac still decides what IS
-	// water. Fixes the water gradient reading as flat/uniform: it was
-	// renormalized as elevationNorm/waterLevelFrac, silently assuming
-	// water reaches down to elevationNorm=0 (the calibrated floor,
-	// elevationMin) - but that floor is never actually measured (just
-	// mirrors the calibrated ceiling symmetrically, see
-	// setElevationRange()'s header note), so it sits far deeper than
-	// any real dig can reach.
-	// NOT set to the user's absolute measured dig limit either (a first
-	// attempt at this value was, and still required near-maximal
-	// digging with almost no margin - see the .cpp for the real-hardware
-	// feedback that caught this). Set instead to just a few mm past the
-	// water line - comfortably, reliably reachable - expressed as a
-	// fraction of the current calibrated range; see the .cpp for the
-	// exact derivation. Read directly by the shader as a uniform - see
-	// SandSurfaceRenderer::drawSandbox().
+	// Cosmetic-only water-gradient SPAN (renamed in effect 2026-09-25/28,
+	// see the .cpp) - NOT a classification threshold, waterLevelFrac
+	// still decides what IS water. Fixes the water gradient reading as
+	// flat/uniform: it was renormalized as elevationNorm/waterLevelFrac,
+	// silently assuming water reaches down to elevationNorm=0 (the
+	// calibrated floor, elevationMin) - but that floor is never actually
+	// measured (just mirrors the calibrated ceiling symmetrically, see
+	// setElevationRange()'s header note), so it sits far deeper than any
+	// real dig can reach.
+	// NOT the user's absolute measured dig limit either (a first attempt
+	// at this used that, and still required near-maximal digging with
+	// almost no margin), and NOT a fixed absolute elevation either (a
+	// SECOND attempt used that, and broke again the moment TEMPERATURE
+	// eased upward from sculpting activity and the water line moved -
+	// see the .cpp for the real-hardware feedback that caught each one).
+	// This is now how far BELOW WHATEVER THE CURRENT WATER LINE IS the
+	// gradient reaches full darkness - SandSurfaceRenderer::
+	// drawSandbox() computes the actual floor fresh each frame as
+	// `waterLevelFrac - WATER_GRADIENT_FLOOR_FRAC` before passing it to
+	// the shader, so it tracks the water line wherever TEMPERATURE
+	// currently puts it.
 	static float WATER_GRADIENT_FLOOR_FRAC;
 
 	// Debug aid only - normally snow renders as flat white, identical to

@@ -794,3 +794,37 @@ lesson for any future retuning of this value: target a few mm past the
 water line, not the absolute measured dig limit - the dig limit answers
 "is any gradient reachable at all," not "where should full darkness
 sit."
+
+**RETUNED A THIRD TIME (2026-09-28) - the real bug wasn't the target
+depth, it was that the floor was a FIXED absolute value while the water
+line itself moves.** User, days later: "the darker blue doesn't show up
+until I've hit the bottom of the sandbox" - despite the "3mm past the
+water line" fix above. Root cause: `WATER_GRADIENT_FLOOR_FRAC=0.366`
+was an absolute elevation fraction (~-38mm on the calibrated range at
+the time it was derived), computed once and hardcoded. But
+`waterLevelFrac` (`TEMPERATURE - LIVING_RANGE_FRACTION`) is not static -
+`TEMPERATURE` eases upward automatically with sculpting activity
+(`ACTIVITY_TO_TEMPERATURE`/`MAX_TEMPERATURE_OFFSET`), which raises the
+water line (shallower, floods more land - same mechanic documented
+above). Every time that happened over the following days of normal use,
+the gap between the fixed floor and the now-shallower water line
+widened, so reaching full dark required digging further and further -
+exactly matching the symptom.
+
+**Fix: `WATER_GRADIENT_FLOOR_FRAC` is now a SPAN (how far below
+whatever the water line CURRENTLY is), not an absolute position.**
+Value unchanged in magnitude (`0.0105`, still ~3mm worth on this box's
+range - the tracking bug was the confirmed problem, not the span size).
+`SandSurfaceRenderer::drawSandbox()` now computes the actual floor
+fresh every frame as `waterLevelFrac - WATER_GRADIENT_FLOOR_FRAC`
+before passing it to the shader, so it automatically follows the water
+line wherever `TEMPERATURE` currently puts it, instead of drifting out
+of reach. GUI slider relabeled "Water gradient span" and range tightened
+to `0..0.2` (was `0..1`, sized for the old absolute-position framing).
+**Broader lesson, now confirmed twice on this exact feature:** any
+value derived from "the current water/snow line" needs to be expressed
+*relative to* `waterLevelFrac`/`snowLevelFrac` and recomputed live, not
+snapshotted as an absolute elevation - those two fractions are live,
+moving quantities by design (that's what makes Temperature "participant-
+driven" at all), not one-time calibration constants like
+`elevationMin`/`elevationMax`.

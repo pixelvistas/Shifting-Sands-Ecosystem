@@ -109,23 +109,28 @@ float VegetationField::NUT_VISIBILITY_THRESHOLD = 0.05f;
 // assumed), so the old renormalization stayed pinned near the lightest
 // shade the entire time - confirmed on real hardware as "no gradient
 // visible, water looks flat."
-// RETUNED 2026-09-25, superseding an initial 0.353f. That value put the
-// floor at the user's exact measured -41.8mm dig limit - but the water
-// line itself sits at ~-35.1mm, so the FULL gradient only had ~6.8mm of
-// real depth to work with, and reaching full dark required near-
-// maximal digging every time with almost no margin. Confirmed on real
-// hardware: "I really have to dig for it... seeing a lot of the
-// lighter shade, and very little of the darker shade." Retargeted to
-// full dark at just 3mm past the water line instead of the absolute
-// dig limit - comfortably reachable, not an edge-of-ability effort,
-// leaving ~3.8mm of margin below that where water simply stays fully
-// dark. 0.366f = (waterLevelMM - 3) expressed as a fraction of the
-// CURRENT calibrated range (-142.606..142.606mm) - see waterLevelFrac's
-// own derivation for the same conversion. Same caveat as the other
-// measured constants: if elevationMin/elevationMax, TEMPERATURE, or
-// LIVING_RANGE_FRACTION change, re-derive this the same way (a few mm
-// past whatever the water line then is, not the absolute dig limit).
-float VegetationField::WATER_GRADIENT_FLOOR_FRAC = 0.366f;
+// RETUNED AGAIN (2026-09-25/28) - the previous fix stored the floor as
+// a FIXED absolute elevation fraction (0.366, "~-38mm on THIS
+// calibrated range"), which was itself the bug: waterLevelFrac
+// (TEMPERATURE - LIVING_RANGE_FRACTION) is not fixed - TEMPERATURE
+// eases upward automatically with sculpting activity
+// (ACTIVITY_TO_TEMPERATURE/MAX_TEMPERATURE_OFFSET), which raises the
+// water line (makes it shallower, floods more land - see BASE_
+// TEMPERATURE's header note). Every time that happened, the gap between
+// the fixed floor and the now-shallower water line widened, so reaching
+// full dark required digging further and further - confirmed on real
+// hardware: "the darker blue doesn't show up until I've hit the bottom
+// of the sandbox." A static floor can never track a moving water line.
+// Fix: this is now a SPAN (how far below whatever the CURRENT water
+// line is), not an absolute position - computed fresh each frame in
+// SandSurfaceRenderer::drawSandbox() as `waterLevelFrac -
+// WATER_GRADIENT_FLOOR_FRAC`, so it automatically follows the water
+// line wherever TEMPERATURE puts it. Same numeric span as before (3mm
+// worth, ~0.0105 of the current ~285mm calibrated range) - the tracking
+// bug, not the span size, was the confirmed problem; retune the span
+// itself from here if 3mm still isn't the right feel once tracking is
+// fixed.
+float VegetationField::WATER_GRADIENT_FLOOR_FRAC = 0.0105f;
 float VegetationField::FOOD_PER_FULL_CELL = 255.0f;
 bool VegetationField::DEBUG_SHOW_SNOW = false;
 
@@ -643,15 +648,16 @@ void VegetationField::drawGui()
 	ImGui::Text("space (like a real tie) instead of committing to that color.");
 	ImGui::SliderFloat("Nut visibility threshold", &NUT_VISIBILITY_THRESHOLD, 0.0f, 0.3f);
 	ImGui::Separator();
-	ImGui::Text("Water gradient floor (cosmetic only - does NOT affect what");
-	ImGui::Text("counts as water, only how dark the deepest reachable water");
-	ImGui::Text("renders). The water color gradient assumes it can reach down");
-	ImGui::Text("to this elevation fraction; below it, water is already at the");
-	ImGui::Text("darkest shade. Set from a real measured max dig, not the");
-	ImGui::Text("calibrated floor (which is never actually measured - see the");
-	ImGui::Text("header note) - if the gradient looks flat/uniform again, dig");
-	ImGui::Text("as deep as you physically can, read elevationNorm off the raw");
-	ImGui::Text("elevation readout above, and set this to match.");
-	ImGui::SliderFloat("Water gradient floor (fraction)", &WATER_GRADIENT_FLOOR_FRAC, 0.0f, 1.0f);
+	ImGui::Text("Water gradient span (cosmetic only - does NOT affect what");
+	ImGui::Text("counts as water). How far BELOW the current water line the");
+	ImGui::Text("gradient reaches full darkness - tracks the water line itself");
+	ImGui::Text("automatically (it moves as Temperature eases with sculpting");
+	ImGui::Text("activity), so this is a relative depth, not a fixed elevation.");
+	ImGui::Text("Default ~3mm worth on this box's calibrated range. If full dark");
+	ImGui::Text("needs too much/little digging past the shoreline to reach, dig");
+	ImGui::Text("to where you want full dark, compare Raw elevation to the Water");
+	ImGui::Text("line reading above, and set this to that difference (as a");
+	ImGui::Text("fraction of the calibrated range).");
+	ImGui::SliderFloat("Water gradient span (fraction)", &WATER_GRADIENT_FLOOR_FRAC, 0.0f, 0.2f);
 	ImGui::End();
 }

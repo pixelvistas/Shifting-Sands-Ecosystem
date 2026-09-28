@@ -124,13 +124,16 @@ uniform float nutVisibilityThreshold;
 // its actual reachable depth range - see waterRamp() below for why.
 uniform float waterLevelFrac;
 // See VegetationField::WATER_GRADIENT_FLOOR_FRAC's header note
-// (2026-09-25) - the elevationNorm fraction below which water is
-// already rendered at its darkest shade. NOT elevationNorm=0: that's
-// the calibrated floor, which is never actually measured and sits far
-// deeper than any real dig reaches (confirmed on real hardware: without
-// this, the gradient stayed pinned near its lightest shade the entire
-// time, since the reachable depth range never got close to 0). This is
-// the user's own measured real dig limit instead.
+// (2026-09-25, retuned 2026-09-28) - the elevationNorm fraction below
+// which water is already rendered at its darkest shade. NOT
+// elevationNorm=0: that's the calibrated floor, which is never actually
+// measured and sits far deeper than any real dig reaches. NOT a fixed
+// absolute depth either (an earlier version of this fix was, and broke
+// again the moment TEMPERATURE eased upward from sculpting activity and
+// the water line moved - a static floor can't track a moving water
+// line). Computed fresh each frame in SandSurfaceRenderer::
+// drawSandbox() as `waterLevelFrac - WATER_GRADIENT_FLOOR_FRAC`, so it
+// always sits a fixed SPAN below wherever the water line currently is.
 uniform float waterGradientFloorFrac;
 
 // Water-only gradient - see the header note (part 2) and waterLevelFrac/
