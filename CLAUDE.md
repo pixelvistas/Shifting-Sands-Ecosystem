@@ -885,3 +885,119 @@ water-gradient fix applies here too, automatically: since `landT` is
 computed from `waterLevelFrac`/`snowLevelFrac` fresh every frame rather
 than any snapshotted constant, it stays correct as `TEMPERATURE` eases
 with sculpting activity, with no separate fix needed later.
+
+## Hydrology phase, first slice: depression-filling pools (2026-09-28)
+
+Started the third piece of the succession-model phase (the other two -
+neighbor-spread growth and real seed placement - are separately tracked;
+spread is done, seeding still isn't started). Before designing anything,
+both source papers referenced in the "Future phase" section above were
+actually read in full this session (they'd only ever been summarized
+secondhand before) - `pdftoppm`/poppler-utils had to be installed first,
+neither was renderable without it.
+
+**Correction to this file's own earlier description: `ARsandbox014.pdf`
+is NOT the Grasshopper/vector-field paper this file previously said it
+was.** That description was simply wrong (most likely a mixup from an
+earlier session that never actually opened the file). Read in full, it's
+Murgatroyd/Butler/Gaffney's own paper *about the ELF AR sandbox itself* -
+the exact system this whole project ports. It's a nice independent
+confirmation that the port's mechanics (temperature-driven water/snow
+lines, three plant types, deer/human behavior and colors) match ELF's own
+authors' description of their design intent, but it has zero hydrology
+content. It separately describes a second, unrelated simulation ("ELF
+Activity Traces" - biomes, settlements, and archaeological survey proxies
+like pollen/magnetometer data) that has nothing to do with water flow
+either - not relevant to this phase.
+
+**Liu's "The Third Simulation" (the actually-correct fluvial paper) turned
+out to contain no portable algorithm either**, just for a different
+reason: it's a landscape-architecture exhibition paper, not a technical
+one. It states the water simulation was "developed by the author based on
+[a] 2D Lattice Boltzmann model in Processing," visualized in Grasshopper
+as flow-direction/velocity/vorticity vector fields, plus a separate
+agent-based seed-dispersal system (tagged-object planting, propagation
+driven by the hydraulic sim + each species' own properties/competition) -
+but contains no equations, pseudocode, or implementation detail at all.
+There is nothing in either paper to literally port.
+
+**User's explicit decision given this, made via two AskUserQuestion
+rounds before any code was written:** provide the papers rather than
+proceed on a secondhand description (done, see above), and target
+"lightweight pooling" as the first slice's fidelity level specifically
+because the CA spread layer's earlier 60fps->1-2fps regression on this
+exact hardware (see above) made a naive real-time cellular flow
+simulation too risky to attempt first.
+
+**Design, since no source algorithm existed to be unfaithful to:** this is
+an original addition, in the same posture as the CA spread layer -
+`BDlocation.getWater()` is itself a flat per-cell threshold with zero
+connectivity/pooling concept, confirmed from source during the original
+port, so pooling is a deliberate ELF departure, not a fidelity gap being
+closed. Implemented as a standard priority-flood depression fill (Barnes
+et al. - a well-established DEM/watershed-analysis technique, not
+invented from scratch): seeded from every cell already below the flat
+`waterLevelFrac` line (this grid's only guaranteed "sea," since there's no
+real map edge to seed from the way a real-world DEM would), flooding
+outward and capping at the snow line, so an enclosed low area whose floor
+sits ABOVE the flat water line but is fully rimmed below the snow line now
+fills with its own local pool up to its lowest pour point - a sculpted
+bowl no longer has to reach all the way down to the single global sea
+level to hold water.
+
+Layered on top of, not replacing, the existing flat check: `poolLevel`
+(new per-cell `cv::Mat`, same units as `waterLevelFrac`) defaults to the
+flat line everywhere and only rises within a real enclosed basin, so
+`isWater = elevFrac < poolLevel[cell]` collapses to the exact old
+behavior for any cell not part of a basin. `isWaterAt()` (used by
+Critter/HumanAgent movement-blocking and fishing eligibility) gets the
+same check, so agents correctly treat a filled pool as real water too, not
+just what's rendered.
+
+**Performance, checked by the numbers before assuming "periodic, not
+per-frame" was enough** (the CA spread layer's original mistake was
+assuming a whole-grid-every-frame cost was free without checking first):
+~519x295 grid = ~153K cells, O(n log n) binary-heap flood, estimated
+single-digit milliseconds in a Release build. Recomputed on a plain timer
+(`POOL_RECOMPUTE_INTERVAL_SEC`, default 1.0s, tunable) rather than every
+frame - real but small and bounded, unlike the previous regression's
+unbounded per-frame-per-cell-per-species cost. A cell already inside an
+established pool still reacts to digging/mounding instantly every frame
+(it re-reads live elevation against the last-computed pool geometry);
+only whether a brand-new basin exists at all lags by up to the interval.
+`recomputePools()` reuses `previousElevation` (already fresh every frame
+for the existing activity/temperature computation) rather than sampling
+the Kinect a second time. Same `ENABLE_SPREAD`-style A/B toggle
+(`ENABLE_POOLING`, default on) for instantly ruling this out as a
+regression cause without a rebuild, plus a GUI readout of last-recompute
+cost and pooled-cell count and a manual "recompute now" button - all new
+in `VegetationField.h`/`.cpp`'s Hydrology section.
+
+**No shader or `SandSurfaceRenderer.cpp` changes needed** - a pooled cell
+sets the exact same alpha=255 the texture upload already writes for flat
+water, so it renders through the existing `waterRamp()` path with zero
+new plumbing.
+
+**Known, explicitly-flagged first-slice limitation:** the water shader's
+depth gradient (`waterRamp()`/`waterDepthT`) is still anchored to the
+single flat `waterLevelFrac`/`waterGradientFloorFrac` uniforms. Every
+perched-pool cell sits above `waterLevelFrac` by construction, so
+`waterDepthT` clamps to 1.0 for all of them - a perched pool always
+renders in the lighter "shallow" shade, never the darker deep-water tone,
+regardless of its own real depth within its basin. Not broken (still
+reads clearly as water), just uniformly "shallow-looking." A real fix
+needs a second per-cell texture channel carrying each pool's own local
+floor/ceiling to the shader - genuine scope, deliberately deferred as the
+natural second slice rather than attempted here.
+
+Not yet tested on real hardware - `POOL_RECOMPUTE_INTERVAL_SEC`'s default
+and the cost estimate above are both first-guess/estimated, same
+uncertainty flag as `SPREAD_RADIUS_MM`/`SPREAD_CHANCE_MULTIPLIER` got when
+the spread layer first shipped.
+
+**Still not done:** real hand-placed seeding (the third piece of this
+phase) - pooling only adds where water CAN sit, not where a participant
+plants something. Also still open: giving perched pools their own depth
+gradient (see the limitation above), and revisiting whether a real-time
+flow/velocity layer is worth the regression risk once this simpler slice
+is confirmed working on hardware.

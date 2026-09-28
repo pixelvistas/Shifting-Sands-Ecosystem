@@ -1,5 +1,7 @@
 #include "VegetationField.h"
 #include "ofxImGui.h"
+#include <queue>
+#include <vector>
 
 // Fraction of the calibrated elevation range (see setElevationRange() and
 // the header note), not millimeters. Starts equal to BASE_TEMPERATURE so
@@ -87,6 +89,20 @@ float VegetationField::NUT_GROWTH_CHANCE_PCT = 2.0f;
 bool VegetationField::ENABLE_SPREAD = true;
 float VegetationField::SPREAD_RADIUS_MM = 40.0f;
 float VegetationField::SPREAD_CHANCE_MULTIPLIER = 5.0f;
+// Hydrology first slice - see the header note. Default on, same A/B
+// posture as ENABLE_SPREAD.
+bool VegetationField::ENABLE_POOLING = true;
+// First-guess default, untested on real hardware - see the header note on
+// why this is periodic rather than per-frame. A full recompute is an
+// O(n log n) priority-flood over the whole grid (~153K cells at this
+// project's usual 519x295 resolution) - estimated single-digit
+// milliseconds in a Release build, cheap enough to not need spreading
+// across multiple frames for a first slice, but real enough that running
+// it EVERY frame would repeat the spread layer's original mistake of
+// assuming a whole-grid-every-frame cost is free without checking. 1.0s
+// keeps pools feeling responsive to reshaping without paying that cost 60
+// times a second.
+float VegetationField::POOL_RECOMPUTE_INTERVAL_SEC = 1.0f;
 // New departure from ELF's literal getCellColor(), see the header note -
 // 0.05 (~13/255, ~13 successful nut growth ticks) is a first-guess
 // starting point: enough to filter out a single-tick "flash to black"
@@ -169,6 +185,9 @@ void VegetationField::setup(std::shared_ptr<KinectProjector> const& k)
 	gridReady = false;
 	activityBaselineReady = false;
 	activityLevel = 0.0f;
+	poolRecomputeTimer = 0.0f;
+	lastPoolRecomputeMs = 0.0f;
+	lastPooledCellCount = 0;
 	// Sane fallback until setElevationRange() is called - keeps
 	// normalizedElevation() well-defined even if update() somehow runs
 	// first.
@@ -230,6 +249,101 @@ bool VegetationField::hasEstablishedNeighbor(int gx, int gy, cv::Mat const& dens
 	return false;
 }
 
+// Hydrology first slice - see the header note on VegetationField.h's
+// ENABLE_POOLING/POOL_RECOMPUTE_INTERVAL_SEC for why this exists and runs
+// periodically rather than every frame. Standard priority-flood
+// depression fill (Barnes et al.) - neither source paper for this phase
+// (Liu's "Third Simulation" or the ELF-authors' own AR sandbox paper,
+// re-read in full 2026-09-28) turned out to contain an implementable
+// fluvial algorithm to port instead, see CLAUDE.md.
+//
+// Seeded from every cell already below the flat waterLevelFrac line
+// (rather than the grid's outer edge, the usual real-DEM seed) since
+// that's this grid's actual known "sea" - there's no guarantee the ROI's
+// border is water. Floods outward, capping at snowLevelFrac (pools never
+// extend into snow-eligible ground - a cheap, natural bound rather than
+// an arbitrary one). Each newly-reached cell's poolLevel becomes
+// max(the path's running level so far, this cell's own elevation) - the
+// standard construction that makes poolLevel end up as exactly the
+// elevation water would have to reach, via the cheapest reachable path
+// from the sea, to get there: i.e. that cell's real pour-point-bounded
+// pool level.
+void VegetationField::recomputePools(float waterLevelFrac, float snowLevelFrac)
+{
+	float startMs = (float)ofGetElapsedTimeMillis();
+
+	// Reset every cycle - a cell pooled by a PREVIOUS recompute must not
+	// keep a stale, no-longer-enclosed level if its rim has since changed
+	// (built up past the snow line, or the basin filled in) - the flood
+	// below only re-raises what's still actually enclosed right now.
+	poolLevel.setTo(cv::Scalar(waterLevelFrac));
+
+	struct Node { float elevation; int gx, gy; };
+	struct NodeCompare {
+		// std::priority_queue is a max-heap by default - flip it to a
+		// min-heap so the lowest/cheapest-to-reach cell is always
+		// processed next, as the algorithm requires.
+		bool operator()(Node const& a, Node const& b) const { return a.elevation > b.elevation; }
+	};
+	std::priority_queue<Node, std::vector<Node>, NodeCompare> pq;
+	std::vector<unsigned char> visited(static_cast<size_t>(cols) * rows, 0);
+
+	// previousElevation is guaranteed continuous (see setKinectROI(),
+	// never reshaped afterward) - same raw-pointer justification as
+	// hasEstablishedNeighbor() above, and here every cell really is
+	// touched, not just a throttled sample.
+	const float * elev = previousElevation.ptr<float>(0);
+	float * pool = poolLevel.ptr<float>(0);
+
+	for (int gy = 0; gy < rows; gy++) {
+		for (int gx = 0; gx < cols; gx++) {
+			int idx = gy * cols + gx;
+			if (normalizedElevation(elev[idx]) < waterLevelFrac) {
+				visited[idx] = 1;
+				pq.push({ waterLevelFrac, gx, gy });
+			}
+		}
+	}
+
+	static const int dx[4] = { -1, 1, 0, 0 };
+	static const int dy[4] = { 0, 0, -1, 1 };
+
+	while (!pq.empty()) {
+		Node n = pq.top();
+		pq.pop();
+		for (int d = 0; d < 4; d++) {
+			int nx = n.gx + dx[d];
+			int ny = n.gy + dy[d];
+			if (nx < 0 || nx >= cols || ny < 0 || ny >= rows)
+				continue;
+			int nidx = ny * cols + nx;
+			if (visited[nidx])
+				continue;
+			float neighborElevFrac = normalizedElevation(elev[nidx]);
+			if (neighborElevFrac >= snowLevelFrac)
+				continue; // never pool into snow-eligible ground
+			visited[nidx] = 1;
+			float filled = std::max(n.elevation, neighborElevFrac);
+			pool[nidx] = filled;
+			pq.push({ filled, nx, ny });
+		}
+	}
+	// Any cell the flood never reaches (fully walled off from the
+	// existing sea by ground at or above the snow line on every side)
+	// keeps the flat waterLevelFrac reset above - correctly "no pool,"
+	// not stale data.
+
+	// Diagnostics for the GUI - see the header comment on why these are
+	// only touched here, not scanned every drawGui() call.
+	lastPoolRecomputeMs = (float)ofGetElapsedTimeMillis() - startMs;
+	int pooledCount = 0;
+	for (int i = 0, n = cols * rows; i < n; i++) {
+		if (pool[i] > waterLevelFrac)
+			pooledCount++;
+	}
+	lastPooledCellCount = pooledCount;
+}
+
 void VegetationField::setKinectROI(ofRectangle & KROI)
 {
 	kinectROI = KROI;
@@ -247,6 +361,18 @@ void VegetationField::setKinectROI(ofRectangle & KROI)
 	fruitDensity = cv::Mat::zeros(rows, cols, CV_32F);
 	nutDensity = cv::Mat::zeros(rows, cols, CV_32F);
 	previousElevation = cv::Mat::zeros(rows, cols, CV_32F);
+	// Defaults to the flat sea level, not 0 - a zero default would make
+	// isWater's pooling check (elevFrac < poolLevel) false everywhere,
+	// including the ordinary flat "sea," until the first recomputePools()
+	// call up to POOL_RECOMPUTE_INTERVAL_SEC later - a real regression
+	// right after any grid rebuild, not just a cosmetic delay.
+	poolLevel = cv::Mat(rows, cols, CV_32F, cv::Scalar(TEMPERATURE - LIVING_RANGE_FRACTION));
+	// Set to the interval itself, not 0 - update()'s `poolRecomputeTimer
+	// += dt` check means starting at 0 would leave the grid sitting on
+	// the flat "no pool" default above for a needless extra
+	// POOL_RECOMPUTE_INTERVAL_SEC after every ROI rebuild; this forces a
+	// real recompute on the very next update() call instead.
+	poolRecomputeTimer = POOL_RECOMPUTE_INTERVAL_SEC;
 	// A regenerated grid has no valid "last frame" to diff against yet -
 	// update() seeds previousElevation on its first pass and skips the
 	// activity computation that frame rather than reading a fake spike
@@ -324,7 +450,16 @@ void VegetationField::update()
 			prevElevation = elevation;
 
 			float elevFrac = normalizedElevation(elevation);
-			bool isWater = elevFrac < waterLevelFrac;
+			// Pooling check reads the LAST recomputed pool geometry
+			// (recomputePools() runs periodically, below) but this frame's
+			// own live elevFrac - so a cell already inside an established
+			// pool responds to digging/mounding instantly, same as the
+			// flat threshold always has; only whether a NEW basin exists
+			// at all lags by up to POOL_RECOMPUTE_INTERVAL_SEC. poolLevel
+			// defaults to waterLevelFrac everywhere (see setKinectROI()),
+			// so this collapses to the exact old flat check for any cell
+			// not part of an enclosed basin.
+			bool isWater = ENABLE_POOLING ? (elevFrac < poolLevel.at<float>(gy, gx)) : (elevFrac < waterLevelFrac);
 			bool isSnow = !isWater && elevFrac > snowLevelFrac;
 
 			float & shrub = shrubDensity.at<float>(gy, gx);
@@ -403,6 +538,19 @@ void VegetationField::update()
 	} else {
 		activityBaselineReady = true;
 	}
+
+	// Hydrology first slice - periodic, not per-frame (see the header
+	// note). Runs after the per-cell loop above so previousElevation is
+	// fully refreshed for every cell this frame before recomputePools()
+	// reads it - it's the same elevation sample already taken for the
+	// activity computation, not a second Kinect query.
+	if (ENABLE_POOLING) {
+		poolRecomputeTimer += dt;
+		if (poolRecomputeTimer >= POOL_RECOMPUTE_INTERVAL_SEC) {
+			recomputePools(waterLevelFrac, snowLevelFrac);
+			poolRecomputeTimer = 0.0f;
+		}
+	}
 }
 
 bool VegetationField::cellIndexAt(float kx, float ky, int & gx, int & gy) const
@@ -465,6 +613,13 @@ bool VegetationField::isWaterAt(float kx, float ky) const
 	if (!kinectProjector)
 		return false;
 	float elevFrac = normalizedElevation(kinectProjector->elevationAtKinectCoord(kx, ky));
+	// Same pooling-aware check as update() - see that function's comment.
+	// Movement-blocking (Critter/HumanAgent) and fishing eligibility both
+	// go through this, so agents correctly treat a filled pool as real
+	// water too, not just what's visually rendered.
+	int gx, gy;
+	if (ENABLE_POOLING && cellIndexAt(kx, ky, gx, gy))
+		return elevFrac < poolLevel.at<float>(gy, gx);
 	return elevFrac < (TEMPERATURE - LIVING_RANGE_FRACTION);
 }
 
@@ -638,6 +793,31 @@ void VegetationField::drawGui()
 	ImGui::SliderFloat("Spread radius (mm)", &SPREAD_RADIUS_MM, 0.0f, 200.0f);
 	ImGui::SliderFloat("Spread chance multiplier", &SPREAD_CHANCE_MULTIPLIER, 1.0f, 20.0f);
 	ImGui::Text("mm per grid cell (measured): %.2f -> spread radius is ~%d cells", mmPerCell, std::max(1, (int)(SPREAD_RADIUS_MM / mmPerCell)));
+	ImGui::Separator();
+	ImGui::Text("Hydrology, first slice (succession-model phase): depression-filling");
+	ImGui::Text("water pools, layered on top of the flat water line above rather than");
+	ImGui::Text("replacing it. An enclosed low area whose floor sits ABOVE the flat");
+	ImGui::Text("water line but is fully rimmed below the snow line fills with its");
+	ImGui::Text("own local pool, up to its lowest rim - not ELF's behavior (its water");
+	ImGui::Text("check is a flat per-cell threshold with no pooling/connectivity at");
+	ImGui::Text("all), a deliberate departure logged in CLAUDE.md.");
+	ImGui::Checkbox("Enable pooling (uncheck to A/B test performance)", &ENABLE_POOLING);
+	ImGui::Text("Recomputed periodically, not every frame - a cell already inside an");
+	ImGui::Text("established pool still reacts to digging/mounding instantly; only");
+	ImGui::Text("whether a NEW basin exists at all lags by up to this interval.");
+	ImGui::SliderFloat("Pool recompute interval (sec)", &POOL_RECOMPUTE_INTERVAL_SEC, 0.1f, 5.0f);
+	if (ImGui::Button("Recompute pools now")) {
+		float waterLevelFrac = TEMPERATURE - LIVING_RANGE_FRACTION;
+		recomputePools(waterLevelFrac, TEMPERATURE);
+		poolRecomputeTimer = 0.0f;
+	}
+	ImGui::Text("Last recompute: %.2f ms, %d cells currently pooled above the flat line", lastPoolRecomputeMs, lastPooledCellCount);
+	ImGui::Text("If that time is ever visible as a hitch, raise the interval above or");
+	ImGui::Text("disable pooling - this is untested on real hardware so far.");
+	ImGui::Text("Known first-slice limitation: a perched pool always renders in the");
+	ImGui::Text("lighter 'shallow' water shade (the depth gradient is still anchored");
+	ImGui::Text("to the flat water line) - it still reads clearly as water, just not");
+	ImGui::Text("with its own internal depth shading yet. See CLAUDE.md.");
 	ImGui::Separator();
 	ImGui::Text("Nut visibility threshold (NOT in ELF): nut's color, (0,h,h),");
 	ImGui::Text("has no channel pinned bright like shrub/fruit do, so a single");

@@ -384,6 +384,41 @@ public:
 	// higher chance when it has something nearby to spread from.
 	static float SPREAD_CHANCE_MULTIPLIER;
 
+	// Hydrology phase, first slice (2026-09-28) - depression-filling water
+	// pools, layered on top of ELF's flat water-line threshold rather than
+	// replacing it (BDlocation.getWater() is itself a flat per-cell
+	// threshold with no connectivity/pooling concept at all - confirmed
+	// from source - so pooling is a deliberate departure, same posture as
+	// the spread layer above). An enclosed low area whose floor sits ABOVE
+	// the flat waterLevelFrac line but is fully rimmed below the snow line
+	// now fills with its own local pool, up to its lowest pour point,
+	// instead of staying dry until sand is dug all the way down to the
+	// single global sea level. See recomputePools()'s comment in the .cpp
+	// for the algorithm (a standard priority-flood depression fill) and
+	// CLAUDE.md for why this design was chosen over a literal port of
+	// either source paper - neither actually contains an implementable
+	// fluvial simulation algorithm.
+	//
+	// Runtime kill switch, same A/B-testing rationale as ENABLE_SPREAD -
+	// this is new, real per-cell-grid-wide computation (bounded, see
+	// POOL_RECOMPUTE_INTERVAL_SEC below, but untested on real hardware),
+	// so an instant way to rule it out as a cause of any FPS regression
+	// without a rebuild matters here too.
+	static bool ENABLE_POOLING;
+	// How often (seconds) pool geometry is recomputed - NOT how often a
+	// cell's own water/land classification updates (that still re-reads
+	// live elevation every frame against the last-computed pool levels,
+	// same instant feel as the flat threshold always had). Only WHICH
+	// cells are even eligible to be part of a pool lags by up to this
+	// interval after reshaping. Deliberately periodic, not per-frame -
+	// the CA spread layer's 60fps->1-2fps regression came from exactly
+	// this class of whole-grid computation running every frame; a full
+	// recompute here is a real, if much smaller and more bounded, cost
+	// (see the .cpp), so it's throttled and tunable rather than assumed
+	// free the way that earlier mistake assumed unbounded per-frame cost
+	// was fine.
+	static float POOL_RECOMPUTE_INTERVAL_SEC;
+
 	// New departure from ELF's literal getCellColor() (2026-09-24, per
 	// explicit user request) - NOT present in ELF, and NOT the same
 	// mechanism as the white "negative space" tie rule in
@@ -479,6 +514,13 @@ private:
 	// count (see the .cpp) is the first thing to reduce.
 	bool hasEstablishedNeighbor(int gx, int gy, cv::Mat const& density) const;
 
+	// Hydrology first slice - priority-flood depression fill, run
+	// periodically from update() (see POOL_RECOMPUTE_INTERVAL_SEC), not
+	// every frame. Writes poolLevel from previousElevation (already fresh
+	// for this frame by the time this runs - see update()) rather than
+	// re-sampling the Kinect a second time. See the .cpp for the algorithm.
+	void recomputePools(float waterLevelFrac, float snowLevelFrac);
+
 	std::shared_ptr<KinectProjector> kinectProjector;
 	ofRectangle kinectROI;
 	int step, cols, rows;
@@ -503,6 +545,21 @@ private:
 	cv::Mat previousElevation;
 	bool activityBaselineReady;
 	float activityLevel;
+
+	// Hydrology first slice - per-cell local pool water-surface elevation
+	// (fraction of the calibrated range, same units as waterLevelFrac),
+	// recomputed periodically by recomputePools() - see ENABLE_POOLING/
+	// POOL_RECOMPUTE_INTERVAL_SEC. Defaults to waterLevelFrac everywhere
+	// (no pool above the flat sea level) and only rises within an enclosed
+	// basin. A cell is water if its own live elevation is below THIS
+	// value, not the flat waterLevelFrac directly - see update().
+	cv::Mat poolLevel;
+	float poolRecomputeTimer;
+	// Diagnostics for the GUI readout, updated only when recomputePools()
+	// actually runs (not scanned every drawGui() call, which would itself
+	// be a real per-GUI-frame cost over the full grid).
+	float lastPoolRecomputeMs;
+	int lastPooledCellCount;
 
 	ofTexture combinedTex;
 };
