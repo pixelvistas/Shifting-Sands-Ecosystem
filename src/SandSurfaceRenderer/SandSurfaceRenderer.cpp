@@ -262,18 +262,15 @@ void SandSurfaceRenderer::drawSandbox() {
     heightMapShader.setUniform1i("debugShowSnow", VegetationField::DEBUG_SHOW_SNOW ? 1 : 0);
     // See VegetationField::NUT_VISIBILITY_THRESHOLD's header note.
     heightMapShader.setUniform1f("nutVisibilityThreshold", VegetationField::NUT_VISIBILITY_THRESHOLD);
-    // See the shader's waterRamp() header note (2026-09-25) - lets water
-    // renormalize its own color gradient to its actual reachable depth
-    // range instead of the raw global elevationNorm.
+    // waterLevelFrac is still needed here (land vegetation's landT below
+    // depends on it) even though the water gradient itself no longer
+    // does - see the shader's header note: water's depth gradient now
+    // reads real per-cell depth decoded from the vegetation texture's
+    // alpha channel directly (VegetationField::update()/stepFlow()),
+    // replacing the old elevation-based proxy this uniform used to feed
+    // (waterGradientFloorFrac, now removed).
     float waterLevelFrac = VegetationField::TEMPERATURE - VegetationField::LIVING_RANGE_FRACTION;
     heightMapShader.setUniform1f("waterLevelFrac", waterLevelFrac);
-    // See VegetationField::WATER_GRADIENT_FLOOR_FRAC's header note - a
-    // SPAN below the water line, not a fixed absolute depth, computed
-    // fresh every frame so it tracks waterLevelFrac wherever TEMPERATURE
-    // currently sits (it eases upward on its own with sculpting activity
-    // - a fixed absolute floor drifted out of reach as soon as that
-    // happened, confirmed on real hardware).
-    heightMapShader.setUniform1f("waterGradientFloorFrac", waterLevelFrac - VegetationField::WATER_GRADIENT_FLOOR_FRAC);
     // See the shader's landT header note (2026-09-28) - land vegetation
     // (shrub/fruit/nut) only ever classifies between waterLevelFrac and
     // TEMPERATURE (the snow line), so their peak-to-white elevation

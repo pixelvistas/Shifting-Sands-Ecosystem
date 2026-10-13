@@ -1100,3 +1100,194 @@ asking directly before attempting a second pass at the same underlying
 goal (making the water/snow lines visible in the sandbox itself) - that
 goal and the legibility concern behind it are unchanged by this revert,
 only this particular execution of it.
+
+User answered this directly the same session: **"I think it was the
+concept itself."** Not pursued further as a standalone fix - superseded
+by the much larger direction-setting conversation below, which answers
+the same underlying legibility problem a different way.
+
+## Strategic reset: physical legibility vs. disclosure legibility (2026-09/10)
+
+Triggered by the user's own doubt, raised unprompted right after the
+threshold-ring revert: "I'm not quite sure what doesn't feel right about
+the project as is... 'where do we go from here?', 'I can barely
+understand the interaction mechanic, so how will others?' 'this isn't an
+ecological succession model yet'." Not a request to fix a specific bug -
+a real question about whether the project's current trajectory (ELF port
+-> CA spread -> pooling -> threshold rings) was actually heading toward
+"ecological succession model," the project's own stated main goal (see
+the "Future phase" section above), or just accumulating disconnected
+features.
+
+Honest assessment given directly: the project genuinely does not have
+real succession dynamics yet - growth is still per-cell-independent
+(spread layer aside), there's no real competitive displacement between
+species over time, and the water/snow mechanic is a classification, not
+a process. That gap is real, not a misunderstanding on the user's part.
+
+**Grounded in two concrete reference points the user provided, not
+abstract discussion:**
+
+1. **The user's actual SSHRC (Social Sciences and Humanities Research
+   Council of Canada) doctoral grant proposal** (`SSHRC_Application_v3.pdf`),
+   shared specifically to check this codebase against real stated
+   research goals rather than drift from them. The proposal frames
+   Shifting Sands as already-complete infrastructure feeding INTO a
+   PhD-level research question about data provenance/trust in tangible
+   models - a "disclosure layer" toggling between data-free/data-informed/
+   data-driven representations. That framing implies a different job for
+   the CURRENT (Master's-level) phase than "add more simulation features
+   indefinitely."
+2. **SND (Sand Noise Device)** by Jay Vandyke (jayvandyke.com/snd) - an AR
+   sandbox art installation the user introduced as a concrete aesthetic/
+   legibility bar: virtual objects with real physics (mass, gravity,
+   momentum) against the sand's shape - rolling downhill, slowing uphill,
+   pooling in pits - legible with zero explanation needed, because the
+   behavior itself is the intuitive, embodied metaphor. Confirmed via a
+   user-provided screenshot of the site's own description text (direct
+   web access to jayvandyke.com/makezine.com was blocked at this
+   environment's outbound proxy - confirmed via direct curl returning 403
+   on both domains, a general restriction, not domain-specific - so the
+   user pasted the relevant text directly rather than Claude fetching it).
+
+**Resolution, explicitly confirmed by the user:** two genuinely different
+kinds of "legibility" were being conflated. SND's is *physical/embodied*
+legibility - understanding through intuitive interaction with no added
+UI. The SSHRC proposal's is *epistemic/disclosure* legibility - understanding
+where the DATA came from and how much to trust it, which needs an actual
+informational UI layer. **"The master's thesis should focus on the
+physical legibility for the core terrain mechanic itself, leaving open
+the possibility to pursue the disclosure UI for the data provenance
+question in the PhD."** This is now the project's explicit phase
+boundary: Master's = make the terrain mechanic itself (water, growth,
+succession) physically intuitive, SND-style; PhD = the data-provenance
+disclosure UI, deliberately not started now.
+
+Given that split, three options for closing water's specific physical-
+legibility gap (currently an invisible threshold, no sense of flow or
+slope-response) were put to the user: (1) shader-only flow-direction
+shimmer (cosmetic, cheapest), (2) non-simulated decorative flow particles
+(cosmetic, moderate), (3) real flow/transport dynamics - water that
+actually flows downhill and pools through genuine per-cell physics,
+replacing the current classification entirely. **User's explicit choice:
+"I want 3"** - the real version of what SND does, not an imitation of it,
+consistent with the physical-legibility framing just agreed on.
+
+**Not yet revisited, status unclear rather than abandoned:** a separately-
+discussed succession mechanic (fruit=pioneer/nut=intermediate/shrub=climax
+with rank-based competitive displacement over time) that the user agreed
+tracked correctly ("yes, that tracks for me exactly") before this
+strategic conversation started. It was superseded in immediate priority
+by the water-physics decision, not rejected - worth asking the user
+directly once flow dynamics is confirmed working on hardware, rather than
+assuming it's still wanted or still deprioritized.
+
+## Hydrology phase, second slice: real flow/transport dynamics - REPLACES pooling (2026-10)
+
+Implements option 3 above. **This removes the "lightweight pooling"
+depression-fill mechanic documented earlier in this file
+(`ENABLE_POOLING`/`POOL_RECOMPUTE_INTERVAL_SEC`/`MAX_POOL_RISE_FRAC`/
+`recomputePools()`/`poolLevel`, and the `WATER_GRADIENT_FLOOR_FRAC`
+cosmetic gradient-proxy fix built on top of it) entirely, rather than
+adding flow alongside it.** Pooling's own header note already called
+itself "the cautious version of real flow, until real flow is safe to
+attempt" - that condition is now met, and running both at once would
+mean two different systems independently deciding "is this cell water,"
+a correctness risk rather than redundant safety. Depression-filling (the
+whole point of pooling) is subsumed as an emergent property of real flow
+instead: water flowing into an enclosed basin has nowhere else to go and
+settles at the basin's real rim through the same per-frame dynamics, no
+separate priority-flood graph algorithm needed.
+
+**Algorithm: virtual pipes (Mei/Decaudin/Hu-style), CPU-side, every
+frame.** Each cell now carries a persistent water DEPTH (`waterDepth`/
+`waterDepthNext`, ping-pong CV_32F buffers, same fraction-of-range units
+as everything else in this class) on top of its terrain elevation; the
+water SURFACE height is `terrain + depth`, and flow between 4-neighbors
+is driven by surface-height differences, transported proportional to
+that difference. Implemented as two passes per frame (`stepFlow()` in
+`VegetationField.cpp`) specifically to be unconditionally stable without
+a CFL-style timestep restriction: pass 1 computes each cell's own
+outflow-limiting SCALE factor (the total it would send to all downhill
+neighbors, capped so it never exceeds that cell's own current depth -
+self-limiting, not a global bound on `FLOW_RATE`/`dt`); pass 2 applies
+each cell's net change (outflow scaled by its OWN factor, inflow scaled
+by the NEIGHBOR's factor, both recomputed from last frame's state) and
+writes only `waterDepthNext` - a pure Jacobi update, no read-after-write
+hazard the way an in-place sweep would have. The existing flat
+`waterLevelFrac` (already tuned from real hardware measurements, see
+above) is reused as-is as the sea's surface elevation: any cell below it
+has its depth clamped up to at least `waterLevelFrac - elevFrac` AFTER
+the flow step, every frame - a real boundary condition the simulation
+continuously maintains, not a one-time seed, so flow can't drain the sea
+itself.
+
+**Cost budget, checked before writing anything** (the CA spread layer's
+actual lesson, re-examined rather than over-applied): ~519x295 grid,
+~153K cells, two full passes of 4-neighbor arithmetic each - additions/
+multiplications/comparisons only, no `ofRandom`/`cos`/`sin`/`sqrt`. The
+CA regression's real cause was specifically *expensive per-sample
+operations at volume* (up to 3 species x 8 samples x every cell, each
+with 2x `ofRandom` + trig + `sqrt`), not "touching every cell every
+frame is inherently unsafe" - `recomputePools()` already ran a whole-grid
+pass every ~1s safely, and this is a categorically cheaper operation
+class still, run every frame instead. `ENABLE_FLOW` is still a real A/B
+kill switch (default on) in case this estimate is wrong on real hardware.
+
+**Rendering: the vegetation texture's alpha channel is repurposed from a
+0/128/255 tri-state flag to continuous depth.** Snow stays reserved at a
+flat 255 (unchanged - no gradation needed). Water's real depth is packed
+into 1-249 (0 = dry/tie, preserving a clean cutoff), scaled by
+`MAX_WATER_DEPTH_FRAC`. `heightMapShader.frag`'s water branch (both GL2/
+GL3, kept in sync per this file's convention) now decodes that depth
+directly (`(veg.a*255-1)/248`) and feeds it to the unchanged `waterRamp()`
+two-stop gradient - this is now genuine simulated depth driving the
+visual, not a cosmetic proxy computed from elevation the way pooling's
+`WATER_GRADIENT_FLOOR_FRAC` fix was (and incidentally fixes that fix's
+own documented limitation for free: a perched pool no longer renders
+stuck at the "shallow" shade regardless of its real depth, since there's
+no longer a separate perched-pool case at all). `waterLevelFrac` itself
+stays as a shader uniform (land vegetation's `landT` still needs it);
+only the now-dead `waterGradientFloorFrac` uniform/CPU-side constant was
+removed.
+
+**Classification/hysteresis**: `isWaterAt()`/`waterState` keep the exact
+same Schmitt-trigger hysteresis mechanism pooling's shoreline-flicker fix
+added (`WATER_HYSTERESIS_FRAC`, value unchanged) - same physical sensor-
+noise justification applies to a depth signal as much as an elevation
+one. The threshold it stabilizes around is now `MIN_VISIBLE_WATER_DEPTH_FRAC`
+(new - a cell isn't "visibly water" below this depth, since a real
+flowing system can leave a thin near-zero film mid-drain that would
+otherwise flicker at a meaningless depth) rather than the old pool/flat
+elevation level. `update()`'s per-cell loop reads `waterDepth` as it
+stood BEFORE that frame's `stepFlow()` call and `stepFlow()` runs after,
+using this frame's freshly-sampled elevation - the same one-frame-lag
+ordering `recomputePools()` used, just unthrottled.
+
+**Known first-pass limitations, flagged explicitly (not hidden), per the
+approved plan:**
+- Numerical stability is more robust by construction than originally
+  worried (the self-limiting outflow scale factor prevents negative/
+  runaway depth regardless of `FLOW_RATE`), but still genuinely untested
+  on real hardware - visual jitter or unexpectedly slow/fast settling is
+  still possible and `FLOW_RATE` is the first thing to retune.
+- No rainfall/runoff - only the flat sea level acts as a source. A cell
+  above sea level stays bone dry until water actually flows there from
+  the sea or from digging into existing water. Plausible future addition,
+  out of scope here.
+- Digging into/mounding over existing water is handled implicitly by the
+  per-frame surface-height recompute (raising terrain under water pushes
+  it out via the next flow step) rather than a special case - expected to
+  look physically right, untested.
+
+**Not yet tested on real hardware at all** - `FLOW_RATE=4.0`,
+`MIN_VISIBLE_WATER_DEPTH_FRAC=0.004`, and `MAX_WATER_DEPTH_FRAC=0.05` are
+all first-guess defaults (the latter carried over in rough magnitude from
+the old `MAX_POOL_RISE_FRAC`), same "untested, live-tunable in the
+Vegetation panel" posture every other constant in this file started with.
+Verification plan: (1) confirm the flat sea still appears as before at
+rest: (2) dig an enclosed bowl above the water line and confirm water
+visibly flows in and fills it over a few seconds, continuously, not an
+instant snap; (3) mound sand into existing water and confirm it visibly
+drains/displaces rather than being trapped; (4) compare FPS with
+`ENABLE_FLOW` on vs. off.

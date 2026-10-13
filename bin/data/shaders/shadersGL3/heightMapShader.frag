@@ -119,43 +119,30 @@ uniform int debugShowSnow;
 // to the same negative-space default as a real tie instead.
 uniform float nutVisibilityThreshold;
 // TEMPERATURE - LIVING_RANGE_FRACTION (see VegetationField.h) - the
-// fraction-of-range threshold below which a cell classifies as water.
-// Needed here (2026-09-25) to renormalize water's OWN color gradient to
-// its actual reachable depth range - see waterRamp() below for why.
+// fraction-of-range threshold below which a cell's terrain sits below
+// the flat "sea" level. No longer used for water's own color gradient
+// (see waterRamp()/main()'s water branch below - that now reads real
+// per-cell depth decoded from the vegetation texture's alpha channel,
+// from VegetationField's flow simulation, not an elevation-based proxy)
+// - still needed here because land vegetation's landT just below does.
 uniform float waterLevelFrac;
-// See VegetationField::WATER_GRADIENT_FLOOR_FRAC's header note
-// (2026-09-25, retuned 2026-09-28) - the elevationNorm fraction below
-// which water is already rendered at its darkest shade. NOT
-// elevationNorm=0: that's the calibrated floor, which is never actually
-// measured and sits far deeper than any real dig reaches. NOT a fixed
-// absolute depth either (an earlier version of this fix was, and broke
-// again the moment TEMPERATURE eased upward from sculpting activity and
-// the water line moved - a static floor can't track a moving water
-// line). Computed fresh each frame in SandSurfaceRenderer::
-// drawSandbox() as `waterLevelFrac - WATER_GRADIENT_FLOOR_FRAC`, so it
-// always sits a fixed SPAN below wherever the water line currently is.
-uniform float waterGradientFloorFrac;
 // TEMPERATURE (see VegetationField.h) - the fraction-of-range threshold
 // above which a cell classifies as snow. Added 2026-09-28 alongside
 // landT below - see that comment for why land vegetation needs this in
 // addition to waterLevelFrac.
 uniform float snowLevelFrac;
 
-// Water-only gradient - see the header note (part 2) and waterLevelFrac/
-// waterGradientFloorFrac above. Deliberately separate from
-// terrainRamp(): water previously shared that ramp at the raw global
-// elevationNorm, but water's whole reachable depth only spans a narrow
-// band near the water line - meaning water's SHALLOW edge sampled
-// terrainRamp() at essentially the same t as the adjacent tie land just
-// above the water line, so the two rendered nearly identically right at
-// the shoreline. Confirmed on real hardware: water wasn't reading as
-// distinctly blue enough to tell apart from negative space or shrub.
-// Fix, per explicit user request: dedicate just the ramp's first two
-// stops to water, and renormalize elevationNorm to water's OWN
-// REACHABLE range (waterGradientFloorFrac..waterLevelFrac, see main()
-// below) - not the theoretical 0..waterLevelFrac range, which is what
-// caused the SECOND bug (flat/uniform water, no visible gradient at
-// all) once the first fix was actually tested on hardware.
+// Water-only gradient - see the header note (part 2). Deliberately
+// separate from terrainRamp(): water previously shared that ramp at the
+// raw global elevationNorm, which rendered nearly identically to the
+// adjacent tie land right at the shoreline - dedicating the ramp's
+// first two stops to water fixed that. The gradient PARAMETER fed in
+// here has since changed again (2026-10, real flow/transport dynamics):
+// `t` is now real per-cell water depth decoded directly from the
+// vegetation texture's alpha channel in main() below, not a proxy
+// computed from elevation at all - see VegetationField.h's ENABLE_FLOW/
+// MAX_WATER_DEPTH_FRAC header notes. This function itself (the two
+// color stops) is unchanged - only what's fed into it changed.
 vec3 waterRamp(float t)
 {
     vec3 deep = vec3(0.000, 0.259, 0.616);    // #00429d
@@ -246,33 +233,31 @@ void main()
         vec2 vegUV = (texcoordfrag - vegetationGridOrigin) / vegetationGridStep;
         vec4 veg = texture(vegetationSampler, vegUV);
 
-        if (veg.a > 0.75)
+        if (veg.a > 0.98)
         {
-            // Water - dedicated waterRamp() (2026-09-25), not the shared
-            // terrainRamp() - see that function's comment for why. Depth
-            // renormalized to water's OWN REACHABLE range
-            // (waterGradientFloorFrac..waterLevelFrac), not the
-            // theoretical 0..waterLevelFrac range (that was the fix's
-            // first version - confirmed on real hardware to still look
-            // flat, since the calibrated floor at elevationNorm=0 is
-            // never actually reachable by a real dig) - so the full
-            // deep-to-shallow blue gradient spans exactly what a real
-            // dig can produce. Same "gets darker with depth" convention
-            // the ELF reference figure the user provided confirmed as
-            // correct, just rescaled to stay distinctly blue AND show
-            // real variation at every reachable depth.
-            float waterDepthT = clamp(
-                (elevationNorm - waterGradientFloorFrac) / max(waterLevelFrac - waterGradientFloorFrac, 0.0001),
-                0.0, 1.0);
-            color.rgb = waterRamp(waterDepthT);
-        }
-        else if (veg.a > 0.25)
-        {
-            // Snow - BDlocation.getCellColor(): Color.WHITE, unmodulated -
-            // except in debug mode, where it's tinted pale blue instead so
-            // it doesn't read as identical to un-grown negative space.
-            // Untouched by the 2026-09-24 palette work - see the header note.
+            // Snow - packed at a reserved flat 255/255 in the alpha
+            // channel (2026-10, see VegetationField::update()) now that
+            // alpha otherwise carries continuous water depth rather than
+            // a 0/128/255 tri-state flag - snow still renders as
+            // BDlocation.getCellColor()'s flat Color.WHITE, unmodulated,
+            // except in debug mode (pale blue) so it doesn't read as
+            // identical to un-grown negative space. Untouched by the
+            // 2026-09-24 palette work - see the header note.
             color.rgb = (debugShowSnow == 1) ? vec3(0.75, 0.85, 1.0) : vec3(1.0, 1.0, 1.0);
+        }
+        else if (veg.a > 0.0)
+        {
+            // Water - dedicated waterRamp(), not the shared terrainRamp()
+            // - see that function's comment for why. REAL per-cell depth
+            // (2026-10, replacing the earlier elevation-based proxy),
+            // decoded directly from the alpha channel: VegetationField
+            // packs depth into 1-249/255 (0 = dry/tie, reserving 255 for
+            // snow above), scaled by MAX_WATER_DEPTH_FRAC - see
+            // VegetationField::update()/stepFlow(). This is now genuine
+            // simulated water depth, not a cosmetic stand-in computed
+            // from elevation.
+            float waterDepthT = clamp((veg.a * 255.0 - 1.0) / 248.0, 0.0, 1.0);
+            color.rgb = waterRamp(waterDepthT);
         }
         else if (veg.r > veg.g && veg.r > veg.b)
         {

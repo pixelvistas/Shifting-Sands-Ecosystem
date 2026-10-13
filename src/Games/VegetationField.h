@@ -384,86 +384,84 @@ public:
 	// higher chance when it has something nearby to spread from.
 	static float SPREAD_CHANCE_MULTIPLIER;
 
-	// Hydrology phase, first slice (2026-09-28) - depression-filling water
-	// pools, layered on top of ELF's flat water-line threshold rather than
-	// replacing it (BDlocation.getWater() is itself a flat per-cell
-	// threshold with no connectivity/pooling concept at all - confirmed
-	// from source - so pooling is a deliberate departure, same posture as
-	// the spread layer above). An enclosed low area whose floor sits ABOVE
-	// the flat waterLevelFrac line but is fully rimmed below the snow line
-	// now fills with its own local pool, up to its lowest pour point,
-	// instead of staying dry until sand is dug all the way down to the
-	// single global sea level. See recomputePools()'s comment in the .cpp
-	// for the algorithm (a standard priority-flood depression fill) and
-	// CLAUDE.md for why this design was chosen over a literal port of
-	// either source paper - neither actually contains an implementable
-	// fluvial simulation algorithm.
+	// Hydrology phase, second slice (2026-10) - REPLACES the depression-
+	// filling pool mechanic above with real per-cell water depth and
+	// 4-neighbor flow (virtual pipes, Mei/Decaudin/Hu-style), run every
+	// frame. Chosen over pooling as the deliberately more ambitious
+	// option once the project's direction-setting conversation (see
+	// CLAUDE.md) landed on physical/embodied legibility - the SND ("Sand
+	// Noise Device") reference - as the Master's thesis' actual goal:
+	// water that visibly flows downhill and settles, not an invisible
+	// threshold that silently reclassifies a cell. Pooling's own header
+	// note already called it "the cautious version of real flow, until
+	// real flow is safe to attempt" - it doesn't stay alongside this,
+	// since running both at once would mean two different systems both
+	// deciding "is this cell water." Depression-filling is subsumed as an
+	// emergent property instead: water that flows into an enclosed basin
+	// has nowhere else to go and settles at the basin's real rim through
+	// actual per-frame dynamics, no separate priority-flood graph pass
+	// needed. See stepFlow()'s comment in the .cpp for the algorithm and
+	// CLAUDE.md for the real-world cost budget this was checked against
+	// before writing it (the CA spread layer's 60fps->1-2fps regression's
+	// actual lesson was "expensive per-sample trig/random at volume," not
+	// "whole-grid-every-frame is inherently too expensive" -
+	// recomputePools() already proved a whole-grid pass can be cheap;
+	// this is pure arithmetic, no transcendental functions, a cheaper
+	// operation class still).
 	//
-	// Runtime kill switch, same A/B-testing rationale as ENABLE_SPREAD -
-	// this is new, real per-cell-grid-wide computation (bounded, see
-	// POOL_RECOMPUTE_INTERVAL_SEC below, but untested on real hardware),
-	// so an instant way to rule it out as a cause of any FPS regression
-	// without a rebuild matters here too.
-	static bool ENABLE_POOLING;
-	// How often (seconds) pool geometry is recomputed - NOT how often a
-	// cell's own water/land classification updates (that still re-reads
-	// live elevation every frame against the last-computed pool levels,
-	// same instant feel as the flat threshold always had). Only WHICH
-	// cells are even eligible to be part of a pool lags by up to this
-	// interval after reshaping. Deliberately periodic, not per-frame -
-	// the CA spread layer's 60fps->1-2fps regression came from exactly
-	// this class of whole-grid computation running every frame; a full
-	// recompute here is a real, if much smaller and more bounded, cost
-	// (see the .cpp), so it's throttled and tunable rather than assumed
-	// free the way that earlier mistake assumed unbounded per-frame cost
-	// was fine.
-	static float POOL_RECOMPUTE_INTERVAL_SEC;
-	// FOUND AND FIXED (2026-09-28, same day, confirmed broken on real
-	// hardware): the flood in recomputePools() originally only stopped at
-	// the snow line - but "land between the water and snow lines" IS most
-	// of the terrain by definition, so instead of filling small enclosed
-	// bowls it was computing a full watershed pour-point flood across
-	// nearly the entire connected landmass (confirmed on hardware as
-	// widespread blue speckle across ordinary terrain, plus visible
-	// "blinking" - with the flood essentially unbounded, a couple mm of
-	// ordinary sensor noise at some saddle point could flip whether huge
-	// swaths of the board were reachable, once per recompute cycle). This
-	// caps how far ABOVE THE FLAT WATER LINE a pool is allowed to rise
-	// (fraction of the calibrated range, same mm-to-fraction conversion
-	// as WATER_GRADIENT_FLOOR_FRAC) - the flood simply stops relaxing a
-	// neighbor once filling it would exceed this, which bounds pools to
-	// genuinely small, locally-enclosed dips near the water line instead
-	// of the whole reachable landmass, and as a side effect makes the
-	// result far less sensitive to elevation noise (a saddle far below
-	// this cap won't flip on a few mm of jitter the way an unbounded
-	// flood's much-higher, much-more-distant saddle points could).
-	// Default ~15mm-equivalent - a first guess, untested, tune from here
-	// if pools feel too small/large in practice.
-	static float MAX_POOL_RISE_FRAC;
-	// FOUND (2026-09-28), reported directly on real hardware right after
-	// the fix above: "it's flickering around the waterline" - a
-	// DIFFERENT bug from the one MAX_POOL_RISE_FRAC fixed (that one was
-	// huge swaths of the board flipping once a second; this is the
-	// water's edge itself flickering fast, every frame). Root cause:
-	// isWater was always a raw instantaneous comparison against live
-	// elevation, with NO hysteresis at all - a cell sitting within
-	// Kinect's own known ~1-2mm depth noise floor (see
-	// ACTIVITY_NOISE_FLOOR's header note - same physical noise, used
-	// there for TEMPERATURE) of whatever threshold applies flickers in
-	// and out of "water" every single frame purely from sensor jitter,
-	// completely independent of pooling - this would have been true of
-	// the ORIGINAL flat-threshold check too, just not previously reported
-	// (a thin, fast-flickering boundary line is far less visually jarring
-	// than "half the board flooding," so it likely went unnoticed until
-	// attention was specifically on the shoreline).
-	// Fix: standard Schmitt-trigger hysteresis (see waterState below) - a
-	// cell must cross clearly PAST the threshold by this margin to
-	// change state at all, not just brush it, and otherwise keeps
-	// whatever state it already had. Fraction of the calibrated range,
-	// same mm-to-fraction pattern as the other tunables here; default
-	// ~4mm-equivalent (a bit more than ACTIVITY_NOISE_FLOOR's ~3mm, since
-	// this needs to reliably beat the noise, not just usually).
+	// Runtime kill switch, same A/B-testing rationale as ENABLE_SPREAD/
+	// (the removed) ENABLE_POOLING - instant rollback without a rebuild
+	// if this turns out to be a real per-frame cost or numerically
+	// unstable on real hardware, neither confirmed yet.
+	static bool ENABLE_FLOW;
+	// First-guess, untested on real hardware - scales how fast water
+	// surface height differences (terrain + depth) between 4-neighbors
+	// drive transport per second. stepFlow()'s own per-cell outflow is
+	// self-limiting (scaled down so a cell can never send more than its
+	// own current depth, every frame, regardless of this value) rather
+	// than relying on a strict CFL-style timestep bound, so raising this
+	// mainly trades "settles in fewer frames" for "bigger single-frame
+	// moves," not instability in the classic exploding-oscillation sense
+	// - but still untested on hardware, so lower this first if flow ever
+	// looks unstable/jittery in practice.
+	static float FLOW_RATE;
+	// Depth (fraction of the calibrated elevation range) below which a
+	// cell isn't considered "visibly water" at all - plays the same role
+	// WATER_HYSTERESIS_FRAC's margin sits around as the old flat/pool
+	// elevation threshold did, just against a simulated depth value now
+	// instead of raw elevation. A real flowing system can leave a cell
+	// with a near-zero but nonzero depth (a thin film mid-drain); without
+	// a floor like this such a cell would flicker in and out of "water"
+	// at a visually meaningless depth. First-guess, untested.
+	static float MIN_VISIBLE_WATER_DEPTH_FRAC;
+	// FOUND (2026-09-28, under the pooling mechanic this replaces),
+	// reported directly on real hardware: "it's flickering around the
+	// waterline" - a raw instantaneous comparison against a noisy
+	// elevation/depth signal flickers at any boundary from ordinary
+	// ~1-2mm sensor noise alone (see ACTIVITY_NOISE_FLOOR's header note -
+	// same physical noise). Mechanism unchanged by the flow-dynamics
+	// replacement, just re-pointed at a depth-crossing instead of an
+	// elevation-crossing (see waterState below and stepFlow()): standard
+	// Schmitt-trigger hysteresis - a cell must cross clearly PAST
+	// MIN_VISIBLE_WATER_DEPTH_FRAC by this margin to change state at all,
+	// not just brush it, and otherwise keeps whatever state it already
+	// had. Fraction of the calibrated range; default ~4mm-equivalent (a
+	// bit more than ACTIVITY_NOISE_FLOOR's ~3mm, since this needs to
+	// reliably beat the noise, not just usually) - value carried over
+	// unchanged from the pooling-era tuning, since the underlying noise
+	// source and required margin are the same.
 	static float WATER_HYSTERESIS_FRAC;
+	// Depth (fraction of the calibrated elevation range) a cell needs to
+	// reach for the alpha-channel encoding (see update()'s texture
+	// upload) to read as "fully deep" - i.e. the scale MAX_WATER_DEPTH_FRAC
+	// maps to the darkest waterRamp() stop, same role pooling's
+	// WATER_GRADIENT_FLOOR_FRAC played for its elevation-based proxy, now
+	// against a real simulated depth instead of a cosmetic proxy. First-
+	// guess, untested on real hardware - carried over in rough magnitude
+	// from the old MAX_POOL_RISE_FRAC default, since both represent "how
+	// much standing water above the bare minimum is visually meaningful"
+	// on this box's calibrated range.
+	static float MAX_WATER_DEPTH_FRAC;
 
 	// New departure from ELF's literal getCellColor() (2026-09-24, per
 	// explicit user request) - NOT present in ELF, and NOT the same
@@ -502,29 +500,6 @@ public:
 	// shader as a uniform - see SandSurfaceRenderer::drawSandbox().
 	static float NUT_VISIBILITY_THRESHOLD;
 
-	// Cosmetic-only water-gradient SPAN (renamed in effect 2026-09-25/28,
-	// see the .cpp) - NOT a classification threshold, waterLevelFrac
-	// still decides what IS water. Fixes the water gradient reading as
-	// flat/uniform: it was renormalized as elevationNorm/waterLevelFrac,
-	// silently assuming water reaches down to elevationNorm=0 (the
-	// calibrated floor, elevationMin) - but that floor is never actually
-	// measured (just mirrors the calibrated ceiling symmetrically, see
-	// setElevationRange()'s header note), so it sits far deeper than any
-	// real dig can reach.
-	// NOT the user's absolute measured dig limit either (a first attempt
-	// at this used that, and still required near-maximal digging with
-	// almost no margin), and NOT a fixed absolute elevation either (a
-	// SECOND attempt used that, and broke again the moment TEMPERATURE
-	// eased upward from sculpting activity and the water line moved -
-	// see the .cpp for the real-hardware feedback that caught each one).
-	// This is now how far BELOW WHATEVER THE CURRENT WATER LINE IS the
-	// gradient reaches full darkness - SandSurfaceRenderer::
-	// drawSandbox() computes the actual floor fresh each frame as
-	// `waterLevelFrac - WATER_GRADIENT_FLOOR_FRAC` before passing it to
-	// the shader, so it tracks the water line wherever TEMPERATURE
-	// currently puts it.
-	static float WATER_GRADIENT_FLOOR_FRAC;
-
 	// Debug aid only - normally snow renders as flat white, identical to
 	// un-grown negative-space land (see heightMapShader.frag's header
 	// note), which makes it impossible to tell by eye whether a blank
@@ -560,12 +535,13 @@ private:
 	// count (see the .cpp) is the first thing to reduce.
 	bool hasEstablishedNeighbor(int gx, int gy, cv::Mat const& density) const;
 
-	// Hydrology first slice - priority-flood depression fill, run
-	// periodically from update() (see POOL_RECOMPUTE_INTERVAL_SEC), not
-	// every frame. Writes poolLevel from previousElevation (already fresh
-	// for this frame by the time this runs - see update()) rather than
-	// re-sampling the Kinect a second time. See the .cpp for the algorithm.
-	void recomputePools(float waterLevelFrac, float snowLevelFrac);
+	// Hydrology second slice - real per-cell water depth/flow, run every
+	// frame from update() (unlike the periodic recomputePools() this
+	// replaces - see ENABLE_FLOW's header note on why per-frame is safe
+	// here). Reads previousElevation (already fresh for this frame by the
+	// time this runs - see update()) rather than re-sampling the Kinect a
+	// second time. See the .cpp for the algorithm.
+	void stepFlow(float waterLevelFrac);
 
 	std::shared_ptr<KinectProjector> kinectProjector;
 	ofRectangle kinectROI;
@@ -592,20 +568,18 @@ private:
 	bool activityBaselineReady;
 	float activityLevel;
 
-	// Hydrology first slice - per-cell local pool water-surface elevation
-	// (fraction of the calibrated range, same units as waterLevelFrac),
-	// recomputed periodically by recomputePools() - see ENABLE_POOLING/
-	// POOL_RECOMPUTE_INTERVAL_SEC. Defaults to waterLevelFrac everywhere
-	// (no pool above the flat sea level) and only rises within an enclosed
-	// basin. A cell is water if its own live elevation is below THIS
-	// value, not the flat waterLevelFrac directly - see update().
-	cv::Mat poolLevel;
-	float poolRecomputeTimer;
-	// Diagnostics for the GUI readout, updated only when recomputePools()
-	// actually runs (not scanned every drawGui() call, which would itself
-	// be a real per-GUI-frame cost over the full grid).
-	float lastPoolRecomputeMs;
-	int lastPooledCellCount;
+	// Hydrology second slice - persistent per-cell water depth (fraction
+	// of the calibrated range, same units as waterLevelFrac), updated
+	// every frame by stepFlow() - see ENABLE_FLOW/FLOW_RATE. Ping-pong
+	// pair: stepFlow() reads waterDepth (last frame's settled state) and
+	// writes waterDepthNext, then the two are swapped - a Jacobi update,
+	// not in-place, so a cell's new depth is computed from ALL four
+	// neighbors' last-frame values rather than a directionally-biased mix
+	// of already-updated and not-yet-updated ones. flowScale is scratch
+	// space for stepFlow()'s outflow-limiting pass (see the .cpp) - a
+	// persistent member purely to avoid a fresh heap allocation every
+	// frame, not meaningful state in its own right.
+	cv::Mat waterDepth, waterDepthNext, flowScale;
 
 	// Persistent per-cell "is this currently classified as water" state
 	// (0.0/1.0, CV_32F) - see WATER_HYSTERESIS_FRAC's header note. Not

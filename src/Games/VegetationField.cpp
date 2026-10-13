@@ -1,7 +1,5 @@
 #include "VegetationField.h"
 #include "ofxImGui.h"
-#include <queue>
-#include <vector>
 
 // Fraction of the calibrated elevation range (see setElevationRange() and
 // the header note), not millimeters. Starts equal to BASE_TEMPERATURE so
@@ -89,30 +87,26 @@ float VegetationField::NUT_GROWTH_CHANCE_PCT = 2.0f;
 bool VegetationField::ENABLE_SPREAD = true;
 float VegetationField::SPREAD_RADIUS_MM = 40.0f;
 float VegetationField::SPREAD_CHANCE_MULTIPLIER = 5.0f;
-// Hydrology first slice - see the header note. Default on, same A/B
-// posture as ENABLE_SPREAD.
-bool VegetationField::ENABLE_POOLING = true;
-// First-guess default, untested on real hardware - see the header note on
-// why this is periodic rather than per-frame. A full recompute is an
-// O(n log n) priority-flood over the whole grid (~153K cells at this
-// project's usual 519x295 resolution) - estimated single-digit
-// milliseconds in a Release build, cheap enough to not need spreading
-// across multiple frames for a first slice, but real enough that running
-// it EVERY frame would repeat the spread layer's original mistake of
-// assuming a whole-grid-every-frame cost is free without checking. 1.0s
-// keeps pools feeling responsive to reshaping without paying that cost 60
-// times a second.
-float VegetationField::POOL_RECOMPUTE_INTERVAL_SEC = 1.0f;
-// FOUND AND FIXED same day, confirmed broken on real hardware (widespread
-// blue speckle across ordinary terrain, plus visible blinking) - see the
-// header note. ~15mm-equivalent on this box's ~285mm calibrated range,
-// same mm-to-fraction pattern as WATER_GRADIENT_FLOOR_FRAC. First guess,
-// untested for feel - live-tunable in the Vegetation panel.
-float VegetationField::MAX_POOL_RISE_FRAC = 0.05f;
-// FOUND (2026-09-28) - see the header note. ~4mm-equivalent on this
-// box's ~285mm calibrated range, a bit past ACTIVITY_NOISE_FLOOR's ~3mm
-// so it reliably beats the same physical sensor noise, not just usually.
+// Hydrology second slice - REPLACES the periodic depression-fill pooling
+// mechanic (ENABLE_POOLING/POOL_RECOMPUTE_INTERVAL_SEC/MAX_POOL_RISE_FRAC,
+// all removed) with real per-frame flow - see the header note. Default on,
+// same A/B posture ENABLE_SPREAD/the removed ENABLE_POOLING both used.
+bool VegetationField::ENABLE_FLOW = true;
+// First-guess, untested on real hardware - see the header note on why
+// stepFlow()'s own self-limiting outflow makes this mainly a "how many
+// frames to settle" knob rather than a stability knob.
+float VegetationField::FLOW_RATE = 4.0f;
+// First-guess, untested on real hardware - see the header note.
+float VegetationField::MIN_VISIBLE_WATER_DEPTH_FRAC = 0.004f;
+// FOUND (2026-09-28), under the pooling mechanic this replaces - see the
+// header note. ~4mm-equivalent on this box's ~285mm calibrated range, a
+// bit past ACTIVITY_NOISE_FLOOR's ~3mm so it reliably beats the same
+// physical sensor noise, not just usually. Value carried over unchanged
+// from the pooling era - same noise source, same required margin.
 float VegetationField::WATER_HYSTERESIS_FRAC = 0.014f;
+// First-guess, untested on real hardware - carried over in rough
+// magnitude from the old MAX_POOL_RISE_FRAC default - see the header note.
+float VegetationField::MAX_WATER_DEPTH_FRAC = 0.05f;
 // New departure from ELF's literal getCellColor(), see the header note -
 // 0.05 (~13/255, ~13 successful nut growth ticks) is a first-guess
 // starting point: enough to filter out a single-tick "flash to black"
@@ -120,43 +114,6 @@ float VegetationField::WATER_HYSTERESIS_FRAC = 0.014f;
 // path to full density. Untested on real hardware for whether it looks
 // right - live-tunable in the Vegetation panel.
 float VegetationField::NUT_VISIBILITY_THRESHOLD = 0.05f;
-// Cosmetic-only, NOT a classification threshold (waterLevelFrac still
-// decides what IS water) - see the header note. Added 2026-09-25 to fix
-// the water gradient reading as flat/uniform with no visible depth
-// variation. The bug: the gradient was renormalized as
-// elevationNorm/waterLevelFrac, which silently assumes water can reach
-// all the way down to elevationNorm=0 - the calibrated FLOOR
-// (elevationMin). But elevationMin is never actually measured (see
-// setElevationRange()'s header note - it just mirrors the calibrated
-// CEILING symmetrically), so on this box elevationMin=-142.606mm while
-// the user's real measured max dig is only -41.8mm. Water's actual
-// reachable elevationNorm therefore only ever spans ~0.353-0.377 (a
-// sliver near the TOP of the 0..waterLevelFrac range the old code
-// assumed), so the old renormalization stayed pinned near the lightest
-// shade the entire time - confirmed on real hardware as "no gradient
-// visible, water looks flat."
-// RETUNED AGAIN (2026-09-25/28) - the previous fix stored the floor as
-// a FIXED absolute elevation fraction (0.366, "~-38mm on THIS
-// calibrated range"), which was itself the bug: waterLevelFrac
-// (TEMPERATURE - LIVING_RANGE_FRACTION) is not fixed - TEMPERATURE
-// eases upward automatically with sculpting activity
-// (ACTIVITY_TO_TEMPERATURE/MAX_TEMPERATURE_OFFSET), which raises the
-// water line (makes it shallower, floods more land - see BASE_
-// TEMPERATURE's header note). Every time that happened, the gap between
-// the fixed floor and the now-shallower water line widened, so reaching
-// full dark required digging further and further - confirmed on real
-// hardware: "the darker blue doesn't show up until I've hit the bottom
-// of the sandbox." A static floor can never track a moving water line.
-// Fix: this is now a SPAN (how far below whatever the CURRENT water
-// line is), not an absolute position - computed fresh each frame in
-// SandSurfaceRenderer::drawSandbox() as `waterLevelFrac -
-// WATER_GRADIENT_FLOOR_FRAC`, so it automatically follows the water
-// line wherever TEMPERATURE puts it. Same numeric span as before (3mm
-// worth, ~0.0105 of the current ~285mm calibrated range) - the tracking
-// bug, not the span size, was the confirmed problem; retune the span
-// itself from here if 3mm still isn't the right feel once tracking is
-// fixed.
-float VegetationField::WATER_GRADIENT_FLOOR_FRAC = 0.0105f;
 float VegetationField::FOOD_PER_FULL_CELL = 255.0f;
 bool VegetationField::DEBUG_SHOW_SNOW = false;
 
@@ -195,9 +152,6 @@ void VegetationField::setup(std::shared_ptr<KinectProjector> const& k)
 	gridReady = false;
 	activityBaselineReady = false;
 	activityLevel = 0.0f;
-	poolRecomputeTimer = 0.0f;
-	lastPoolRecomputeMs = 0.0f;
-	lastPooledCellCount = 0;
 	// Sane fallback until setElevationRange() is called - keeps
 	// normalizedElevation() well-defined even if update() somehow runs
 	// first.
@@ -259,118 +213,122 @@ bool VegetationField::hasEstablishedNeighbor(int gx, int gy, cv::Mat const& dens
 	return false;
 }
 
-// Hydrology first slice - see the header note on VegetationField.h's
-// ENABLE_POOLING/POOL_RECOMPUTE_INTERVAL_SEC for why this exists and runs
-// periodically rather than every frame. Standard priority-flood
-// depression fill (Barnes et al.) - neither source paper for this phase
-// (Liu's "Third Simulation" or the ELF-authors' own AR sandbox paper,
-// re-read in full 2026-09-28) turned out to contain an implementable
-// fluvial algorithm to port instead, see CLAUDE.md.
+// Hydrology second slice - real per-cell water depth/flow, replacing the
+// priority-flood pooling this project shipped first (see
+// VegetationField.h's ENABLE_FLOW header note for why). Virtual pipes
+// (Mei/Decaudin/Hu-style), CPU-side, every frame - neither source paper
+// for this phase (Liu's "Third Simulation" or the ELF-authors' own AR
+// sandbox paper, re-read in full 2026-09-28) turned out to contain an
+// implementable fluvial algorithm to port instead, see CLAUDE.md.
 //
-// Seeded from every cell already below the flat waterLevelFrac line
-// (rather than the grid's outer edge, the usual real-DEM seed) since
-// that's this grid's actual known "sea" - there's no guarantee the ROI's
-// border is water. Floods outward, capped both at snowLevelFrac (pools
-// never extend into snow-eligible ground) AND at MAX_POOL_RISE_FRAC above
-// waterLevelFrac (see that field's header note - the snow-line cap ALONE
-// isn't a real bound, since "land between water and snow" is most of the
-// terrain; without the rise cap too this computes a full watershed
-// pour-point flood across nearly the whole connected landmass instead of
-// small local dips - confirmed broken on real hardware). Each newly-
-// reached cell's poolLevel becomes max(the path's running level so far,
-// this cell's own elevation) - the standard construction that makes
-// poolLevel end up as exactly the elevation water would have to reach,
-// via the cheapest reachable path from the sea, to get there: i.e. that
-// cell's real pour-point-bounded pool level, now additionally bounded by
-// MAX_POOL_RISE_FRAC so that "pour point" stays local.
-void VegetationField::recomputePools(float waterLevelFrac, float snowLevelFrac)
+// Each cell carries a persistent water DEPTH on top of its terrain
+// elevation; water surface height is terrain+depth, and flow between
+// 4-neighbors is driven by the difference in surface height, transported
+// proportional to that difference. Two passes, not one, specifically to
+// make this unconditionally stable regardless of FLOW_RATE/dt (no
+// CFL-style timestep restriction needed):
+//
+//   Pass 1 computes each cell's own outflow-limiting SCALE factor: the
+//   sum of what a cell would send to all 4 downhill neighbors, capped so
+//   the total never exceeds that cell's own current depth (a cell can
+//   never send more water than it has - self-limiting, not a global
+//   bound on the timestep).
+//
+//   Pass 2 applies each cell's net change - outflow to lower neighbors
+//   (scaled by THIS cell's own factor from pass 1) minus inflow from
+//   higher neighbors (scaled by THEIRS) - both sides recomputing the same
+//   diff from last frame's depth/elevation, so this is a pure Jacobi
+//   update (reads only last frame's state, writes only waterDepthNext)
+//   with no read-after-write hazard the way an in-place sweep would have.
+//
+// The existing flat waterLevelFrac (TEMPERATURE - LIVING_RANGE_FRACTION,
+// already tuned from real hardware) is reused as-is as the sea's surface
+// elevation: any cell whose terrain sits below it has its depth clamped
+// up to at least `waterLevelFrac - elevFrac` every frame, after the flow
+// step - an infinite reservoir/boundary condition, not a one-time seed,
+// so the sea can't be drained by flow pulling water away from it.
+// Depression-filling falls out of this for free: water flowing into an
+// enclosed basin has nowhere else to go and settles at the basin's real
+// rim through these same per-frame dynamics, no separate graph algorithm
+// needed.
+void VegetationField::stepFlow(float waterLevelFrac)
 {
-	float startMs = (float)ofGetElapsedTimeMillis();
+	float dt = ofGetLastFrameTime();
+	// Guard against a zero/negative dt (first frame, or a paused clock)
+	// and an unreasonably large one (a hitch/debugger pause) feeding a
+	// huge single-frame move into an explicit scheme - fall back to a
+	// nominal 60fps frame time in either case.
+	if (dt <= 0.0f || dt > 0.1f)
+		dt = 1.0f / 60.0f;
 
-	// Reset every cycle - a cell pooled by a PREVIOUS recompute must not
-	// keep a stale, no-longer-enclosed level if its rim has since changed
-	// (built up past the snow line, or the basin filled in) - the flood
-	// below only re-raises what's still actually enclosed right now.
-	poolLevel.setTo(cv::Scalar(waterLevelFrac));
+	static const int dxN[4] = { -1, 1, 0, 0 };
+	static const int dyN[4] = { 0, 0, -1, 1 };
 
-	struct Node { float elevation; int gx, gy; };
-	struct NodeCompare {
-		// std::priority_queue is a max-heap by default - flip it to a
-		// min-heap so the lowest/cheapest-to-reach cell is always
-		// processed next, as the algorithm requires.
-		bool operator()(Node const& a, Node const& b) const { return a.elevation > b.elevation; }
-	};
-	std::priority_queue<Node, std::vector<Node>, NodeCompare> pq;
-	std::vector<unsigned char> visited(static_cast<size_t>(cols) * rows, 0);
-
-	// previousElevation is guaranteed continuous (see setKinectROI(),
-	// never reshaped afterward) - same raw-pointer justification as
-	// hasEstablishedNeighbor() above, and here every cell really is
-	// touched, not just a throttled sample.
+	// previousElevation/waterDepth are guaranteed continuous (see
+	// setKinectROI(), never reshaped afterward) - same raw-pointer
+	// justification as hasEstablishedNeighbor()/recomputePools() used,
+	// and here every cell really is touched, every frame.
 	const float * elev = previousElevation.ptr<float>(0);
-	float * pool = poolLevel.ptr<float>(0);
+	const float * depth = waterDepth.ptr<float>(0);
+	float * depthNext = waterDepthNext.ptr<float>(0);
+	float * scale = flowScale.ptr<float>(0);
 
+	// Pass 1 - outflow-limiting scale factor per cell (<=1.0).
 	for (int gy = 0; gy < rows; gy++) {
 		for (int gx = 0; gx < cols; gx++) {
 			int idx = gy * cols + gx;
-			if (normalizedElevation(elev[idx]) < waterLevelFrac) {
-				visited[idx] = 1;
-				pq.push({ waterLevelFrac, gx, gy });
+			float d = depth[idx];
+			if (d <= 0.0f) {
+				scale[idx] = 1.0f;
+				continue;
 			}
+			float surface = normalizedElevation(elev[idx]) + d;
+			float totalOut = 0.0f;
+			for (int k = 0; k < 4; k++) {
+				int nx = gx + dxN[k], ny = gy + dyN[k];
+				if (nx < 0 || nx >= cols || ny < 0 || ny >= rows)
+					continue;
+				int nidx = ny * cols + nx;
+				float nSurface = normalizedElevation(elev[nidx]) + depth[nidx];
+				float diff = surface - nSurface;
+				if (diff > 0.0f)
+					totalOut += diff * FLOW_RATE * dt;
+			}
+			scale[idx] = (totalOut > d) ? (d / totalOut) : 1.0f;
 		}
 	}
 
-	static const int dx[4] = { -1, 1, 0, 0 };
-	static const int dy[4] = { 0, 0, -1, 1 };
-
-	while (!pq.empty()) {
-		Node n = pq.top();
-		pq.pop();
-		for (int d = 0; d < 4; d++) {
-			int nx = n.gx + dx[d];
-			int ny = n.gy + dy[d];
-			if (nx < 0 || nx >= cols || ny < 0 || ny >= rows)
-				continue;
-			int nidx = ny * cols + nx;
-			if (visited[nidx])
-				continue;
-			float neighborElevFrac = normalizedElevation(elev[nidx]);
-			if (neighborElevFrac >= snowLevelFrac)
-				continue; // never pool into snow-eligible ground
-			float filled = std::max(n.elevation, neighborElevFrac);
-			// FOUND AND FIXED (2026-09-28) - see MAX_POOL_RISE_FRAC's
-			// header note. Without this cap, the flood doesn't stop until
-			// the snow line - but "land between the water and snow
-			// lines" IS most of the terrain, so it was computing a full
-			// watershed pour-point flood across nearly the whole
-			// connected landmass instead of small local dips. Skip
-			// WITHOUT marking visited: priority-flood's invariant means
-			// this cell's cheapest possible fill already exceeded the
-			// cap, so no other path could do better - it just stays
-			// unpooled (the flat default from the reset above) and the
-			// flood correctly stops propagating past it here.
-			if (filled - waterLevelFrac > MAX_POOL_RISE_FRAC)
-				continue;
-			visited[nidx] = 1;
-			pool[nidx] = filled;
-			pq.push({ filled, nx, ny });
+	// Pass 2 - apply net change (outflow scaled by this cell's own
+	// factor, inflow scaled by the NEIGHBOR's factor), then enforce the
+	// flat-sea boundary condition.
+	for (int gy = 0; gy < rows; gy++) {
+		for (int gx = 0; gx < cols; gx++) {
+			int idx = gy * cols + gx;
+			float d = depth[idx];
+			float elevFrac = normalizedElevation(elev[idx]);
+			float surface = elevFrac + d;
+			float net = 0.0f;
+			for (int k = 0; k < 4; k++) {
+				int nx = gx + dxN[k], ny = gy + dyN[k];
+				if (nx < 0 || nx >= cols || ny < 0 || ny >= rows)
+					continue;
+				int nidx = ny * cols + nx;
+				float nSurface = normalizedElevation(elev[nidx]) + depth[nidx];
+				float diff = surface - nSurface;
+				if (diff > 0.0f) {
+					net -= diff * FLOW_RATE * dt * scale[idx];
+				} else if (diff < 0.0f) {
+					net += (-diff) * FLOW_RATE * dt * scale[nidx];
+				}
+			}
+			float newDepth = std::max(0.0f, d + net);
+			if (elevFrac < waterLevelFrac)
+				newDepth = std::max(newDepth, waterLevelFrac - elevFrac);
+			depthNext[idx] = newDepth;
 		}
 	}
-	// Any cell the flood never reaches (fully walled off from the
-	// existing sea by ground at or above the snow line, or beyond
-	// MAX_POOL_RISE_FRAC, on every side) keeps the flat waterLevelFrac
-	// reset above - correctly "no pool,"
-	// not stale data.
 
-	// Diagnostics for the GUI - see the header comment on why these are
-	// only touched here, not scanned every drawGui() call.
-	lastPoolRecomputeMs = (float)ofGetElapsedTimeMillis() - startMs;
-	int pooledCount = 0;
-	for (int i = 0, n = cols * rows; i < n; i++) {
-		if (pool[i] > waterLevelFrac)
-			pooledCount++;
-	}
-	lastPooledCellCount = pooledCount;
+	std::swap(waterDepth, waterDepthNext);
 }
 
 void VegetationField::setKinectROI(ofRectangle & KROI)
@@ -390,18 +348,15 @@ void VegetationField::setKinectROI(ofRectangle & KROI)
 	fruitDensity = cv::Mat::zeros(rows, cols, CV_32F);
 	nutDensity = cv::Mat::zeros(rows, cols, CV_32F);
 	previousElevation = cv::Mat::zeros(rows, cols, CV_32F);
-	// Defaults to the flat sea level, not 0 - a zero default would make
-	// isWater's pooling check (elevFrac < poolLevel) false everywhere,
-	// including the ordinary flat "sea," until the first recomputePools()
-	// call up to POOL_RECOMPUTE_INTERVAL_SEC later - a real regression
-	// right after any grid rebuild, not just a cosmetic delay.
-	poolLevel = cv::Mat(rows, cols, CV_32F, cv::Scalar(TEMPERATURE - LIVING_RANGE_FRACTION));
-	// Set to the interval itself, not 0 - update()'s `poolRecomputeTimer
-	// += dt` check means starting at 0 would leave the grid sitting on
-	// the flat "no pool" default above for a needless extra
-	// POOL_RECOMPUTE_INTERVAL_SEC after every ROI rebuild; this forces a
-	// real recompute on the very next update() call instead.
-	poolRecomputeTimer = POOL_RECOMPUTE_INTERVAL_SEC;
+	// Starts at 0 everywhere - stepFlow()'s own flat-sea boundary
+	// condition tops up any below-sea-level cell to the right depth on
+	// its very first call (see that function), so no special non-zero
+	// default is needed the way pooling's poolLevel required.
+	waterDepth = cv::Mat::zeros(rows, cols, CV_32F);
+	waterDepthNext = cv::Mat::zeros(rows, cols, CV_32F);
+	// Scratch space for stepFlow()'s outflow-scale pass - content is
+	// fully overwritten every call, only the allocation itself matters.
+	flowScale = cv::Mat::zeros(rows, cols, CV_32F);
 	// Starts at "not water" everywhere - a sane default matching how
 	// nothing is classified before update() has run at all; the very
 	// first frame's hysteresis check has no meaningful prior state to
@@ -484,26 +439,30 @@ void VegetationField::update()
 			prevElevation = elevation;
 
 			float elevFrac = normalizedElevation(elevation);
-			// Pooling check reads the LAST recomputed pool geometry
-			// (recomputePools() runs periodically, below) but this frame's
-			// own live elevFrac - so a cell already inside an established
-			// pool responds to digging/mounding instantly, same as the
-			// flat threshold always has; only whether a NEW basin exists
-			// at all lags by up to POOL_RECOMPUTE_INTERVAL_SEC. poolLevel
-			// defaults to waterLevelFrac everywhere (see setKinectROI()),
-			// so this collapses to the exact old flat check for any cell
-			// not part of an enclosed basin.
-			float waterThreshold = ENABLE_POOLING ? poolLevel.at<float>(gy, gx) : waterLevelFrac;
+			// Water classification now reads real per-cell depth (see
+			// stepFlow(), called at the end of this function) instead of
+			// an elevation/pool threshold - this is last frame's SETTLED
+			// depth (stepFlow() runs after this loop using this frame's
+			// freshly-sampled elevation, so next frame's loop sees an
+			// up-to-date value) - same one-frame-lag pattern pooling's
+			// recomputePools() used, just every frame instead of
+			// periodically, since this per-cell cost is pure arithmetic.
+			// With flow disabled, falls back to exactly the old flat
+			// threshold (0 above sea, waterLevelFrac-elevFrac below it) -
+			// same fallback shape isWaterAt() already uses outside the
+			// grid.
+			float depth = ENABLE_FLOW ? waterDepth.at<float>(gy, gx) : std::max(0.0f, waterLevelFrac - elevFrac);
 			// Hysteresis - see WATER_HYSTERESIS_FRAC's header note
-			// (found 2026-09-28: raw instantaneous comparisons flicker at
-			// the shoreline from ordinary sensor noise). A cell has to
-			// cross clearly past the threshold to change state; otherwise
-			// it keeps whatever it already was.
+			// (found 2026-09-28 under the pooling mechanic this replaces:
+			// raw instantaneous comparisons flicker at the shoreline from
+			// ordinary sensor noise). A cell has to cross clearly past
+			// MIN_VISIBLE_WATER_DEPTH_FRAC to change state; otherwise it
+			// keeps whatever it already was.
 			float & waterFlag = waterState.at<float>(gy, gx);
 			bool wasWater = waterFlag > 0.5f;
 			bool isWater = wasWater
-				? (elevFrac < waterThreshold + WATER_HYSTERESIS_FRAC)
-				: (elevFrac < waterThreshold - WATER_HYSTERESIS_FRAC);
+				? (depth > MIN_VISIBLE_WATER_DEPTH_FRAC - WATER_HYSTERESIS_FRAC)
+				: (depth > MIN_VISIBLE_WATER_DEPTH_FRAC + WATER_HYSTERESIS_FRAC);
 			waterFlag = isWater ? 1.0f : 0.0f;
 			bool isSnow = !isWater && elevFrac > snowLevelFrac;
 
@@ -561,7 +520,20 @@ void VegetationField::update()
 			data[idx + 0] = (unsigned char)(shrub * 255.0f);
 			data[idx + 1] = (unsigned char)(fruit * 255.0f);
 			data[idx + 2] = (unsigned char)(nut * 255.0f);
-			data[idx + 3] = isWater ? 255 : (isSnow ? 128 : 0);
+			// Alpha channel: snow reserved at 255 (flat, no gradation
+			// needed), water's real depth packed into 1-249 (0 = dry/tie,
+			// preserving a clean cutoff) scaled by MAX_WATER_DEPTH_FRAC -
+			// replaces the old 0/128/255 tri-state flag now that the
+			// shader reads real depth for its gradient instead of an
+			// elevation-based proxy (see the .frag's header note).
+			if (isSnow) {
+				data[idx + 3] = 255;
+			} else if (isWater) {
+				float depthT = ofClamp(depth / MAX_WATER_DEPTH_FRAC, 0.0f, 1.0f);
+				data[idx + 3] = (unsigned char)(1.0f + depthT * 248.0f);
+			} else {
+				data[idx + 3] = 0;
+			}
 		}
 	}
 
@@ -584,17 +556,17 @@ void VegetationField::update()
 		activityBaselineReady = true;
 	}
 
-	// Hydrology first slice - periodic, not per-frame (see the header
-	// note). Runs after the per-cell loop above so previousElevation is
-	// fully refreshed for every cell this frame before recomputePools()
-	// reads it - it's the same elevation sample already taken for the
-	// activity computation, not a second Kinect query.
-	if (ENABLE_POOLING) {
-		poolRecomputeTimer += dt;
-		if (poolRecomputeTimer >= POOL_RECOMPUTE_INTERVAL_SEC) {
-			recomputePools(waterLevelFrac, snowLevelFrac);
-			poolRecomputeTimer = 0.0f;
-		}
+	// Hydrology second slice - every frame, not throttled (unlike the
+	// pooling this replaces) since the per-cell cost here is pure
+	// arithmetic, no trig/random/sqrt - see the header note's cost
+	// budget. Runs after the per-cell loop above so previousElevation is
+	// fully refreshed for every cell this frame before stepFlow() reads
+	// it - it's the same elevation sample already taken for the activity
+	// computation, not a second Kinect query. This loop's own
+	// classification just read waterDepth as it stood BEFORE this call -
+	// same one-frame-lag pattern pooling's recomputePools() used.
+	if (ENABLE_FLOW) {
+		stepFlow(waterLevelFrac);
 	}
 }
 
@@ -845,47 +817,38 @@ void VegetationField::drawGui()
 	ImGui::SliderFloat("Spread chance multiplier", &SPREAD_CHANCE_MULTIPLIER, 1.0f, 20.0f);
 	ImGui::Text("mm per grid cell (measured): %.2f -> spread radius is ~%d cells", mmPerCell, std::max(1, (int)(SPREAD_RADIUS_MM / mmPerCell)));
 	ImGui::Separator();
-	ImGui::Text("Hydrology, first slice (succession-model phase): depression-filling");
-	ImGui::Text("water pools, layered on top of the flat water line above rather than");
-	ImGui::Text("replacing it. An enclosed low area whose floor sits ABOVE the flat");
-	ImGui::Text("water line but is fully rimmed below the snow line fills with its");
-	ImGui::Text("own local pool, up to its lowest rim - not ELF's behavior (its water");
-	ImGui::Text("check is a flat per-cell threshold with no pooling/connectivity at");
-	ImGui::Text("all), a deliberate departure logged in CLAUDE.md.");
-	ImGui::Checkbox("Enable pooling (uncheck to A/B test performance)", &ENABLE_POOLING);
-	ImGui::Text("Recomputed periodically, not every frame - a cell already inside an");
-	ImGui::Text("established pool still reacts to digging/mounding instantly; only");
-	ImGui::Text("whether a NEW basin exists at all lags by up to this interval.");
-	ImGui::SliderFloat("Pool recompute interval (sec)", &POOL_RECOMPUTE_INTERVAL_SEC, 0.1f, 5.0f);
-	ImGui::Text("Max pool rise (fraction of range) - FOUND AND FIXED 2026-09-28:");
-	ImGui::Text("without this cap, pools weren't bounded by anything but the snow");
-	ImGui::Text("line - since 'land between water and snow' IS most of the terrain,");
-	ImGui::Text("that flooded huge, unstable swaths of ordinary ground instead of");
-	ImGui::Text("small local dips (confirmed on hardware: widespread blue speckle");
-	ImGui::Text("plus visible blinking as elevation noise flipped distant saddle");
-	ImGui::Text("points). This caps how far above the flat water line a pool may");
-	ImGui::Text("rise - raise it for bigger ponds, lower it if pools still look");
-	ImGui::Text("too broad/unstable.");
-	ImGui::SliderFloat("Max pool rise (fraction)", &MAX_POOL_RISE_FRAC, 0.0f, 0.15f);
-	if (ImGui::Button("Recompute pools now")) {
-		float waterLevelFrac = TEMPERATURE - LIVING_RANGE_FRACTION;
-		recomputePools(waterLevelFrac, TEMPERATURE);
-		poolRecomputeTimer = 0.0f;
-	}
-	ImGui::Text("Last recompute: %.2f ms, %d cells currently pooled above the flat line", lastPoolRecomputeMs, lastPooledCellCount);
-	ImGui::Text("If that time is ever visible as a hitch, raise the interval above or");
-	ImGui::Text("disable pooling - this is untested on real hardware so far.");
-	ImGui::Text("Known first-slice limitation: a perched pool always renders in the");
-	ImGui::Text("lighter 'shallow' water shade (the depth gradient is still anchored");
-	ImGui::Text("to the flat water line) - it still reads clearly as water, just not");
-	ImGui::Text("with its own internal depth shading yet. See CLAUDE.md.");
-	ImGui::Text("Water hysteresis (FOUND 2026-09-28 - 'flickering around the");
-	ImGui::Text("waterline'): a raw instantaneous elevation check flickers at any");
-	ImGui::Text("boundary from ordinary ~1-2mm sensor noise alone. A cell must cross");
-	ImGui::Text("clearly past the threshold by this margin to change state at all -");
-	ImGui::Text("raise it if flicker is still visible, lower it if the shoreline feels");
-	ImGui::Text("sluggish to respond to real digging.");
+	ImGui::Text("Hydrology, second slice: real per-cell water depth and flow -");
+	ImGui::Text("REPLACES the earlier depression-filling pooling mechanic entirely");
+	ImGui::Text("(see CLAUDE.md for why, and for the physical-legibility/SND framing");
+	ImGui::Text("that made this the priority). Water now has a real depth per cell");
+	ImGui::Text("and flows downhill toward lower neighbors every frame, driven by");
+	ImGui::Text("surface-height differences - pooling into an enclosed basin is an");
+	ImGui::Text("emergent result of that flow, not a separate algorithm.");
+	ImGui::Checkbox("Enable flow (uncheck to A/B test performance)", &ENABLE_FLOW);
+	ImGui::Text("If frame rate changes with this off, flow is a real per-frame cost -");
+	ImGui::Text("if not, something else is. No rebuild needed to check.");
+	ImGui::SliderFloat("Flow rate", &FLOW_RATE, 0.0f, 20.0f);
+	ImGui::Text("Self-limiting (a cell can never send more than its own depth in one");
+	ImGui::Text("frame, every frame, regardless of this value) - raising it mainly");
+	ImGui::Text("means water settles in fewer frames, not instability in the usual");
+	ImGui::Text("exploding-oscillation sense. Still untested on real hardware -");
+	ImGui::Text("lower it first if flow ever looks jittery/wrong in practice.");
+	ImGui::SliderFloat("Min visible water depth (fraction)", &MIN_VISIBLE_WATER_DEPTH_FRAC, 0.0f, 0.02f);
+	ImGui::Text("Below this depth a cell doesn't count as 'visibly water' at all -");
+	ImGui::Text("without it, a thin film mid-drain could flicker in and out at a");
+	ImGui::Text("visually meaningless depth.");
+	ImGui::Text("Water hysteresis (FOUND 2026-09-28, under the pooling mechanic this");
+	ImGui::Text("replaces - 'flickering around the waterline'): a raw instantaneous");
+	ImGui::Text("depth check flickers at any boundary from ordinary ~1-2mm sensor");
+	ImGui::Text("noise alone. A cell must cross clearly past the threshold above by");
+	ImGui::Text("this margin to change state at all - raise it if flicker is still");
+	ImGui::Text("visible, lower it if the shoreline feels sluggish to respond to real");
+	ImGui::Text("digging.");
 	ImGui::SliderFloat("Water hysteresis (fraction)", &WATER_HYSTERESIS_FRAC, 0.0f, 0.05f);
+	ImGui::Text("Max water depth (fraction) - scales the alpha-channel depth encoding");
+	ImGui::Text("(and waterRamp()'s gradient): a cell at or above this real depth");
+	ImGui::Text("renders at the darkest 'deep water' shade. First-guess, untested.");
+	ImGui::SliderFloat("Max water depth (fraction)", &MAX_WATER_DEPTH_FRAC, 0.001f, 0.2f);
 	ImGui::Separator();
 	ImGui::Text("Nut visibility threshold (NOT in ELF): nut's color, (0,h,h),");
 	ImGui::Text("has no channel pinned bright like shrub/fruit do, so a single");
@@ -895,17 +858,5 @@ void VegetationField::drawGui()
 	ImGui::Text("and not a contour line. Below this density, nut stays negative");
 	ImGui::Text("space (like a real tie) instead of committing to that color.");
 	ImGui::SliderFloat("Nut visibility threshold", &NUT_VISIBILITY_THRESHOLD, 0.0f, 0.3f);
-	ImGui::Separator();
-	ImGui::Text("Water gradient span (cosmetic only - does NOT affect what");
-	ImGui::Text("counts as water). How far BELOW the current water line the");
-	ImGui::Text("gradient reaches full darkness - tracks the water line itself");
-	ImGui::Text("automatically (it moves as Temperature eases with sculpting");
-	ImGui::Text("activity), so this is a relative depth, not a fixed elevation.");
-	ImGui::Text("Default ~3mm worth on this box's calibrated range. If full dark");
-	ImGui::Text("needs too much/little digging past the shoreline to reach, dig");
-	ImGui::Text("to where you want full dark, compare Raw elevation to the Water");
-	ImGui::Text("line reading above, and set this to that difference (as a");
-	ImGui::Text("fraction of the calibrated range).");
-	ImGui::SliderFloat("Water gradient span (fraction)", &WATER_GRADIENT_FLOOR_FRAC, 0.0f, 0.2f);
 	ImGui::End();
 }

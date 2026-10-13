@@ -47,7 +47,6 @@ uniform float vegetationGridStep;
 uniform int debugShowSnow; // see the matching GL3 shader's header note
 uniform float nutVisibilityThreshold; // see the matching GL3 shader's header note
 uniform float waterLevelFrac; // see the matching GL3 shader's header note
-uniform float waterGradientFloorFrac; // see the matching GL3 shader's header note
 uniform float snowLevelFrac; // see the matching GL3 shader's header note
 
 // See the matching GL3 shader's waterRamp() for the full rationale.
@@ -99,18 +98,18 @@ void main()
         vec2 vegUV = (texcoordfrag - vegetationGridOrigin) / vegetationGridStep;
         vec4 veg = texture2DRect(vegetationSampler, vegUV);
 
-        if (veg.a > 0.75)
+        if (veg.a > 0.98)
         {
-            // Water - dedicated waterRamp(), renormalized to water's own
-            // REACHABLE depth range - see the matching GL3 shader's note.
-            float waterDepthT = clamp(
-                (elevationNorm - waterGradientFloorFrac) / max(waterLevelFrac - waterGradientFloorFrac, 0.0001),
-                0.0, 1.0);
-            color.rgb = waterRamp(waterDepthT);
-        }
-        else if (veg.a > 0.25)
-        {
+            // Snow - reserved flat 255/255 - see the matching GL3 shader's note.
             color.rgb = (debugShowSnow == 1) ? vec3(0.75, 0.85, 1.0) : vec3(1.0, 1.0, 1.0);
+        }
+        else if (veg.a > 0.0)
+        {
+            // Water - dedicated waterRamp(), fed REAL per-cell depth
+            // decoded from the alpha channel (2026-10) - see the
+            // matching GL3 shader's note.
+            float waterDepthT = clamp((veg.a * 255.0 - 1.0) / 248.0, 0.0, 1.0);
+            color.rgb = waterRamp(waterDepthT);
         }
         else if (veg.r > veg.g && veg.r > veg.b)
         {
