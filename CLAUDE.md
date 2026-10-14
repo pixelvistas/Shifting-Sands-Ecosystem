@@ -1318,3 +1318,122 @@ startup automation, a community water-color-cycling plugin) was judged
 not worth porting at all, now or later - this project's existing ImGui
 panel already covers that same usability ground more directly than
 Vrui's key-binding files do, so there's no gap there to fill.
+
+## Final contribution alignment and roadmap toward a mid-December deadline (2026-10-14)
+
+User shared the actual thesis introduction (intro written in finished-
+tense: anything it describes as done is a real commitment to have done
+by submission, not aspirational framing to soften later) and set a
+concrete deadline - **project needs to be finished by mid-December
+2026**. This prompted an explicit gap-check of the intro's own
+"Contribution" section (1.7) and scope section (1.8) against the actual
+codebase, then a deliberate alignment conversation on what the final
+contribution will mechanically be, before any of this phase's code gets
+written.
+
+**Gap-check findings (codebase as of this date, confirmed by direct
+grep, not assumption):** zero hits for "soil" or "moisture" anywhere in
+`src/`; zero slope-based vegetation-suitability logic (the only "slope"
+hits are from an unrelated, already-removed critter-movement mechanic);
+no externalized parameter file of any kind - every constant is a
+hardcoded C++ `static float` in `VegetationField.cpp`. So three of 1.7/
+1.8's claims describe a system that does not exist yet, not one already
+built with different internals:
+1. Soil accumulating under established cover and conditioning further
+   establishment (the actual two-way feedback loop 1.4 argues the whole
+   AR-sandbox field is missing).
+2. Suitability evaluated against moisture/slope/soil depth, not just
+   the current elevation-band-relative-to-water-line test.
+3. A parameter file external to the code, with a named source per
+   entry, switchable between a designer preset and a published-ecology
+   preset.
+
+Confirmed real and already true, by contrast: the oF 0.9.3->0.12.1
+modernization claim in 1.6/1.7 ("recovered codebase... each repair
+documented") - `README.md` and `PATCHES.md` substantiate this directly,
+addon-patch-by-addon-patch.
+
+**Two forking design decisions resolved explicitly, since they change
+both the engineering scope and the strength of the claim the thesis can
+honestly make:**
+
+1. **Succession mechanism strength: ACTIVE DISPLACEMENT, the stronger
+   textbook-succession claim** - not mere suitability-gating. Once soil
+   conditions favor a later-successional species, it must actively
+   displace/out-compete whatever earlier-successional species already
+   holds that cell, rather than the two simply coexisting once both
+   happen to be eligible. This is a real competitive-exclusion
+   mechanic, not just "soil changes which band a cell is in."
+2. **Species identity: keep the three abstract successional roles**
+   (the existing shrub/fruit/nut structure, now explicitly mapped to a
+   pioneer/intermediate/climax rank order) rather than renaming them to
+   real species directly. Real, specific species and their field-study
+   citations back each role's actual numeric parameters in the sourced
+   file, but the system and the thesis keep talking in terms of the
+   three abstract roles. **User confirmed real species + literature are
+   already identified and sourced** - this is not an open research
+   dependency, just a data hand-off still pending (see roadmap below).
+
+**This explicitly revives and justifies the previously-shelved
+succession idea** (fruit=pioneer/nut=intermediate/shrub=climax,
+rank-based displacement) floated earlier in the "Strategic reset"
+section above, which had tracked correctly with the user ("yes, that
+tracks for me exactly") but was deprioritized in favor of the water-
+physics work. It was never rejected, only waiting for something real
+(soil depth) to trigger the displacement against - it now has that.
+
+**Finalized contribution statement** (the target to actually build
+against, and the wording this project should be judged by at defense
+time):
+
+> Shifting Sands is an AR sandbox running a real-time ecological
+> succession model as its primary simulation. Vegetation establishes by
+> evaluating per-species suitability against three persistent, terrain-
+> derived fields - moisture (fed by genuine water flow physics), slope,
+> and soil depth. Established vegetation accumulates soil at its own
+> location over time; once soil conditions favor a later-successional
+> species, that species actively displaces whatever earlier-successional
+> species already holds the cell - real competitive exclusion, not
+> passive coexistence - so the substrate's own history of what has grown
+> on it directly redirects what grows there next. Disturbance destroys
+> standing cover and resets the local soil record, so regrowth re-traces
+> the same pioneer->intermediate->climax sequence rather than refilling
+> uniformly. The three successional roles stay as abstract categories,
+> each backed by real named species and field-study citations in an
+> external, sourced parameter file, switchable between a designer-set
+> preset and the published-ecology one. The whole system rests on a
+> documented recovery of an abandoned, unbuildable Magic Sand codebase to
+> a current openFrameworks toolchain.
+
+**Explicitly out of scope, so nothing creeps between now and
+December:** no disclosure UI (the dual-preset parameter file is real
+and inspectable in the GUI, but there's no participant-facing
+explanation of it - that stays PhD work per the Strategic reset
+section); no rainfall/runoff (water still sourced only from the flat
+sea level); no claim about any real place (terrain stays invented, per
+1.8's own honest scoping - only the rules are sourced, not the site);
+no DEM import/export (flagged for later, see above).
+
+**Roadmap toward mid-December**, phased by dependency:
+1. Parameter-file infrastructure (external file via the existing
+   `ofXml` convention, per-entry `source` field, designer vs. published
+   presets, GUI readout of active preset/source) - unblocked, can start
+   immediately, no research dependency since species/citations already
+   exist.
+2. Hand-off of the user's real species/citation data into that file.
+3. Soil depth + moisture + slope fields, and a real suitability test
+   against them, replacing the current elevation-band test - the
+   critical-path phase; slope is nearly free (reuses the 4-neighbor
+   elevation reads `stepFlow()` already computes every frame), soil
+   depth and its accumulation-under-cover mechanic are new.
+4. The active-displacement mechanic itself (pioneer/intermediate/climax
+   rank order, competitive exclusion once soil favors the higher rank) -
+   depends on (3)'s soil field existing as a real substrate to act on.
+5. Full hardware integration/validation pass - budgeted with real
+   contingency, per this project's own track record of needing 1-3
+   hardware-found bug-fix rounds on every past feature (CA spread's
+   fps regression, pooling's two bugs, flow dynamics still untested).
+6. Buffer + thesis writeup, no new features past this point.
+
+Not yet started - this entry records the alignment and plan, not any
+implementation. Phase 1 is the agreed next concrete step.
