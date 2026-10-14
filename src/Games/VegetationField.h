@@ -236,6 +236,7 @@ Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 #include "ofxCv.h"
 
 #include "../KinectProjector/KinectProjector.h"
+#include "EcologyParams.h"
 
 class VegetationField {
 public:
@@ -591,4 +592,12 @@ private:
 	cv::Mat waterState;
 
 	ofTexture combinedTex;
+
+	// Succession-model rebuild, Phase 1 (see EcologyParams.h and
+	// CLAUDE.md's 2026-10-14 "Final contribution alignment" entry) - a
+	// sourced, swappable parameter store for the three successional
+	// roles. Not yet consulted by any growth logic above; drawGui()
+	// renders it so the mechanism is inspectable/testable on its own
+	// ahead of Phase 3 actually wiring it in.
+	EcologyParams ecologyParams;
 };

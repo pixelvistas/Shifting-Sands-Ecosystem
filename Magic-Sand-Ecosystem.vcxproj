@@ -247,6 +247,7 @@
     <ClCompile Include="src\Games\Critter.cpp" />
     <ClCompile Include="src\Games\CritterController.cpp" />
     <ClCompile Include="src\Games\VegetationField.cpp" />
+    <ClCompile Include="src\Games\EcologyParams.cpp" />
     <ClCompile Include="src\Games\HumanAgent.cpp" />
     <ClCompile Include="src\KinectProjector\KinectGrabber.cpp" />
     <ClCompile Include="src\KinectProjector\KinectProjector.cpp" />
@@ -307,6 +308,7 @@
     <ClInclude Include="src\Games\Critter.h" />
     <ClInclude Include="src\Games\CritterController.h" />
     <ClInclude Include="src\Games\VegetationField.h" />
+    <ClInclude Include="src\Games\EcologyParams.h" />
     <ClInclude Include="src\Games\HumanAgent.h" />
     <ClInclude Include="src\KinectProjector\KinectGrabber.h" />
     <ClInclude Include="src\KinectProjector\KinectProjector.h" />

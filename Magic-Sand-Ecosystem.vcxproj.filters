@@ -16,6 +16,9 @@
 		<ClCompile Include="src\Games\VegetationField.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
+		<ClCompile Include="src\Games\EcologyParams.cpp">
+			<Filter>src\Games</Filter>
+		</ClCompile>
 		<ClCompile Include="src\Games\HumanAgent.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
@@ -726,6 +729,9 @@
 			<Filter>src\Games</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Games\VegetationField.h">
+			<Filter>src\Games</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Games\EcologyParams.h">
 			<Filter>src\Games</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Games\HumanAgent.h">

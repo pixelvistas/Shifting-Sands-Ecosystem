@@ -1437,3 +1437,89 @@ no DEM import/export (flagged for later, see above).
 
 Not yet started - this entry records the alignment and plan, not any
 implementation. Phase 1 is the agreed next concrete step.
+
+## Phase 1 implemented: EcologyParams sourced-parameter mechanism (2026-10-14)
+
+New `EcologyParams.h`/`.cpp` (`src/Games/`) - a standalone class, not
+folded into the already-large `VegetationField`, since this phase is
+deliberately just the sourced-parameter/preset-switch MECHANISM, with
+nothing in it read by any growth logic yet (that's Phase 3). Keeping it
+separate means it's independently inspectable/testable on its own
+before anything depends on it, same posture as every other phase of
+this project.
+
+**Mechanism**: `EcologyParams::load(Preset)` reads
+`bin/data/settings/ecologyParamsDesigner.xml` or
+`ecologyParamsPublished.xml` via the same `ofXml`
+load/getChild/getValue pattern `SandSurfaceRenderer::loadSettings()`
+already established (flat child-element tags, not attributes - kept
+deliberately consistent with the one precedent already in this
+codebase rather than introducing a second XML idiom). Parses into a
+temporary `std::array` first and only commits on full success, so a
+missing/malformed role tag can't silently leave a mix of two presets'
+data in memory. Three fixed roles - `ROLE_PIONEER`/`ROLE_INTERMEDIATE`/
+`ROLE_CLIMAX` - each mapping to channel `fruit`/`nut`/`shrub`
+respectively (the mapping decided in the alignment above), carrying a
+`speciesName`, a default `source` citation, and three `Range` structs
+(moisture/slope/soilDepth), each with `min`/`max`/`unit`/optional
+per-parameter source override.
+
+**Units deliberately NOT pre-converted** to this project's internal
+0..1 calibrated-range fractions - each `Range` stores whatever unit its
+real source material actually reports (degrees, cm, fraction of field
+capacity, etc.), so the file stays a literal, checkable transcription
+of its citation. Converting into VegetationField's internal
+representation is explicitly left to Phase 3, once the real suitability
+test exists to do the converting - pre-converting now would mean the
+file no longer matches what a reader could verify against the actual
+paper.
+
+**Two files shipped, asymmetric on purpose:**
+- `ecologyParamsDesigner.xml` - fully filled with internally-consistent
+  PLACEHOLDER values (pioneer: wide moisture/slope tolerance, shallow
+  soil requirement; climax: narrower tolerance, deep soil requirement)
+  so Phase 3/4's suitability and displacement logic has something
+  qualitatively sensible to develop against immediately. Every source
+  field is deliberately empty/labeled "no published source" - this IS
+  the data-free condition, not an oversight.
+- `ecologyParamsPublished.xml` - structurally complete but every
+  species name/citation/value is an explicit `TODO: Phase 2 hand-off
+  pending` placeholder. Deliberately NOT filled with invented citations
+  - the user confirmed real species + literature are already sourced
+  (see the alignment entry above), so this file is waiting on an actual
+  data hand-off, not on research; fabricating a citation here to make
+  it look more finished would directly undermine the one property this
+  whole mechanism exists to provide (a checkable source per parameter).
+
+**GUI**: `EcologyParams::drawGui()` renders inline into the existing
+Vegetation panel (no second ImGui window - matches this project's
+established single-panel convention) via a new call at the end of
+`VegetationField::drawGui()`. Shows the active preset, buttons to
+switch/reload either preset live, and each role's full value+source
+readout. Explicitly labeled in its own first lines as "NOT YET READ BY
+ANY GROWTH LOGIC" so nobody mistakes this for already-active behavior
+during a hardware test - same honesty convention `ENABLE_FLOW`/
+`DEBUG_SHOW_SNOW` already use for Phase-ahead-of-itself features.
+
+**Build wiring**: added `src\Games\EcologyParams.cpp`/`.h` to both
+`Magic-Sand-Ecosystem.vcxproj` and `.vcxproj.filters`, matching
+`VegetationField.cpp`/`.h`'s existing entries exactly - this project's
+Visual Studio build lists source files explicitly rather than globbing
+the directory, so a new file invisible to the `.vcxproj` would silently
+not compile at all despite being a real, correct source file.
+
+**Not yet verified** - this session has no openFrameworks SDK or
+compiler available (confirmed: no `ofXml.h` found anywhere on this
+machine), so none of this has actually been built. The `ofXml` usage
+mirrors `SandSurfaceRenderer::loadSettings()`/`saveSettings()`'s exact,
+already-working calls (`xml.load()`, `getChild()`, `getValue()`/
+`getFloatValue()`, truthiness checks) rather than anything novel, but a
+real Visual Studio build is still the first real confirmation this
+compiles and the GUI section renders as intended.
+
+**Next steps**: Phase 2 (species/citation data hand-off into
+`ecologyParamsPublished.xml`) can happen independently of anything else
+and doesn't block Phase 3. Phase 3 (soil depth/moisture/slope fields +
+the real suitability test) is the next engineering phase, and should
+consume `EcologyParams::getSpecies()` directly rather than re-deriving
+its own copy of these ranges.

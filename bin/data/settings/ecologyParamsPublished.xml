@@ -1,0 +1,70 @@
+<ECOLOGYPARAMS>
+	<!--
+	PUBLISHED preset - data-informed (see EcologyParams.h / CLAUDE.md's
+	2026-10-14 "Final contribution alignment" entry). This is the Phase
+	2 hand-off target: real named species and real field-study-sourced
+	moisture/slope/soil-depth ranges, one per successional role, each
+	with its own citation.
+
+	NOT YET FILLED IN - deliberately. The source fields below say TODO
+	rather than holding an invented citation, because fabricating a
+	citation here would be worse than leaving it visibly incomplete:
+	this file's whole purpose is to make the model's relationship to
+	data checkable, and a fake source would make it checkable but
+	wrong. Replace SPECIESNAME/SOURCE and the three ranges per role with
+	real values once the species/literature hand-off happens - no code
+	change is needed on this end, EcologyParams::load() reads whatever
+	this file actually contains.
+	-->
+	<ROLE_PIONEER>
+		<CHANNEL>fruit</CHANNEL>
+		<SPECIESNAME></SPECIESNAME>
+		<SOURCE>TODO: Phase 2 hand-off pending - replace with real species name and field-study citation.</SOURCE>
+		<MOISTUREMIN>0.0</MOISTUREMIN>
+		<MOISTUREMAX>0.0</MOISTUREMAX>
+		<MOISTUREUNIT>TODO - unit as reported by source</MOISTUREUNIT>
+		<MOISTURESOURCE></MOISTURESOURCE>
+		<SLOPEMIN>0.0</SLOPEMIN>
+		<SLOPEMAX>0.0</SLOPEMAX>
+		<SLOPEUNIT>TODO - unit as reported by source</SLOPEUNIT>
+		<SLOPESOURCE></SLOPESOURCE>
+		<SOILDEPTHMIN>0.0</SOILDEPTHMIN>
+		<SOILDEPTHMAX>0.0</SOILDEPTHMAX>
+		<SOILDEPTHUNIT>TODO - unit as reported by source</SOILDEPTHUNIT>
+		<SOILDEPTHSOURCE></SOILDEPTHSOURCE>
+	</ROLE_PIONEER>
+	<ROLE_INTERMEDIATE>
+		<CHANNEL>nut</CHANNEL>
+		<SPECIESNAME></SPECIESNAME>
+		<SOURCE>TODO: Phase 2 hand-off pending - replace with real species name and field-study citation.</SOURCE>
+		<MOISTUREMIN>0.0</MOISTUREMIN>
+		<MOISTUREMAX>0.0</MOISTUREMAX>
+		<MOISTUREUNIT>TODO - unit as reported by source</MOISTUREUNIT>
+		<MOISTURESOURCE></MOISTURESOURCE>
+		<SLOPEMIN>0.0</SLOPEMIN>
+		<SLOPEMAX>0.0</SLOPEMAX>
+		<SLOPEUNIT>TODO - unit as reported by source</SLOPEUNIT>
+		<SLOPESOURCE></SLOPESOURCE>
+		<SOILDEPTHMIN>0.0</SOILDEPTHMIN>
+		<SOILDEPTHMAX>0.0</SOILDEPTHMAX>
+		<SOILDEPTHUNIT>TODO - unit as reported by source</SOILDEPTHUNIT>
+		<SOILDEPTHSOURCE></SOILDEPTHSOURCE>
+	</ROLE_INTERMEDIATE>
+	<ROLE_CLIMAX>
+		<CHANNEL>shrub</CHANNEL>
+		<SPECIESNAME></SPECIESNAME>
+		<SOURCE>TODO: Phase 2 hand-off pending - replace with real species name and field-study citation.</SOURCE>
+		<MOISTUREMIN>0.0</MOISTUREMIN>
+		<MOISTUREMAX>0.0</MOISTUREMAX>
+		<MOISTUREUNIT>TODO - unit as reported by source</MOISTUREUNIT>
+		<MOISTURESOURCE></MOISTURESOURCE>
+		<SLOPEMIN>0.0</SLOPEMIN>
+		<SLOPEMAX>0.0</SLOPEMAX>
+		<SLOPEUNIT>TODO - unit as reported by source</SLOPEUNIT>
+		<SLOPESOURCE></SLOPESOURCE>
+		<SOILDEPTHMIN>0.0</SOILDEPTHMIN>
+		<SOILDEPTHMAX>0.0</SOILDEPTHMAX>
+		<SOILDEPTHUNIT>TODO - unit as reported by source</SOILDEPTHUNIT>
+		<SOILDEPTHSOURCE></SOILDEPTHSOURCE>
+	</ROLE_CLIMAX>
+</ECOLOGYPARAMS>

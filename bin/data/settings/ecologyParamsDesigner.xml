@@ -1,0 +1,64 @@
+<ECOLOGYPARAMS>
+	<!--
+	DESIGNER preset - data-free (see EcologyParams.h / CLAUDE.md's
+	2026-10-14 "Final contribution alignment" entry). Every value below
+	is a deliberately fictional placeholder, chosen only to give Phase
+	3's suitability/active-displacement logic a plausible pioneer-wide/
+	climax-narrow qualitative shape to develop and test against before
+	the PUBLISHED preset (ecologyParamsPublished.xml, Phase 2 hand-off)
+	replaces these with real species and field-study-sourced numbers.
+	No citation is given for any value here, and none should be added -
+	that absence IS the data-free condition this preset represents.
+	-->
+	<ROLE_PIONEER>
+		<CHANNEL>fruit</CHANNEL>
+		<SPECIESNAME></SPECIESNAME>
+		<SOURCE>Designer-chosen (data-free) - no published source; placeholder only, see file header comment.</SOURCE>
+		<MOISTUREMIN>0.2</MOISTUREMIN>
+		<MOISTUREMAX>0.8</MOISTUREMAX>
+		<MOISTUREUNIT>fraction (placeholder, 0=dry, 1=saturated)</MOISTUREUNIT>
+		<MOISTURESOURCE></MOISTURESOURCE>
+		<SLOPEMIN>0.0</SLOPEMIN>
+		<SLOPEMAX>60.0</SLOPEMAX>
+		<SLOPEUNIT>degrees (placeholder - tolerates steep/disturbed ground)</SLOPEUNIT>
+		<SLOPESOURCE></SLOPESOURCE>
+		<SOILDEPTHMIN>0.0</SOILDEPTHMIN>
+		<SOILDEPTHMAX>0.3</SOILDEPTHMAX>
+		<SOILDEPTHUNIT>fraction of max soil depth (placeholder - establishes on bare/shallow soil)</SOILDEPTHUNIT>
+		<SOILDEPTHSOURCE></SOILDEPTHSOURCE>
+	</ROLE_PIONEER>
+	<ROLE_INTERMEDIATE>
+		<CHANNEL>nut</CHANNEL>
+		<SPECIESNAME></SPECIESNAME>
+		<SOURCE>Designer-chosen (data-free) - no published source; placeholder only, see file header comment.</SOURCE>
+		<MOISTUREMIN>0.3</MOISTUREMIN>
+		<MOISTUREMAX>0.7</MOISTUREMAX>
+		<MOISTUREUNIT>fraction (placeholder, 0=dry, 1=saturated)</MOISTUREUNIT>
+		<MOISTURESOURCE></MOISTURESOURCE>
+		<SLOPEMIN>0.0</SLOPEMIN>
+		<SLOPEMAX>40.0</SLOPEMAX>
+		<SLOPEUNIT>degrees (placeholder)</SLOPEUNIT>
+		<SLOPESOURCE></SLOPESOURCE>
+		<SOILDEPTHMIN>0.2</SOILDEPTHMIN>
+		<SOILDEPTHMAX>0.6</SOILDEPTHMAX>
+		<SOILDEPTHUNIT>fraction of max soil depth (placeholder - needs some established soil)</SOILDEPTHUNIT>
+		<SOILDEPTHSOURCE></SOILDEPTHSOURCE>
+	</ROLE_INTERMEDIATE>
+	<ROLE_CLIMAX>
+		<CHANNEL>shrub</CHANNEL>
+		<SPECIESNAME></SPECIESNAME>
+		<SOURCE>Designer-chosen (data-free) - no published source; placeholder only, see file header comment.</SOURCE>
+		<MOISTUREMIN>0.35</MOISTUREMIN>
+		<MOISTUREMAX>0.65</MOISTUREMAX>
+		<MOISTUREUNIT>fraction (placeholder, narrower tolerance than pioneer/intermediate)</MOISTUREUNIT>
+		<MOISTURESOURCE></MOISTURESOURCE>
+		<SLOPEMIN>0.0</SLOPEMIN>
+		<SLOPEMAX>25.0</SLOPEMAX>
+		<SLOPEUNIT>degrees (placeholder - least slope-tolerant role)</SLOPEUNIT>
+		<SLOPESOURCE></SLOPESOURCE>
+		<SOILDEPTHMIN>0.5</SOILDEPTHMIN>
+		<SOILDEPTHMAX>1.0</SOILDEPTHMAX>
+		<SOILDEPTHUNIT>fraction of max soil depth (placeholder - requires built-up soil)</SOILDEPTHUNIT>
+		<SOILDEPTHSOURCE></SOILDEPTHSOURCE>
+	</ROLE_CLIMAX>
+</ECOLOGYPARAMS>

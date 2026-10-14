@@ -160,6 +160,13 @@ void VegetationField::setup(std::shared_ptr<KinectProjector> const& k)
 	// Sane fallback until setKinectROI() computes a real value - avoids a
 	// degenerate zero-radius neighbor search if update() somehow runs first.
 	mmPerCell = 1.0f;
+
+	// Succession-model rebuild, Phase 1 - see EcologyParams.h. Defaults
+	// to the designer (data-free) preset at startup; the Vegetation
+	// panel's new "Ecological data source" section can switch to the
+	// published preset live, same pattern as every other live-tunable
+	// value in this class.
+	ecologyParams.load(EcologyParams::Preset::Designer);
 }
 
 void VegetationField::setElevationRange(float minMM, float maxMM)
@@ -858,5 +865,6 @@ void VegetationField::drawGui()
 	ImGui::Text("and not a contour line. Below this density, nut stays negative");
 	ImGui::Text("space (like a real tie) instead of committing to that color.");
 	ImGui::SliderFloat("Nut visibility threshold", &NUT_VISIBILITY_THRESHOLD, 0.0f, 0.3f);
+	ecologyParams.drawGui();
 	ImGui::End();
 }

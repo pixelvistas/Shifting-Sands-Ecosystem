@@ -25,6 +25,11 @@ bin/*
 !bin/data/
 bin/data/**/[Dd]ebug[Ff]iles/*
 bin/data/settings/*.xml
+# EcologyParams presets (see CLAUDE.md's 2026-10-14 Phase 1 entry) are
+# shipped project content, not machine-local auto-saved calibration
+# state like the rest of bin/data/settings/*.xml - track them.
+!bin/data/settings/ecologyParamsDesigner.xml
+!bin/data/settings/ecologyParamsPublished.xml
 **.DS_Store
 **scores.xml
 
