@@ -1291,3 +1291,30 @@ visibly flows in and fills it over a few seconds, continuously, not an
 instant snap; (3) mound sand into existing water and confirm it visibly
 drains/displaces rather than being trapped; (4) compare FPS with
 `ENABLE_FLOW` on vs. off.
+
+## Flagged for later (PhD disclosure-layer phase): SARndbox DEM import/export tool (2026-10)
+
+User shared Bärthele, Sauer & Wilkening (2023), "Exploring the potential
+of an Augmented Reality sandbox for geovisualization" (ICC 2023
+proceedings) - a practitioner build-and-extend writeup for stock
+SARndbox, not a new algorithm paper. Reviewed for whether anything in it
+was worth pulling into this fork now; conclusion was mostly no, and
+explicitly deferred rather than dropped, for a reason worth keeping:
+
+The paper's standout feature - import a real-world DEM, see a live red/
+blue diff overlay against the current sand (too much sand = blue, too
+little = red), physically sculpt until it matches, then export the
+result back out as a DEM raster - is a disclosure/data-provenance
+feature by nature: it brings real data in and discloses the comparison
+back to the participant. That's exactly the category the "Strategic
+reset" section above assigned to the PhD, not the Master's thesis
+(physical/embodied legibility of the core terrain mechanic). So this
+is flagged as a concrete, already-proven reference design for that
+future disclosure-layer work - a real red/blue diff-against-ground-truth
+overlay, not a hypothetical - not something to build now.
+
+The paper's other content (SARndbox/Vrui hotkey input-graph system,
+startup automation, a community water-color-cycling plugin) was judged
+not worth porting at all, now or later - this project's existing ImGui
+panel already covers that same usability ground more directly than
+Vrui's key-binding files do, so there's no gap there to fill.
