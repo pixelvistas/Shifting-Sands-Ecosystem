@@ -668,37 +668,47 @@ void VegetationField::drawGui()
 	ImGui::Text("ELF-style flora: three plant types growing within elevation");
 	ImGui::Text("bands relative to the water line - reshape the sand to see it shift.");
 	ImGui::Separator();
-	// Reference-only swatch, independent of any real sand/calibration data
-	// below - added 2026-10-16 after two real-hardware mound tests both
-	// failed to show a visible rust->orange->cream sweep, for two
-	// DIFFERENT geometry reasons (one mound crested into snow before
-	// reaching cream, the other never rose far enough above the water
-	// line to leave the rust end at all) rather than any code/color bug -
-	// see CLAUDE.md's same-dated entry. This swatch answers "are these
-	// the right colors" (the Barthele et al. Figure 5 reference look)
-	// completely separately from "did I sculpt the right shape to reveal
-	// them," so the two questions can't be conflated from a screenshot
-	// again. Colors are hardcoded here and MUST stay in sync with
+	// Reference-only swatch, added 2026-10-16, REDRAWN same day once
+	// terrainRamp() itself was rebuilt as a literal 6-stop match to
+	// Barthele et al. Figure 5 (sampled directly from the reference
+	// image, not paraphrased - see CLAUDE.md's "Literal Figure 5
+	// colormap match" entry and heightMapShader.frag's header note).
+	// This swatch answers "are these the right colors" completely
+	// separately from "did I sculpt the right shape to reveal them," so
+	// the two questions can't be conflated from a screenshot again.
+	// Colors are hardcoded here and MUST stay in sync with
 	// heightMapShader.frag's terrainRamp()/waterRamp() (both GL2/GL3
 	// variants, per that file's own convention) - there is no shared
 	// source of truth between GLSL and this ImGui draw call.
 	ImGui::Text("Palette reference (NOT live sand data) - the exact terrainRamp()/");
-	ImGui::Text("waterRamp() stops, so you can confirm this IS the Figure 5 warm-");
-	ImGui::Text("ramp/transparent-water look regardless of what your current sand");
-	ImGui::Text("shape happens to be showing right now.");
+	ImGui::Text("waterRamp() stops, so you can confirm this IS the Figure 5 look");
+	ImGui::Text("regardless of what your current sand shape happens to be showing");
+	ImGui::Text("right now. NOTE: this ramp is a literal match to Figure 5's own");
+	ImGui::Text("rainbow/hypsometric colormap (teal->green->yellow->orange->maroon->");
+	ImGui::Text("white) - a deliberate, explicit departure from the colorblind-safe");
+	ImGui::Text("single-hue ramp this project used before, per direct user choice.");
 	{
 		ImDrawList* drawList = ImGui::GetWindowDrawList();
 		float barWidth = ImGui::GetContentRegionAvail().x;
 		float barHeight = 24.0f;
 
-		// terrainRamp(): #56160a -> #c74d11 -> #fae9cc
-		ImU32 rust = IM_COL32(86, 22, 10, 255);
-		ImU32 orange = IM_COL32(199, 77, 17, 255);
-		ImU32 cream = IM_COL32(250, 233, 204, 255);
+		// terrainRamp(): teal -> green -> yellow/olive -> orange-brown ->
+		// dark maroon -> pale near-white, sampled from Figure 5 directly.
+		ImU32 stops[6] = {
+			IM_COL32(0, 141, 167, 255),   // teal
+			IM_COL32(64, 179, 89, 255),   // green
+			IM_COL32(204, 199, 77, 255),  // yellow/olive
+			IM_COL32(191, 115, 38, 255),  // orange-brown
+			IM_COL32(115, 51, 40, 255),   // dark maroon
+			IM_COL32(230, 230, 230, 255), // pale near-white (peak)
+		};
+		float segWidth = barWidth / 5.0f;
 		ImVec2 p1 = ImGui::GetCursorScreenPos();
-		float halfWidth = barWidth * 0.5f;
-		drawList->AddRectFilledMultiColor(p1, ImVec2(p1.x + halfWidth, p1.y + barHeight), rust, orange, orange, rust);
-		drawList->AddRectFilledMultiColor(ImVec2(p1.x + halfWidth, p1.y), ImVec2(p1.x + barWidth, p1.y + barHeight), orange, cream, cream, orange);
+		for (int i = 0; i < 5; ++i) {
+			ImVec2 segMin(p1.x + segWidth * i, p1.y);
+			ImVec2 segMax(p1.x + segWidth * (i + 1), p1.y + barHeight);
+			drawList->AddRectFilledMultiColor(segMin, segMax, stops[i], stops[i + 1], stops[i + 1], stops[i]);
+		}
 		ImGui::Dummy(ImVec2(barWidth, barHeight));
 		ImGui::Text("terrainRamp() - bare land, low elevation (water's edge) -> high (snow line)");
 

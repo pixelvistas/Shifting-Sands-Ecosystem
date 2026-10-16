@@ -61,32 +61,41 @@ palette. Two different palettes, each used for what it's suited to:
    own no-threshold getCellColor() exactly, still) - only the peak
    color values changed, not the winner-take-all mechanic.
 2. BACKGROUND/ELEVATION COLOR (negative-space/tie land - see
-   terrainRamp() below) - REDESIGNED 2026-10-16, replacing the earlier
-   multi-hue diverging ramp. User flagged the previous 8-stop version
-   (deep blue through cream through dusty rose to maroon) as "pretty
-   but fairly confusing visually" when compared directly against a real
-   AR-sandbox reference photo (Barthele et al.'s Figure 5, top-left
-   panel) whose land gradient - a bright warm peak fading smoothly into
-   a single saturated warm hue toward the base - was specifically
-   called out as "exactly how I wanted our gradient to behave." Now a
-   simple 3-stop MONOTONIC WARM ramp (deep rust -> burnt orange-red ->
-   pale warm cream), the same single-hue-family-plus-lightness
-   structure that makes the viridis family's warm half (Inferno/Magma -
-   see CLAUDE.md's jet/Turbo/Inferno discussion the same day) a
-   principled, colorblind-safe alternative to jet-style rainbow ramps:
-   no green or cyan stop anywhere in it, so there's no red-green
-   adjacency to collapse under deuteranopia/protanopia in the first
-   place - arguably MORE robust than the previous diverging ramp, not
-   just prettier. Peak is a warm cream rather than pure white
-   specifically so it stays visually distinct from actual snow's flat
-   pure white just above it. Deliberately NOT applied to actively-
-   growing vegetation, same reasoning as before: doing so would replace
-   the winner-take-all speckled "CA" look (independent per-cell
-   stochastic growth + no-fade coloring, confirmed on real hardware as
-   looking correct) with a smooth gradient, since elevation doesn't have
-   that per-cell independence - this was an explicit design question the
-   user raised earlier and this is still the resolution: hybrid, not a
-   full replacement.
+   terrainRamp() below) - REDESIGNED TWICE on 2026-10-16. First pass
+   replaced the earlier 8-stop diverging ramp with a 3-stop monotonic
+   warm ramp (deep rust -> orange -> cream), reasoning from a verbal
+   paraphrase of Barthele et al.'s Figure 5 ("hot white peak to warm
+   base"). That paraphrase turned out to be wrong: after several real-
+   hardware comparisons still didn't look like the reference, the actual
+   Figure 5 image was re-opened and its pixels sampled directly (not
+   re-paraphrased) - it is NOT a single warm hue family at all, it's a
+   full rainbow/hypsometric ramp: teal/cyan (lowest) -> green -> yellow/
+   olive -> orange-brown -> dark maroon -> pale near-white (peak). This
+   matches the paper's own text exactly ("low-level terrain in green and
+   blue, higher-level terrain in red and white") - it's SARndbox's OWN
+   stock default height colormap, not a custom warm design.
+   **SECOND redesign: terrainRamp() is now that literal 6-stop rainbow**,
+   stops sampled directly from the reference image (see CLAUDE.md's
+   2026-10-16 "Literal Figure 5 colormap match" entry for the exact
+   sampled values and the direct user confirmation to use them as-is).
+   **Known, explicit, deliberate tradeoff**: this REINTRODUCES the
+   green-to-red adjacency the 2026-09-24 accessibility pass specifically
+   eliminated (a true jet-style collision risk under deuteranopia/
+   protanopia) - raised directly to the user before implementing, who
+   chose literal reference match over the accessibility property for
+   this specific element. Scoped narrowly: species/agent colors (shrub/
+   fruit/nut, deer/hunter/gatherer/fisher) are UNCHANGED and still use
+   the Okabe-Ito-derived palette from that pass - this tradeoff applies
+   only to background/tie-land and (via the water branch's lakebed read)
+   the color seen through shallow water, not to anything state-bearing.
+   Deliberately NOT applied to actively-growing vegetation, same
+   reasoning as before: doing so would replace the winner-take-all
+   speckled "CA" look (independent per-cell stochastic growth + no-fade
+   coloring, confirmed on real hardware as looking correct) with a
+   smooth gradient, since elevation doesn't have that per-cell
+   independence - this was an explicit design question the user raised
+   earlier and this is still the resolution: hybrid, not a full
+   replacement.
 3. WATER now shows a glimpse of the terrain color beneath it at shallow
    depth, opaque at real depth - see main()'s water branch. Directly
    requested from the same reference figure's top-right panel, where the
@@ -193,13 +202,23 @@ vec3 waterRamp(float t)
 // second call site, not a second function.
 vec3 terrainRamp(float t)
 {
-    vec3 c0 = vec3(0.337, 0.086, 0.039); // #56160a - deep rust at the water's edge
-    vec3 c1 = vec3(0.780, 0.302, 0.067); // #c74d11 - saturated burnt orange-red at mid elevation
-    vec3 c2 = vec3(0.980, 0.914, 0.800); // #fae9cc - pale warm cream near the snow line
+    // Literal 6-stop match to Barthele et al. Figure 5 (top-left panel),
+    // sampled directly from the reference image - see this file's header
+    // note (2026-10-16, second redesign) for the full rationale and the
+    // deliberate colorblind-accessibility tradeoff this accepts.
+    vec3 c0 = vec3(0.000, 0.553, 0.655); // teal - water's edge, lowest land
+    vec3 c1 = vec3(0.251, 0.702, 0.349); // green
+    vec3 c2 = vec3(0.800, 0.780, 0.300); // yellow/olive
+    vec3 c3 = vec3(0.749, 0.451, 0.149); // orange-brown
+    vec3 c4 = vec3(0.451, 0.200, 0.157); // dark maroon
+    vec3 c5 = vec3(0.900, 0.900, 0.900); // pale near-white - the peak
 
-    t = clamp(t, 0.0, 1.0) * 2.0;
+    t = clamp(t, 0.0, 1.0) * 5.0;
     if (t < 1.0) return mix(c0, c1, t);
-    return mix(c1, c2, t - 1.0);
+    if (t < 2.0) return mix(c1, c2, t - 1.0);
+    if (t < 3.0) return mix(c2, c3, t - 2.0);
+    if (t < 4.0) return mix(c3, c4, t - 3.0);
+    return mix(c4, c5, t - 4.0);
 }
 
 void main()

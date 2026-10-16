@@ -1870,3 +1870,84 @@ has a real distinct sculpted shape to it before assuming it needs a
 code fix, per this file's standing rule of measuring before guessing.
 Not blocking - the main investigation is resolved regardless of how
 this one patch turns out.
+
+## Literal Figure 5 colormap match (2026-10-16)
+
+Despite confirming the palette AND geometry were both structurally
+correct (vegetation/agent speckle was the real obscuring factor, see
+above), the user still said directly: "I just want it to look like the
+reference. Here is the paper if you need to look at it again" - a clear
+signal that the actual target had never been correctly identified, not
+that something else was still broken.
+
+**Root cause: this session's own earlier description of Figure 5 was
+wrong, carried forward from a verbal paraphrase rather than the actual
+image.** Re-opened the PDF (`pdftoppm` at 300dpi) and sampled real
+pixel RGB values along a radial line from the top-left panel's edge to
+its peak (`Pillow`, `python3`), rather than re-describing it from
+memory a third time. Result: it is NOT a single warm hue family at all -
+it's a full rainbow/hypsometric colormap: **teal/cyan (lowest) -> green
+-> yellow/olive -> orange-brown -> dark maroon -> pale near-white
+(peak)**. This matches the paper's own body text exactly (section 3:
+"the basic map shows low-level terrain in green and blue, and higher-
+level terrain in red and white") - it's SARndbox's own STOCK default
+height colormap, not a custom design at all. The earlier "hot white
+peak to warm base, single warm hue" description that the 3-stop
+rust->orange->cream ramp was built from was simply inaccurate - it
+captured "white peak" correctly but invented a warm-only structure the
+reference image never had.
+
+Also re-examined the top-right panel's water, which the user separately
+praised for "transparency... geological layers under it": this turned
+out to be contour lines visibly continuing under/through the water, not
+a translucency blend with the ground color beneath - a different
+mechanism than the `mix(lakebed, waterRamp(...), opacity)` blend
+implemented for that feature, though structurally close to it already
+working for free (this project's contour-line pass already draws over
+water unconditionally).
+
+**Direct conflict surfaced to the user before implementing, not
+silently resolved either way:** literally matching Figure 5 means a
+real green-to-yellow-to-orange-to-red progression - the exact
+worst-case adjacency for red-green colorblindness that the 2026-09-24
+accessibility pass deliberately eliminated project-wide. Put to the
+user via `AskUserQuestion` with three options (literal match / a
+colorblind-safe approximation keeping the same arc shape / handle
+per-element). **User chose literal match explicitly**, accepting the
+accessibility tradeoff for this specific visual as an informed,
+deliberate choice - not an accident or an oversight this time.
+
+**Implementation: `terrainRamp()` rebuilt as a 6-stop piecewise-linear
+ramp**, stops taken from the actual sampled Figure 5 values (cleaned up
+to round, deliberate numbers rather than raw noisy samples):
+teal `(0,141,167)` -> green `(64,179,89)` -> yellow/olive `(204,199,77)`
+-> orange-brown `(191,115,38)` -> dark maroon `(115,51,40)` -> pale
+near-white `(230,230,230)`. Both `heightMapShader.frag` variants
+(GL2/GL3) updated in sync per this file's usual convention - function
+signature and all call sites (tie-land using `landT`, water's lakebed
+read using raw `elevationNorm`) are UNCHANGED, only the stop colors and
+interpolation logic inside `terrainRamp()` itself changed, from 3 stops/
+1 kink to 6 stops/4 kinks. `waterRamp()`'s own two blue stops are
+UNCHANGED - the user's two likes (gradient behavior, water look) were
+about different things, and the water "transparency" turned out to be
+contour lines, not a color problem to re-solve here.
+
+**Explicitly scoped**: species/agent colors (shrub/fruit/nut peak
+colors, deer/hunter/gatherer/fisher) are completely untouched and still
+use the Okabe-Ito-derived, colorblind-safe palette from the 2026-09-24
+pass - this tradeoff was deliberately confined to background/tie-land
+only, the one element the user was actually comparing against Figure 5,
+not applied project-wide by default.
+
+**GUI palette reference swatch (added earlier the same day) updated to
+match** - redrawn as a 6-segment gradient bar using the same sampled
+stop colors, with new inline text explicitly flagging that this is now
+a literal rainbow match and a deliberate departure from the earlier
+colorblind-safe design, so the GUI doesn't silently drift out of sync
+with what the shader actually renders (same "hand-kept in sync, no
+shared source of truth" caveat as when the swatch was first added).
+
+Not yet tested on real hardware - this is the third iteration of this
+same ramp in one day, so same open question as every prior palette
+pass, but now at least confirmed to be targeting the CORRECT reference
+image this time, sampled directly rather than paraphrased.
