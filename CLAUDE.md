@@ -1824,3 +1824,49 @@ reference" impression was specifically the vegetation layer. If toggling
 it on still doesn't produce a clean gradient, that would point back at
 geometry (snow cresting / band not swept, per the entry above) as a
 real, separate, still-open issue rather than vegetation coverage.
+
+**CONFIRMED on real hardware (2026-10-16), same visit - the real
+obscuring factor was BOTH vegetation AND agent population icons, not
+just vegetation.** Before testing `DEBUG_HIDE_VEGETATION`, the user's
+screenshot was re-examined for color: the dense teal/mint cluster and
+scattered colored squares matched `Critter::BODY_COLOR` (deer,
+`(0,190,255)`), `HumanAgent::GATHERER_COLOR` (`(255,190,0)`), and
+`HumanAgent::FISHER_COLOR` (`(30,30,130)`) almost exactly - a
+completely separate rendering path (`CritterController`/`HumanAgent`
+draw calls) that `DEBUG_HIDE_VEGETATION` has no effect on at all, since
+that toggle only gates `heightMapShader.frag`'s vegetation-texture
+branches. This means the earlier "vegetation speckle" diagnosis in the
+entry above was likely incomplete - probably correct for the fruit/nut
+texture also present, but not the dominant effect in that particular
+screenshot, which was most likely a dense deer herd plus nearby human
+agents rendered as discrete icons on top of everything else.
+
+User combined BOTH fixes using the project's own existing "Population"
+panel controls (`CritterController.cpp` - "Remove all deer"/"Remove all
+humans" buttons, already established precedent from the 2026-09-22
+grazing-pressure test) alongside `DEBUG_HIDE_VEGETATION`: zeroed both
+populations AND hid vegetation. Result: the live sandbox now visibly
+matches the Figure 5 reference composition - blue water, a smooth
+rust->orange->cream raised landform with a real gradient, no speckle.
+**This closes the "doesn't match the reference" investigation** - the
+palette (`terrainRamp()`/`waterRamp()`) and the underlying elevation
+geometry were correct the whole time; every prior failed comparison was
+agents and/or vegetation sitting on top of a working ramp, not a color
+or shader bug.
+
+**One remaining anomaly, NOT YET EXPLAINED, flagged as open/low-priority
+rather than silently dropped:** a solid, hard-edged orange blotch in
+the bottom-left of the confirming screenshot, visually distinct from
+the smooth gradient everywhere else - blocky/speckled rather than
+continuous. Ruled out so far: not water (not blue), not snow (not
+white), not contour lines (those render flat black, confirmed earlier
+in the fidelity audit), not vegetation or agents (both off for this
+test). Most likely either (a) a real, distinct physical sand feature at
+roughly mid-band elevation that genuinely should render solid orange,
+or (b) photo/sand-texture/projector-moire noise if the screenshot is a
+phone photo of the physical install rather than a screen capture,
+rather than a code issue - asked the user directly whether that area
+has a real distinct sculpted shape to it before assuming it needs a
+code fix, per this file's standing rule of measuring before guessing.
+Not blocking - the main investigation is resolved regardless of how
+this one patch turns out.
