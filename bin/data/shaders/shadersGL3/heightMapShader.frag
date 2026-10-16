@@ -60,18 +60,42 @@ palette. Two different palettes, each used for what it's suited to:
    FULL saturation with NO fade regardless of density (matching ELF's
    own no-threshold getCellColor() exactly, still) - only the peak
    color values changed, not the winner-take-all mechanic.
-2. BACKGROUND/ELEVATION COLOR (water, and now negative-space/tie land
-   too - see terrainRamp() below) uses a 7-stop diverging ramp the user
-   sourced themselves (also confirmed colorblind-safe) - a sequential/
-   diverging palette suits elevation specifically because elevation is
-   physically continuous (adjacent cells have similar height), unlike
-   species identity. Deliberately NOT applied to actively-growing
-   vegetation: doing so would replace the winner-take-all speckled "CA"
-   look (independent per-cell stochastic growth + no-fade coloring,
-   confirmed on real hardware as looking correct) with a smooth
-   gradient, since elevation doesn't have that per-cell independence -
-   this was an explicit design question the user raised and this is
-   the resolution: hybrid, not a full replacement.
+2. BACKGROUND/ELEVATION COLOR (negative-space/tie land - see
+   terrainRamp() below) - REDESIGNED 2026-10-16, replacing the earlier
+   multi-hue diverging ramp. User flagged the previous 8-stop version
+   (deep blue through cream through dusty rose to maroon) as "pretty
+   but fairly confusing visually" when compared directly against a real
+   AR-sandbox reference photo (Barthele et al.'s Figure 5, top-left
+   panel) whose land gradient - a bright warm peak fading smoothly into
+   a single saturated warm hue toward the base - was specifically
+   called out as "exactly how I wanted our gradient to behave." Now a
+   simple 3-stop MONOTONIC WARM ramp (deep rust -> burnt orange-red ->
+   pale warm cream), the same single-hue-family-plus-lightness
+   structure that makes the viridis family's warm half (Inferno/Magma -
+   see CLAUDE.md's jet/Turbo/Inferno discussion the same day) a
+   principled, colorblind-safe alternative to jet-style rainbow ramps:
+   no green or cyan stop anywhere in it, so there's no red-green
+   adjacency to collapse under deuteranopia/protanopia in the first
+   place - arguably MORE robust than the previous diverging ramp, not
+   just prettier. Peak is a warm cream rather than pure white
+   specifically so it stays visually distinct from actual snow's flat
+   pure white just above it. Deliberately NOT applied to actively-
+   growing vegetation, same reasoning as before: doing so would replace
+   the winner-take-all speckled "CA" look (independent per-cell
+   stochastic growth + no-fade coloring, confirmed on real hardware as
+   looking correct) with a smooth gradient, since elevation doesn't have
+   that per-cell independence - this was an explicit design question the
+   user raised earlier and this is still the resolution: hybrid, not a
+   full replacement.
+3. WATER now shows a glimpse of the terrain color beneath it at shallow
+   depth, opaque at real depth - see main()'s water branch. Directly
+   requested from the same reference figure's top-right panel, where the
+   user read the water as "some sort of transparency to it; you can see
+   geological layers under it." waterRamp() itself (the two blue stops)
+   is unchanged; it's now blended with a continuous underwater read of
+   terrainRamp() (fed raw elevationNorm, not landT, so it keeps varying
+   smoothly with real depth rather than clamping to one shallow-water
+   value) rather than used as the final color outright.
 
 Snow remains flat white, unmodulated (matching Color.WHITE), except in
 debug mode (pale blue) - untouched by this palette work; it was never
@@ -150,37 +174,27 @@ vec3 waterRamp(float t)
     return mix(deep, shallow, clamp(t, 0.0, 1.0));
 }
 
-// Background/elevation ramp - see the header note (part 2). The user's
-// own 8-stop diverging palette (confirmed colorblind-safe; revised
-// 2026-09-25 from an earlier 7-stop version specifically to drop the
-// near-white middle stop that risked washing out against light-colored
-// sand under a projector that can only add light, never subtract it -
-// every stop here keeps real saturation), used for water and negative-
-// space/tie land: the parts of the picture that are already purely
-// elevation-driven and have no per-cell CA state to preserve.
-// Piecewise-linear through all 8 stops rather than just picking two
-// endpoints, so the full range - deep water up through unvegetated high
-// ground - has real tonal variety instead of a flat wash. Values are the
-// user-supplied hex codes converted to 0..1 float.
+// Negative-space/tie-land ramp - REDESIGNED 2026-10-16, see the header
+// note (part 2). A simple 3-stop monotonic WARM ramp - deep rust at the
+// low end, through a saturated burnt orange-red, to a pale warm cream
+// at the high end - replacing the earlier 8-stop blue-to-maroon
+// diverging ramp the user found visually confusing. Single hue family
+// plus a lightness/saturation sweep, no green or cyan stop anywhere, so
+// there's no red-green hue collision to collapse under deuteranopia/
+// protanopia in the first place (the same underlying principle that
+// makes Inferno/Magma a real alternative to jet). Also used, at a
+// DIFFERENT parameter, for water's underwater-terrain peek-through -
+// see main()'s water branch and waterRamp() above for why that's a
+// second call site, not a second function.
 vec3 terrainRamp(float t)
 {
-    vec3 c0 = vec3(0.000, 0.259, 0.616); // #00429d
-    vec3 c1 = vec3(0.294, 0.451, 0.635); // #4b73a2
-    vec3 c2 = vec3(0.494, 0.639, 0.690); // #7ea3b0
-    vec3 c3 = vec3(0.729, 0.824, 0.773); // #bad2c5
-    vec3 c4 = vec3(0.847, 0.792, 0.749); // #d8cabf
-    vec3 c5 = vec3(0.737, 0.580, 0.596); // #bc9498
-    vec3 c6 = vec3(0.651, 0.357, 0.420); // #a65b6b
-    vec3 c7 = vec3(0.576, 0.000, 0.227); // #93003a
+    vec3 c0 = vec3(0.337, 0.086, 0.039); // #56160a - deep rust at the water's edge
+    vec3 c1 = vec3(0.780, 0.302, 0.067); // #c74d11 - saturated burnt orange-red at mid elevation
+    vec3 c2 = vec3(0.980, 0.914, 0.800); // #fae9cc - pale warm cream near the snow line
 
-    t = clamp(t, 0.0, 1.0) * 7.0;
+    t = clamp(t, 0.0, 1.0) * 2.0;
     if (t < 1.0) return mix(c0, c1, t);
-    if (t < 2.0) return mix(c1, c2, t - 1.0);
-    if (t < 3.0) return mix(c2, c3, t - 2.0);
-    if (t < 4.0) return mix(c3, c4, t - 3.0);
-    if (t < 5.0) return mix(c4, c5, t - 4.0);
-    if (t < 6.0) return mix(c5, c6, t - 5.0);
-    return mix(c6, c7, t - 6.0);
+    return mix(c1, c2, t - 1.0);
 }
 
 void main()
@@ -257,7 +271,19 @@ void main()
             // simulated water depth, not a cosmetic stand-in computed
             // from elevation.
             float waterDepthT = clamp((veg.a * 255.0 - 1.0) / 248.0, 0.0, 1.0);
-            color.rgb = waterRamp(waterDepthT);
+            // Transparency (2026-10-16) - requested directly from the
+            // Barthele et al. reference photo's top-right panel, where
+            // shallow water read as letting the terrain underneath show
+            // through. terrainRamp() here is fed the RAW elevationNorm,
+            // not landT - landT would clamp every underwater cell to the
+            // same shallow-water value, losing the sense of a real
+            // lakebed getting darker with depth; raw elevationNorm keeps
+            // it continuous below the water line too. Opacity floors at
+            // 0.3 so even the shallowest water still reads as water, not
+            // bare terrain, and ramps to fully opaque at real depth.
+            vec3 lakebed = terrainRamp(elevationNorm);
+            float opacity = mix(0.3, 1.0, waterDepthT);
+            color.rgb = mix(lakebed, waterRamp(waterDepthT), opacity);
         }
         else if (veg.r > veg.g && veg.r > veg.b)
         {
@@ -314,7 +340,15 @@ void main()
             // source (confirmed by running ELF's own TESTING-mode
             // reference build) - this was already a deliberate departure
             // from that before this palette work, not a fidelity claim.
-            color.rgb = terrainRamp(elevationNorm);
+            // landT, not raw elevationNorm (2026-10-16) - tie land can
+            // only ever actually render between the water line and the
+            // snow line (same reachable band as the species channels -
+            // see landT's own header note), so without this the new
+            // 3-stop ramp above would suffer the exact same "barely
+            // noticeable, most of the range unreachable" bug the
+            // 2026-09-28 species-gradient fix addressed, just on a fresh
+            // ramp instead of the old one.
+            color.rgb = terrainRamp(landT);
         }
     }
 

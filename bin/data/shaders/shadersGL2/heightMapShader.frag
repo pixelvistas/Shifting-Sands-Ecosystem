@@ -58,26 +58,19 @@ vec3 waterRamp(float t)
 }
 
 // See the matching GL3 shader's terrainRamp() for the full rationale.
-// 8-stop version, revised 2026-09-25 to drop the near-white middle stop.
+// REDESIGNED 2026-10-16: simple 3-stop monotonic warm ramp (deep rust ->
+// burnt orange-red -> pale warm cream), replacing the earlier 8-stop
+// blue-to-maroon diverging ramp - no green/cyan stop anywhere, so no
+// red-green hue collision to collapse under deuteranopia/protanopia.
 vec3 terrainRamp(float t)
 {
-    vec3 c0 = vec3(0.000, 0.259, 0.616); // #00429d
-    vec3 c1 = vec3(0.294, 0.451, 0.635); // #4b73a2
-    vec3 c2 = vec3(0.494, 0.639, 0.690); // #7ea3b0
-    vec3 c3 = vec3(0.729, 0.824, 0.773); // #bad2c5
-    vec3 c4 = vec3(0.847, 0.792, 0.749); // #d8cabf
-    vec3 c5 = vec3(0.737, 0.580, 0.596); // #bc9498
-    vec3 c6 = vec3(0.651, 0.357, 0.420); // #a65b6b
-    vec3 c7 = vec3(0.576, 0.000, 0.227); // #93003a
+    vec3 c0 = vec3(0.337, 0.086, 0.039); // #56160a - deep rust at the water's edge
+    vec3 c1 = vec3(0.780, 0.302, 0.067); // #c74d11 - saturated burnt orange-red at mid elevation
+    vec3 c2 = vec3(0.980, 0.914, 0.800); // #fae9cc - pale warm cream near the snow line
 
-    t = clamp(t, 0.0, 1.0) * 7.0;
+    t = clamp(t, 0.0, 1.0) * 2.0;
     if (t < 1.0) return mix(c0, c1, t);
-    if (t < 2.0) return mix(c1, c2, t - 1.0);
-    if (t < 3.0) return mix(c2, c3, t - 2.0);
-    if (t < 4.0) return mix(c3, c4, t - 3.0);
-    if (t < 5.0) return mix(c4, c5, t - 4.0);
-    if (t < 6.0) return mix(c5, c6, t - 5.0);
-    return mix(c6, c7, t - 6.0);
+    return mix(c1, c2, t - 1.0);
 }
 
 void main()
@@ -107,9 +100,15 @@ void main()
         {
             // Water - dedicated waterRamp(), fed REAL per-cell depth
             // decoded from the alpha channel (2026-10) - see the
-            // matching GL3 shader's note.
+            // matching GL3 shader's note. Transparency (2026-10-16):
+            // blended with a continuous underwater read of terrainRamp()
+            // at raw elevationNorm (not landT) so shallow water lets the
+            // lakebed show through and real depth stays fully opaque -
+            // see the matching GL3 shader's note.
             float waterDepthT = clamp((veg.a * 255.0 - 1.0) / 248.0, 0.0, 1.0);
-            color.rgb = waterRamp(waterDepthT);
+            vec3 lakebed = terrainRamp(elevationNorm);
+            float opacity = mix(0.3, 1.0, waterDepthT);
+            color.rgb = mix(lakebed, waterRamp(waterDepthT), opacity);
         }
         else if (veg.r > veg.g && veg.r > veg.b)
         {
@@ -133,8 +132,10 @@ void main()
         else
         {
             // Tie OR nut below nutVisibilityThreshold - background ramp,
-            // see the matching GL3 shader's note.
-            color.rgb = terrainRamp(elevationNorm);
+            // see the matching GL3 shader's note. landT, not raw
+            // elevationNorm (2026-10-16) - same reachable-band fix
+            // already applied to the species channels.
+            color.rgb = terrainRamp(landT);
         }
     }
 

@@ -1581,3 +1581,74 @@ finishable by December. Flagged for later on the same shelf as the
 SARndbox DEM import/export tool and the Repast-inspired population-over-
 time chart above - a real idea, not rejected, just not this project's
 problem before December.
+
+## Terrain/water palette redesign: warm monotonic ramp + water transparency (2026-10-16)
+
+Direct follow-on from the mode-switch conversation above, same visit.
+User looked at Barthele et al.'s Figure 5 again and asked to act on two
+specific reactions, both against the diverging-ramp background/water
+work from 2026-09-24/25: "the one we have, while pretty, is fairly
+confusing visually," and two concrete likes from the reference photo -
+the top-left panel's hot-white-peak-to-warm-base gradient ("exactly how
+I wanted our gradient to behave"), and the top-right panel's water,
+which reads as having "some sort of transparency to it; you can see
+geological layers under it."
+
+**Diagnosed, not just reskinned: the old 8-stop ramp had the SAME
+unreachable-range bug the species channels had before the 2026-09-28
+`landT` fix, just never caught.** Tie land (where `terrainRamp()` is
+actually used) can only ever render between the water line and the
+snow line - identical constraint to shrub/fruit/nut - but the tie
+branch was still feeding it raw global `elevationNorm`. So in practice
+only some middle slice of the 8 stops (never the deep-blue or dark-
+maroon extremes, which require an elevation outside the reachable
+band) was ever visible - a real, previously-undiagnosed contributor to
+"confusing," on top of the ramp just having a lot of hue changes packed
+into that visible slice.
+
+**Redesign: `terrainRamp()` is now a 3-stop MONOTONIC WARM ramp** (deep
+rust `#56160a` -> saturated burnt orange-red `#c74d11` -> pale warm
+cream `#fae9cc`), replacing the old blue-through-maroon diverging one
+entirely, and its tie-land call site now passes `landT` instead of raw
+`elevationNorm` - fixing the reachable-range bug at the same time as
+the aesthetic change, so the full white-to-red sweep the user liked is
+now actually the full sweep a real cell can show, not a cramped middle
+slice of it.
+
+**This is also a genuine accessibility improvement, not just a taste
+change** - ties directly back to the jet/Turbo/Inferno discussion
+earlier the same session. A single hue family swept through lightness/
+saturation (no green or cyan stop anywhere) has no red-green adjacency
+to collapse under deuteranopia/protanopia in the first place, which is
+the exact principle that makes Inferno/Magma a real alternative to
+jet - this ramp isn't literally Inferno, but it's built on the same
+reasoning, and arguably MORE robust than the diverging ramp it
+replaces, not a tradeoff against the earlier accessibility work. Cream
+rather than pure white at the peak is deliberate too - keeps the ramp's
+own high end visually distinct from actual snow's flat pure white just
+above it.
+
+**Water transparency**: `waterRamp()` itself (the two blue stops) is
+UNCHANGED - the fix is at the call site. Water's final color is now
+`mix(lakebed, waterRamp(waterDepthT), opacity)`, where `lakebed =
+terrainRamp(elevationNorm)` (raw elevation, NOT `landT` - landT would
+clamp every underwater cell to the same value, losing any sense of a
+real lakebed varying with depth) and `opacity = mix(0.3, 1.0,
+waterDepthT)` - shallow water lets the terrain-colored "lakebed" show
+through, real depth is fully opaque blue, and even the shallowest water
+still keeps a 30% blue tint so it never looks identical to bare dry
+terrain right at the shoreline.
+
+Implementation: both `heightMapShader.frag` variants (GL2/GL3), kept in
+sync per this file's usual convention - `terrainRamp()`'s stops
+replaced, its tie-land call site changed to `landT`, and the water
+branch in `main()` restructured to blend through `terrainRamp()` rather
+than using `waterRamp()`'s output directly. No C++/uniform changes
+needed - same `elevationNorm`/`landT`/`waterLevelFrac`/`snowLevelFrac`
+already available were sufficient.
+
+Species/agent colors (shrub/fruit/nut peak colors, deer/hunter/
+gatherer/fisher) and snow are entirely untouched - this was scoped to
+background/tie-land and water only, same scope discipline as every
+previous palette pass. Not yet tested on real hardware - same open
+question as every other color decision in this project's history.
