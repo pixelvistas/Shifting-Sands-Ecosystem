@@ -1765,3 +1765,62 @@ physical-parameter work already flagged as deferred (sculpting a mound/
 slope tall and gradual enough to sweep the real band without crossing
 the snow line, and/or revisiting whether the current water/snow line
 targets leave enough room to do that comfortably on this box).
+
+## Real root cause found: vegetation speckle, not color or geometry (2026-10-16)
+
+Same visit, immediately after the swatch above. User tested on real
+hardware and reported the live sandbox is "nowhere near the reference"
+- with a screenshot showing exactly what the two prior mound tests
+showed: a big raised landform almost entirely covered in dense teal/
+orange speckle (established nut/fruit vegetation), with only slivers of
+bare rust/brown visible between speckles, plus the surrounding water.
+
+**This is the actual root cause, not a third geometry variant of the
+same mystery.** Barthele et al.'s Figure 5 images are a bare DEM
+colormap - elevation only, zero vegetation layer. This project ALWAYS
+composites species vegetation on top of the terrain ramp, winner-take-
+all with no fade (a deliberate, already-validated-on-hardware design
+choice from the 2026-09-24 accessibility pass - see that entry's
+"Explicit design question raised and resolved" note: the pixelated-CA
+look specifically depends on vegetation having zero blend with
+terrainRamp()). On real, previously-used sand, most land already has at
+least trace vegetation density from normal use, so most of what's
+visible is species speckle, not the elevation ramp at all - structurally
+incomparable to a bare-DEM reference image, no matter how correct the
+ramp's own colors or the sculpted terrain's shape are. The prior two
+"geometry" explanations (snow cresting; band not swept) were real and
+still correct for what they each showed, but neither was the dominant
+effect in THIS screenshot - vegetation coverage was.
+
+**Fix: `DEBUG_HIDE_VEGETATION`** (`VegetationField.h`/`.cpp`, default
+false) - a new debug-only toggle, same category/wiring pattern as
+`DEBUG_SHOW_SNOW`. When enabled, `heightMapShader.frag`'s three species
+branches (shrub/fruit/nut) are skipped entirely regardless of actual
+density, falling through to the existing tie-land `terrainRamp(landT)`
+branch - water and snow are deliberately left alone (Figure 5's own
+images still show water/relief, just no vegetation overlay, so hiding
+water/snow too would no longer match the reference either). This gives
+a real, direct, vegetation-free comparison against the reference image
+for the first time, cutting the ambiguity between "wrong colors," "wrong
+geometry," and "vegetation is covering it" that the last three rounds
+of real-hardware screenshots couldn't distinguish from each other.
+
+Checkbox added in the Vegetation panel directly below the palette
+swatch from the entry above, with inline text explaining why this
+specific toggle is the right next diagnostic step. Purely a debug render
+path - does not touch actual growth/establishment logic, species
+densities, or any saved state.
+
+**Both GL2/GL3 shader variants updated in sync** per this file's usual
+convention; `SandSurfaceRenderer::drawSandbox()` sets the new uniform
+the same way `debugShowSnow` is already set.
+
+Not yet tested on real hardware. Expected result once pulled: toggling
+this on should make the raised landform in the user's last screenshot
+show clean rust->orange->cream bare terrain (matching the GUI swatch),
+confirming the colors and (depending on whether the band gets swept)
+the geometry were likely fine all along, and the "nowhere near the
+reference" impression was specifically the vegetation layer. If toggling
+it on still doesn't produce a clean gradient, that would point back at
+geometry (snow cresting / band not swept, per the entry above) as a
+real, separate, still-open issue rather than vegetation coverage.

@@ -116,6 +116,7 @@ float VegetationField::MAX_WATER_DEPTH_FRAC = 0.05f;
 float VegetationField::NUT_VISIBILITY_THRESHOLD = 0.05f;
 float VegetationField::FOOD_PER_FULL_CELL = 255.0f;
 bool VegetationField::DEBUG_SHOW_SNOW = false;
+bool VegetationField::DEBUG_HIDE_VEGETATION = false;
 
 namespace {
 	// One cell per kinect pixel - see the header note on matching ELF's
@@ -711,6 +712,15 @@ void VegetationField::drawGui()
 		ImGui::Dummy(ImVec2(barWidth, barHeight));
 		ImGui::Text("waterRamp() - deep -> shallow water (blends with the lakebed below it)");
 	}
+	ImGui::Text("If the swatch above looks right but the live sandbox still doesn't");
+	ImGui::Text("match the Figure 5 reference, it's very likely vegetation speckle");
+	ImGui::Text("covering the terrain ramp, not a color problem - Figure 5's images");
+	ImGui::Text("are a bare DEM with no vegetation layer at all, but this project");
+	ImGui::Text("always draws established vegetation on top, winner-take-all (no");
+	ImGui::Text("fade), so land with any growth on it shows species speckle instead");
+	ImGui::Text("of the ramp. Toggle this to see bare elevation only, for a real");
+	ImGui::Text("apples-to-apples comparison against the reference image:");
+	ImGui::Checkbox("Debug: hide vegetation (bare terrain ramp only)", &DEBUG_HIDE_VEGETATION);
 	ImGui::Separator();
 	// Ground truth, independent of any threshold/classification below -
 	// put a hand at the ROI center and read the real mm value directly,

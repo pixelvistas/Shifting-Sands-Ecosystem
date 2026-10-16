@@ -511,6 +511,29 @@ public:
 	// shader uniform - see drawSandbox().
 	static bool DEBUG_SHOW_SNOW;
 
+	// Debug aid only, added 2026-10-16 after real hardware showed the
+	// live sandbox looking "nowhere near" the Barthele et al. Figure 5
+	// reference even after the terrainRamp()/waterRamp() palette redesign
+	// and GUI swatch both confirmed the colors themselves were right.
+	// Root cause: Figure 5's images are a bare DEM colormap with NO
+	// vegetation layer at all, while this project ALWAYS composites
+	// winner-take-all species speckle on top of the terrain ramp - once a
+	// cell has even trace vegetation density, its species color fully
+	// overrides terrainRamp() for that cell (by design - see CLAUDE.md's
+	// 2026-09-24 palette entry on why there's no fade). On real,
+	// previously-used sand, most land already has SOME vegetation, so
+	// most of what's visible is species speckle, not the elevation ramp -
+	// not comparable to Figure 5's vegetation-free rendering at all. When
+	// true, the shader skips the shrub/fruit/nut branches entirely
+	// (falls through to terrainRamp(landT) for every non-water/non-snow
+	// cell) so the live view shows pure bare-elevation color, directly
+	// comparable to the Figure 5 reference - water/snow are left alone,
+	// matching how Figure 5 itself still shows water/relief, just no
+	// vegetation overlay. Diagnostic-only: does not affect actual growth,
+	// just this debug render path. SandSurfaceRenderer reads this
+	// directly, same wiring pattern as DEBUG_SHOW_SNOW above.
+	static bool DEBUG_HIDE_VEGETATION;
+
 private:
 	// Shared by the eat*() helpers above - converts a kinect pixel
 	// coordinate into grid indices, false if outside the grid.

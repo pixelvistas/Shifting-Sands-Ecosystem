@@ -133,6 +133,11 @@ uniform float vegetationGridStep;
 // this tints it pale blue instead so the two are visually separable
 // while diagnosing calibration.
 uniform int debugShowSnow;
+// Debug aid, 2026-10-16 - see VegetationField::DEBUG_HIDE_VEGETATION's
+// header note. When true, the three species branches below are skipped
+// entirely (bare terrainRamp(landT) shown instead), for a direct,
+// vegetation-free comparison against a reference DEM colormap image.
+uniform int debugHideVegetation;
 // New departure from ELF's literal getCellColor() (2026-09-24) - see
 // VegetationField.h's NUT_VISIBILITY_THRESHOLD comment. Nut's color
 // below, (0,h,h), has no channel pinned bright the way shrub/fruit do,
@@ -285,7 +290,7 @@ void main()
             float opacity = mix(0.3, 1.0, waterDepthT);
             color.rgb = mix(lakebed, waterRamp(waterDepthT), opacity);
         }
-        else if (veg.r > veg.g && veg.r > veg.b)
+        else if (debugHideVegetation == 0 && veg.r > veg.g && veg.r > veg.b)
         {
             // Shrub-dominant - species color (part 1 of the header note),
             // a rich emerald, kept in shrub's original green family, R=0
@@ -296,7 +301,7 @@ void main()
             // as ELF's own no-fade getCellColor() at low elevation.
             color.rgb = mix(vec3(0.0, 0.659, 0.349), vec3(1.0), landT);
         }
-        else if (veg.g > veg.r && veg.g > veg.b)
+        else if (debugHideVegetation == 0 && veg.g > veg.r && veg.g > veg.b)
         {
             // Fruit-dominant - species color, a bold orange-red, kept in
             // fruit's original red/warm family but with high red AND
@@ -308,7 +313,7 @@ void main()
             // elevationNorm - see the 2026-09-28 note above.
             color.rgb = mix(vec3(0.902, 0.353, 0.078), vec3(1.0), landT);
         }
-        else if (veg.b > veg.g && veg.b > veg.r && veg.b > nutVisibilityThreshold)
+        else if (debugHideVegetation == 0 && veg.b > veg.g && veg.b > veg.r && veg.b > nutVisibilityThreshold)
         {
             // Nut-dominant - species color, a saturated teal, kept in
             // nut's original cool family, R=0/B high so it separates

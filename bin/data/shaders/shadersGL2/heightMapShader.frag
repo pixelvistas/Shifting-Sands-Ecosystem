@@ -48,6 +48,7 @@ uniform int debugShowSnow; // see the matching GL3 shader's header note
 uniform float nutVisibilityThreshold; // see the matching GL3 shader's header note
 uniform float waterLevelFrac; // see the matching GL3 shader's header note
 uniform float snowLevelFrac; // see the matching GL3 shader's header note
+uniform int debugHideVegetation; // see the matching GL3 shader's header note
 
 // See the matching GL3 shader's waterRamp() for the full rationale.
 vec3 waterRamp(float t)
@@ -110,19 +111,19 @@ void main()
             float opacity = mix(0.3, 1.0, waterDepthT);
             color.rgb = mix(lakebed, waterRamp(waterDepthT), opacity);
         }
-        else if (veg.r > veg.g && veg.r > veg.b)
+        else if (debugHideVegetation == 0 && veg.r > veg.g && veg.r > veg.b)
         {
             // Shrub-dominant - bold emerald, see GL3 note. landT, not raw
             // elevationNorm (2026-09-28).
             color.rgb = mix(vec3(0.0, 0.659, 0.349), vec3(1.0), landT);
         }
-        else if (veg.g > veg.r && veg.g > veg.b)
+        else if (debugHideVegetation == 0 && veg.g > veg.r && veg.g > veg.b)
         {
             // Fruit-dominant - bold orange-red, see GL3 note. landT, not
             // raw elevationNorm (2026-09-28).
             color.rgb = mix(vec3(0.902, 0.353, 0.078), vec3(1.0), landT);
         }
-        else if (veg.b > veg.g && veg.b > veg.r && veg.b > nutVisibilityThreshold)
+        else if (debugHideVegetation == 0 && veg.b > veg.g && veg.b > veg.r && veg.b > nutVisibilityThreshold)
         {
             // Nut-dominant - saturated teal, peak-to-white pattern (no
             // longer black-at-low-elevation) - see GL3 note. landT, not

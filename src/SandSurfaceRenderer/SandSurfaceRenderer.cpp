@@ -260,6 +260,8 @@ void SandSurfaceRenderer::drawSandbox() {
     }
     // Debug aid - see VegetationField::DEBUG_SHOW_SNOW's header note.
     heightMapShader.setUniform1i("debugShowSnow", VegetationField::DEBUG_SHOW_SNOW ? 1 : 0);
+    // Debug aid - see VegetationField::DEBUG_HIDE_VEGETATION's header note.
+    heightMapShader.setUniform1i("debugHideVegetation", VegetationField::DEBUG_HIDE_VEGETATION ? 1 : 0);
     // See VegetationField::NUT_VISIBILITY_THRESHOLD's header note.
     heightMapShader.setUniform1f("nutVisibilityThreshold", VegetationField::NUT_VISIBILITY_THRESHOLD);
     // waterLevelFrac is still needed here (land vegetation's landT below
