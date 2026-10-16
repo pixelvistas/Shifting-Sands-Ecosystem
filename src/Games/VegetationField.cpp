@@ -667,6 +667,51 @@ void VegetationField::drawGui()
 	ImGui::Text("ELF-style flora: three plant types growing within elevation");
 	ImGui::Text("bands relative to the water line - reshape the sand to see it shift.");
 	ImGui::Separator();
+	// Reference-only swatch, independent of any real sand/calibration data
+	// below - added 2026-10-16 after two real-hardware mound tests both
+	// failed to show a visible rust->orange->cream sweep, for two
+	// DIFFERENT geometry reasons (one mound crested into snow before
+	// reaching cream, the other never rose far enough above the water
+	// line to leave the rust end at all) rather than any code/color bug -
+	// see CLAUDE.md's same-dated entry. This swatch answers "are these
+	// the right colors" (the Barthele et al. Figure 5 reference look)
+	// completely separately from "did I sculpt the right shape to reveal
+	// them," so the two questions can't be conflated from a screenshot
+	// again. Colors are hardcoded here and MUST stay in sync with
+	// heightMapShader.frag's terrainRamp()/waterRamp() (both GL2/GL3
+	// variants, per that file's own convention) - there is no shared
+	// source of truth between GLSL and this ImGui draw call.
+	ImGui::Text("Palette reference (NOT live sand data) - the exact terrainRamp()/");
+	ImGui::Text("waterRamp() stops, so you can confirm this IS the Figure 5 warm-");
+	ImGui::Text("ramp/transparent-water look regardless of what your current sand");
+	ImGui::Text("shape happens to be showing right now.");
+	{
+		ImDrawList* drawList = ImGui::GetWindowDrawList();
+		float barWidth = ImGui::GetContentRegionAvail().x;
+		float barHeight = 24.0f;
+
+		// terrainRamp(): #56160a -> #c74d11 -> #fae9cc
+		ImU32 rust = IM_COL32(86, 22, 10, 255);
+		ImU32 orange = IM_COL32(199, 77, 17, 255);
+		ImU32 cream = IM_COL32(250, 233, 204, 255);
+		ImVec2 p1 = ImGui::GetCursorScreenPos();
+		float halfWidth = barWidth * 0.5f;
+		drawList->AddRectFilledMultiColor(p1, ImVec2(p1.x + halfWidth, p1.y + barHeight), rust, orange, orange, rust);
+		drawList->AddRectFilledMultiColor(ImVec2(p1.x + halfWidth, p1.y), ImVec2(p1.x + barWidth, p1.y + barHeight), orange, cream, cream, orange);
+		ImGui::Dummy(ImVec2(barWidth, barHeight));
+		ImGui::Text("terrainRamp() - bare land, low elevation (water's edge) -> high (snow line)");
+
+		// waterRamp(): #00429d -> #4b73a2 (shown on its own; real water
+		// also blends this with an underwater terrainRamp() "lakebed" at
+		// 30-100%% opacity by depth - see the shader's water branch).
+		ImU32 deep = IM_COL32(0, 66, 157, 255);
+		ImU32 shallow = IM_COL32(75, 115, 162, 255);
+		ImVec2 p2 = ImGui::GetCursorScreenPos();
+		drawList->AddRectFilledMultiColor(p2, ImVec2(p2.x + barWidth, p2.y + barHeight), deep, shallow, shallow, deep);
+		ImGui::Dummy(ImVec2(barWidth, barHeight));
+		ImGui::Text("waterRamp() - deep -> shallow water (blends with the lakebed below it)");
+	}
+	ImGui::Separator();
 	// Ground truth, independent of any threshold/classification below -
 	// put a hand at the ROI center and read the real mm value directly,
 	// to actually measure this box's achievable relief instead of

@@ -1690,3 +1690,78 @@ Phase 3 gates this same existing mechanism behind real moisture/slope/
 soil-depth suitability instead of just the current elevation band -
 establishment doesn't need a literal seed object to exist at all, with
 or without hand-placed planting.
+
+## GUI palette reference swatch added (2026-10-16)
+
+Two real-hardware tests of the new terrain/water palette (see the
+"Terrain/water palette redesign" entry above), both the same day,
+failed to show the intended rust->orange->cream sweep - but for two
+DIFFERENT geometry reasons, neither a color bug:
+
+1. **First mound (tall, steep)**: peak almost certainly crested past
+   the tuned snow line (~+70mm target vs. this box's measured ~+80mm
+   max mound height) before `landT` ever reached 1, so the ramp's cream
+   stop was skipped over entirely - the white seen was most likely real
+   snow (`veg.a > 0.98`), not `terrainRamp()`'s own near-white end.
+2. **Second mound (short, wide)**: didn't rise far enough above the
+   tuned water line (~-35mm) to traverse much of the ~105mm land band
+   at all, so `landT` stayed near 0 almost everywhere visible, pinning
+   the whole island to the rust end with no visible orange/cream.
+   Established vegetation (teal nut/orange fruit speckle, winner-take-
+   all over the ramp per cell) likely also obscured bare "tie" land in
+   places, compounding the same effect.
+
+Both are explained by mound SHAPE/HEIGHT relative to the already-tuned
+water/snow lines, not by `terrainRamp()`/`waterRamp()` rendering the
+wrong colors - but there was no way to tell those two failure modes
+apart from a screenshot alone, which is exactly the ambiguity that
+caused the misdiagnosis risk.
+
+**User's request, given this: "I just want to see the same colours
+visuals that are shown in [Barthele et al.]. Once we work out the
+proper parameters, we can change things up."** - i.e., confirm the
+PALETTE itself matches the Figure 5 reference look right now,
+independently of getting real sand geometry/calibration to reveal it,
+and defer the actual physical-parameter tuning (mound shapes,
+water/snow line retuning, etc.) to a separate later pass.
+
+**Added: a palette reference swatch in the Vegetation panel**
+(`VegetationField::drawGui()`, right after the panel's intro text) -
+draws `terrainRamp()`'s three stops (rust `#56160a` -> orange `#c74d11`
+-> cream `#fae9cc`) and `waterRamp()`'s two stops (`#00429d` ->
+`#4b73a2`) as literal ImGui gradient bars via
+`AddRectFilledMultiColor()`, explicitly labeled "NOT live sand data."
+This is pure reference - it reads no elevation/vegetation state at all,
+so it answers "does this software have the right colors" completely
+independently of "did I sculpt the right terrain shape to reveal them
+live" - the exact two questions the two failed tests above conflated.
+
+**Deliberately NOT done as part of this change**: no retuning of
+`TEMPERATURE`/`LIVING_RANGE_FRACTION`/the water-snow band width, and no
+attempt to make small mounds show more gradient automatically (e.g. by
+widening the land band) - both are exactly the "proper parameters" the
+user explicitly asked to defer. Those already-measured values
+(water -35mm/snow +70mm, see the hydrology-phase entries above) stay
+as-is; this change only adds a way to verify the palette in isolation,
+not a way to make it easier to hit on real sand.
+
+**Colors are hardcoded in C++, duplicating the shader's own GLSL
+constants** - called out explicitly in the code comment as a value that
+must be hand-kept in sync with `heightMapShader.frag`'s `terrainRamp()`/
+`waterRamp()` (both GL2/GL3 variants) if either is ever retuned again,
+since there is no shared source of truth between GLSL and ImGui in this
+codebase's current structure.
+
+Not yet tested on real hardware - this is a pure GUI addition with no
+dependency on the Kinect/vegetation pipeline, so the risk of it not
+rendering correctly is low, but ImGui's `AddRectFilledMultiColor()`
+usage here is new to this codebase and worth a quick visual check on
+the first run after pulling.
+
+**Next step for the user once this is confirmed to look right**: if the
+swatch itself matches the Figure 5 reference look, that closes the
+"are the colors right" question for good - what's left is purely the
+physical-parameter work already flagged as deferred (sculpting a mound/
+slope tall and gradual enough to sweep the real band without crossing
+the snow line, and/or revisiting whether the current water/snow line
+targets leave enough room to do that comfortably on this box).
