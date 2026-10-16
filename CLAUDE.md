@@ -1523,3 +1523,61 @@ and doesn't block Phase 3. Phase 3 (soil depth/moisture/slope fields +
 the real suitability test) is the next engineering phase, and should
 consume `EcologyParams::getSpecies()` directly rather than re-deriving
 its own copy of these ranges.
+
+## Visualization mode-switch: operator/debug lens now, participant-facing version flagged for later (2026-10-16)
+
+Came out of an aesthetic side-conversation that started with the
+Barthele et al. paper's Figure 5 (four alternate height-color-map
+presets) and a tangent on jet/Turbo/Inferno colormaps (jet's red-green
+adjacency reopens the exact accessibility problem the 2026-09-24
+palette pass fixed; Turbo is a smoother, partially CVD-checked
+improvement but still a full rainbow with the same structural issue;
+Inferno/Magma - from the same `viridis` family that replaced jet as
+matplotlib's default - gives the warm "hot glow" quality the user
+responded to while staying perceptually uniform and colorblind-safe,
+and would be the right pick if that quality is ever wanted here).
+
+**The real idea, once the user reframed it:** Barthele et al.'s four
+presets are pure cosmetic palette swaps - same elevation data, different
+color lookup table, nothing structurally different about what's being
+shown. But the user separately pointed at two systems doing something
+different: Ishii's Sandscape (MIT Tangible Media Group) switches between
+genuinely different DERIVED quantities computed from the same terrain -
+slope (a gradient computation) and shadow (a lighting simulation), not
+elevation recolored - and ELF's own separate "Activity Traces" layer
+(pollen/magnetometer archaeological survey proxies, per the
+Murgatroyd/Butler/Gaffney paper read during the hydrology-phase research
+above) is a second, independent simulation switched to, not a reskin of
+the ecosystem model. Three unrelated systems converging on "let the
+viewer pick which derived field they're looking at" is a real,
+established convention in this genre - not a cosmetic nicety, and not
+something to conflate with simple palette choice.
+
+**Why this is directly relevant to Shifting Sands right now:** Phase 3
+is about to create exactly the kind of multiple distinct per-cell
+derived fields this pattern is built for - slope, soil depth, and
+moisture, alongside the existing elevation and water depth. Right now
+all of this composites into one view (whichever channel wins); there's
+no way to isolate just one field. Being able to do that is also
+directly useful for confirming the active-displacement succession
+mechanic is doing what it should on real hardware - the same validation
+role `DEBUG_SHOW_SNOW` already plays for the water/snow boundary.
+
+**Decision: build an operator/debug mode-switch as part of Phase 3
+itself** (view slope-only, soil-depth-only, or moisture-only, same GUI
+posture as the existing debug toggles) - cheap specifically because it
+stays operator-facing: no interaction design, no legibility validation,
+no thesis-scope implications, same category as `DEBUG_SHOW_SNOW`.
+
+**Explicitly NOT building, for now: a participant-facing mode-switch.**
+User initially asked "should we do both, since the first one is free" -
+resolved that the premise doesn't hold: the operator lens is cheap
+*because* it's operator-only, and a participant-facing version doesn't
+inherit that cheapness - it would need real interaction/legibility
+design (how does someone with no domain background know "soil depth
+mode" exists or what it means) and would reopen the exact Master's/PhD
+disclosure-layer boundary the project deliberately drew to stay
+finishable by December. Flagged for later on the same shelf as the
+SARndbox DEM import/export tool and the Repast-inspired population-over-
+time chart above - a real idea, not rejected, just not this project's
+problem before December.
