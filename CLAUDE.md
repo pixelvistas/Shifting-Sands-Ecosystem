@@ -1652,3 +1652,41 @@ gatherer/fisher) and snow are entirely untouched - this was scoped to
 background/tie-land and water only, same scope discipline as every
 previous palette pass. Not yet tested on real hardware - same open
 question as every other color decision in this project's history.
+
+## Resolved: hand-placed seed dispersal stays deferred, not part of the active plan (2026-10-16)
+
+User asked about `anvaka/fieldplay` (a GPU particle-based vector-field
+visualizer, JS/WebGL) as a possible starting point for "the hydrology/
+particles part." Clarified it's a flow-visualization technique, not a
+fluid solver - the actual water physics already exists (`stepFlow()`),
+and particle-trail visualization of it is the literal "non-simulated
+decorative flow particles" option the user already passed over in the
+Strategic Reset in favor of building real flow dynamics instead. Also a
+JS/WebGL tool with no direct path into this C++/openFrameworks/GLSL
+pipeline - at best a technique to reimplement from scratch, not
+anything to adopt directly.
+
+That prompted a genuinely useful status check, since the original
+Liu/ARsandbox014 "three pieces of one methodology" (see the "Future
+phase" section above) was water-flow simulation + CA-style competitive
+spread + hand-placed seed dispersal, and only two of those three ever
+made it into the Dec-14 finalized contribution statement/roadmap.
+**Confirmed explicitly: water flow is done** (`stepFlow()`, pending
+hardware validation) - **hand-placed seed dispersal is NOT part of the
+active plan**, and was quietly absent from the Dec-14 alignment rather
+than ever having been formally dropped. User's explicit decision, given
+that gap: leave it deferred, same shelf as the DEM tool and population
+chart - a real idea from the project's original vision, not rejected,
+just not part of what gets built before December.
+
+Vegetation establishment keeps bootstrapping exactly the way it already
+does - the existing spontaneous per-tick chance plus the CA spread
+layer's same-species neighbor boost (see the "Future phase" section's
+point 5: spontaneous growth as the only way to bootstrap "until the
+hydrology/seeding layer exists to plant real first seeds" - that
+seeding layer is now confirmed to not be coming, so spontaneous growth
+stays the permanent bootstrap mechanism, not a temporary stand-in).
+Phase 3 gates this same existing mechanism behind real moisture/slope/
+soil-depth suitability instead of just the current elevation band -
+establishment doesn't need a literal seed object to exist at all, with
+or without hand-placed planting.
