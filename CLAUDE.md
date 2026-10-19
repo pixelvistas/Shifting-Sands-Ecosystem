@@ -2009,3 +2009,52 @@ code):
 
 Not yet executed - this entry records the decision and the checklist to
 run, not a completed verification.
+
+**EXECUTED (2026-10-19), same visit - verification checklist items 1-3
+all confirmed clean, closing the "blurry brown-only patch"/"is ELF
+messing with the gradient" worry with real numbers, not another
+guess.** User sent two Vegetation-panel + sandbox screenshot pairs
+(not a hand in frame - "ROI center" is a fixed calibrated point, not
+wherever a hand is; clarified this before the dump since the earlier
+instruction read as asking for that).
+
+Pair 1: raw elevation at ROI center = **83.4mm**, against Water line
+-34.0mm / Snow line 67.9mm - ABOVE the snow line, confirmed
+`snow=yes` in the panel's own readout. The tiny white marks visible at
+the exact center of the brown blob in the matching sandbox screenshot
+are that real snow classification, not a rendering artifact. The
+blob's surrounding flanks (visually ~40-65mm by the same scale) work
+out to `landT` (the ramp's 0-1 position, `(elev-waterLevelFrac)/
+(snowLevelFrac-waterLevelFrac)`) of roughly **0.73-0.97** - deep in the
+6-stop ramp's orange->maroon->near-white tail, nowhere near the
+teal/green/yellow end (`landT<~0.4`). This fully explains the "no
+green or yellow anywhere" symptom from the prior entry: not a missing
+color, a mound whose entire visible surface never drops low enough in
+the band to reach them.
+
+Pair 2: raw elevation at the same ROI center, resculpted, = **-16.5mm**
+- close to the water line, `landT≈0.17`, the ramp's teal/green zone.
+The matching sandbox screenshot visibly shows MORE yellow/olive at the
+edges than pair 1's did - **direct, same-session, same-build proof
+that the ramp renders its full range correctly** when a cell's real
+elevation actually sits in that part of the band. This closes the
+loop: the 6-stop ramp was never broken, every real-hardware "doesn't
+match" screenshot across this whole multi-day thread has been
+explained by mound/dig GEOMETRY (snow cresting, band not swept,
+vegetation/agent coverage) rather than a color or shader defect - and
+this is the first time two readings in the SAME session, on the SAME
+build, show both ends of the ramp actually rendering as designed.
+
+**Still open, not yet executed:** checklist item 4 (FPS with
+`ENABLE_FLOW` on vs. off) - the flow-dynamics rewrite's own
+still-outstanding hardware verification, unrelated to the palette
+question this closes out. Asked the user whether to run it now or
+leave the moratorium satisfied without it.
+
+**Practical takeaway for sculpting, now confirmed rather than guessed:**
+to see the ramp's full teal->green->yellow->orange->maroon->white sweep
+on one feature in view at once, build a mound/slope that starts near
+the water line (-34mm on this box) and rises gradually to just under
+the snow line (67.9mm), rather than a short steep peak (crests into
+snow early) or a mound that stays entirely in the upper band (stuck in
+orange/maroon, this thread's actual recurring case).
