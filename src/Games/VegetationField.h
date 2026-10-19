@@ -450,6 +450,33 @@ public:
 	// - but still untested on hardware, so lower this first if flow ever
 	// looks unstable/jittery in practice.
 	static float FLOW_RATE;
+	// Physical sensor noise floor (mm) for stepFlow()'s own per-neighbor
+	// surface-height DIFFERENCE, converted to a fraction of the current
+	// calibrated range inside stepFlow()/getFlowVelocityAt() each call -
+	// mirrors ACTIVITY_NOISE_FLOOR's already-established precedent and
+	// physical justification (the same ~1-2mm Kinect depth noise present
+	// on every cell every frame), just applied here to a DIFFERENCE
+	// between two neighboring cells' noisy readings rather than one
+	// cell's frame-to-frame delta. Found necessary (2026-10-19) once a
+	// vector-field visualization of getFlowVelocityAt() made the gap
+	// visible: with no floor at all, stepFlow() computed real, if tiny,
+	// nonzero flow from pure sensor jitter on literally every cell every
+	// frame, since nothing before this ever filtered it (the activity/
+	// temperature computation's own noise floor is a completely separate
+	// mechanism that stepFlow() never consulted) - confirmed directly by
+	// a real-hardware reading at a dry cell the panel's own classifier
+	// called "not water" (elevation well above the water line) still
+	// showing a small nonzero waterDepth/velocity sitting right at the
+	// visibility threshold, the signature of accumulated noise rather
+	// than real standing water. Differences at or below this floor are
+	// dropped from the flow computation entirely (not merely damped) -
+	// same "entirely, not damped" convention ACTIVITY_NOISE_FLOOR uses.
+	// First-guess default matches ACTIVITY_NOISE_FLOOR's own value (same
+	// physical noise source), kept as a SEPARATE tunable since it gates a
+	// conceptually different comparison (a pairwise difference, not a
+	// single cell's own delta) even though today's starting value is the
+	// same number.
+	static float FLOW_NOISE_FLOOR_MM;
 	// Depth (fraction of the calibrated elevation range) below which a
 	// cell isn't considered "visibly water" at all - plays the same role
 	// WATER_HYSTERESIS_FRAC's margin sits around as the old flat/pool

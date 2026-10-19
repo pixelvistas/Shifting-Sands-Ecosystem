@@ -2719,3 +2719,85 @@ no real velocity numbers behind them yet (the same uncertainty flag
 panel's live ROI-center velocity readout is there specifically so these
 can be set from a real number instead of by feel once this is actually
 built and run.
+
+**CONFIRMED same day, once actually built and run: real root cause
+found via the live readouts, not another guess.** User's screenshot of
+`WaterFlowField` showed a dense, perfectly uniform lattice of arrows
+covering the ENTIRE image - including the visibly dry, high-elevation
+orange patch, with zero visible difference in density between that and
+the lake. A real vector field should show spatial variation (dense
+near real flow, sparse/absent over calm/dry land); uniform coverage
+with no pattern at all is itself diagnostic, not a tuning question -
+asked the user to check two specific existing readouts rather than
+guess a third time in one session.
+
+**Readouts confirmed two separate, real things, not one:**
+1. **Still-broken elevation range bounds** - Vegetation panel showed
+   bound A/B still at the arbitrary `-300.000`/`300.000`, the exact
+   same recurring miscalibration bug flagged repeatedly throughout
+   this file (most recently on the other branch, 2026-09-22/25). Not
+   a code fix - "Reset range to ±calibrated ceiling" in the Vegetation
+   panel, same as every prior occurrence.
+2. **The real bug: `stepFlow()` has no noise floor on its own
+   per-neighbor diff, unlike the activity/temperature computation
+   which already has one.** At the ROI center - a cell the Vegetation
+   panel's own classifier called `water=no`, elevation 27.9mm, nowhere
+   near the (miscalibrated but still internally consistent) -73.9mm
+   water line - the Water Flow panel reported depth `0.0038` and
+   velocity magnitude `~0.0034`: both small but genuinely nonzero,
+   both sitting right at/near their respective visibility thresholds
+   (`MIN_VISIBLE_WATER_DEPTH_FRAC=0.004`, `MIN_VELOCITY_TO_SHOW=
+   0.0005`). That's the signature of accumulated sensor noise, not
+   real standing water or real flow - a dry, undisturbed cell has no
+   principled reason to show ANY nonzero depth/velocity at all.
+   Confirmed directly: `stepFlow()`'s pass 1/pass 2 (and
+   `getFlowVelocityAt()`'s own query, added for the particle version
+   and reused here unchanged) compute `diff = surface - neighborSurface`
+   from raw per-cell elevation readings with no threshold at all -
+   unlike `ACTIVITY_NOISE_FLOOR`, which exists for exactly this reason
+   (Kinect depth sensor noise, ~1-2mm per cell, present on literally
+   every cell every frame even when nothing is touching the sand) but
+   only ever applied to the SEPARATE activity/temperature computation,
+   never consulted by `stepFlow()`. Since Kinect noise is present on
+   every cell independently and roughly uniformly, letting it drive
+   real (if tiny) flow everywhere produces exactly the reported
+   symptom: a small, pervasive, near-threshold depth/velocity signal
+   with no real spatial structure, dense and uniform across the whole
+   grid regardless of actual terrain shape - precisely the "arrows
+   everywhere, no pattern" screenshot.
+
+**Fix: new `FLOW_NOISE_FLOOR_MM`** (`VegetationField.h`/`.cpp`, default
+`3.0f` - the same physical noise magnitude `ACTIVITY_NOISE_FLOOR`
+already uses, kept as a separate tunable since it gates a
+conceptually different comparison: a pairwise difference between two
+neighboring cells' noisy readings, not one cell's own frame-to-frame
+delta). Converted to a fraction of the current calibrated range once
+per `stepFlow()`/`getFlowVelocityAt()` call (`FLOW_NOISE_FLOOR_MM /
+(elevationMax - elevationMin)`, cheap - calibration only changes on a
+real recalibration, not frame to frame) and used to gate BOTH of
+`stepFlow()`'s passes and `getFlowVelocityAt()`'s own diff sum: a
+difference at or below the floor contributes nothing at all, same
+"dropped entirely, not merely damped" convention `ACTIVITY_NOISE_FLOOR`
+already established. The flat-sea boundary condition (`stepFlow()`'s
+own unconditional depth clamp for any cell below `waterLevelFrac`) is
+completely unaffected - this only changes what counts as real
+cell-to-cell FLOW, not whether the sea itself has water.
+
+**Expected effect, not yet re-verified on hardware**: genuinely flat/
+undisturbed land, away from any real slope/dig/mound/shoreline, should
+now settle to exactly `depth=0`/`velocity=(0,0)` instead of a small
+noise-driven residue hovering near the visibility thresholds - so the
+vector field should show arrows only where real flow actually exists
+(the confirmed water body, real slopes/dug bowls), not a uniform
+lattice across dry high ground. GUI slider added in the Hydrology
+section right after "Flow rate," with inline text explaining the
+2026-10-19 finding that motivated it. Also fixed the exact same
+duplicated-check in `getFlowVelocityAt()` - it had re-derived its own
+copy of `stepFlow()`'s diff logic for the particle/vector-field
+visualization (deliberately, to avoid touching `stepFlow()`'s own
+state) and would otherwise have silently kept showing noise-driven
+arrows even after `stepFlow()` itself was fixed.
+
+Not yet re-tested on real hardware - same constraint as the rest of
+today's work, but this fix is traced directly to two real numbers from
+an actual running build, not a code-review guess alone.

@@ -96,6 +96,9 @@ bool VegetationField::ENABLE_FLOW = true;
 // stepFlow()'s own self-limiting outflow makes this mainly a "how many
 // frames to settle" knob rather than a stability knob.
 float VegetationField::FLOW_RATE = 4.0f;
+// See the header note - same physical noise source/magnitude as
+// ACTIVITY_NOISE_FLOOR, applied to stepFlow()'s own per-neighbor diff.
+float VegetationField::FLOW_NOISE_FLOOR_MM = 3.0f;
 // First-guess, untested on real hardware - see the header note.
 float VegetationField::MIN_VISIBLE_WATER_DEPTH_FRAC = 0.004f;
 // FOUND (2026-09-28), under the pooling mechanic this replaces - see the
@@ -279,6 +282,15 @@ void VegetationField::stepFlow(float waterLevelFrac)
 	static const int dxN[4] = { -1, 1, 0, 0 };
 	static const int dyN[4] = { 0, 0, -1, 1 };
 
+	// See FLOW_NOISE_FLOOR_MM's header note - a surface-height difference
+	// between two neighboring cells at or below this (both directions)
+	// is sensor noise, not real terrain, and is dropped from the flow
+	// computation entirely rather than merely damped, same convention
+	// ACTIVITY_NOISE_FLOOR already uses for its own single-cell delta.
+	// Computed once per call, not per-cell - elevationMin/elevationMax
+	// only change on a calibration update, not frame to frame.
+	float noiseFloorFrac = FLOW_NOISE_FLOOR_MM / std::max(1.0f, elevationMax - elevationMin);
+
 	// previousElevation/waterDepth are guaranteed continuous (see
 	// setKinectROI(), never reshaped afterward) - same raw-pointer
 	// justification as hasEstablishedNeighbor()/recomputePools() used,
@@ -306,7 +318,7 @@ void VegetationField::stepFlow(float waterLevelFrac)
 				int nidx = ny * cols + nx;
 				float nSurface = normalizedElevation(elev[nidx]) + depth[nidx];
 				float diff = surface - nSurface;
-				if (diff > 0.0f)
+				if (diff > noiseFloorFrac)
 					totalOut += diff * FLOW_RATE * dt;
 			}
 			scale[idx] = (totalOut > d) ? (d / totalOut) : 1.0f;
@@ -330,9 +342,9 @@ void VegetationField::stepFlow(float waterLevelFrac)
 				int nidx = ny * cols + nx;
 				float nSurface = normalizedElevation(elev[nidx]) + depth[nidx];
 				float diff = surface - nSurface;
-				if (diff > 0.0f) {
+				if (diff > noiseFloorFrac) {
 					net -= diff * FLOW_RATE * dt * scale[idx];
-				} else if (diff < 0.0f) {
+				} else if (diff < -noiseFloorFrac) {
 					net += (-diff) * FLOW_RATE * dt * scale[nidx];
 				}
 			}
@@ -363,6 +375,13 @@ ofVec2f VegetationField::getFlowVelocityAt(int gx, int gy) const
 	static const int dxN[4] = { -1, 1, 0, 0 };
 	static const int dyN[4] = { 0, 0, -1, 1 };
 
+	// Same noise floor stepFlow() itself applies - see FLOW_NOISE_FLOOR_MM's
+	// header note. Without this, a query at a genuinely dry, undisturbed
+	// cell would still report tiny nonzero "flow" from pure sensor jitter
+	// alone, which is exactly what a vector-field visualization of this
+	// query made visible on real hardware (2026-10-19).
+	float noiseFloorFrac = FLOW_NOISE_FLOOR_MM / std::max(1.0f, elevationMax - elevationMin);
+
 	float surface = normalizedElevation(previousElevation.at<float>(gy, gx)) + waterDepth.at<float>(gy, gx);
 
 	ofVec2f v(0.0f, 0.0f);
@@ -372,7 +391,7 @@ ofVec2f VegetationField::getFlowVelocityAt(int gx, int gy) const
 			continue;
 		float nSurface = normalizedElevation(previousElevation.at<float>(ny, nx)) + waterDepth.at<float>(ny, nx);
 		float diff = surface - nSurface;
-		if (diff > 0.0f)
+		if (diff > noiseFloorFrac)
 			v += ofVec2f((float)dxN[k], (float)dyN[k]) * (diff * FLOW_RATE);
 	}
 	return v;
@@ -944,6 +963,13 @@ void VegetationField::drawGui()
 	ImGui::Text("means water settles in fewer frames, not instability in the usual");
 	ImGui::Text("exploding-oscillation sense. Still untested on real hardware -");
 	ImGui::Text("lower it first if flow ever looks jittery/wrong in practice.");
+	ImGui::SliderFloat("Flow noise floor (mm)", &FLOW_NOISE_FLOOR_MM, 0.0f, 10.0f);
+	ImGui::Text("Found 2026-10-19: with no floor, pure Kinect sensor jitter drove");
+	ImGui::Text("real (if tiny) nonzero flow on every cell every frame, even on dry,");
+	ImGui::Text("undisturbed land - confirmed via a vector-field view of flow that");
+	ImGui::Text("showed arrows everywhere with no spatial pattern. Same noise source/");
+	ImGui::Text("magnitude as Activity noise floor above, applied to the difference");
+	ImGui::Text("between two neighboring cells instead of one cell's own delta.");
 	ImGui::SliderFloat("Min visible water depth (fraction)", &MIN_VISIBLE_WATER_DEPTH_FRAC, 0.0f, 0.02f);
 	ImGui::Text("Below this depth a cell doesn't count as 'visibly water' at all -");
 	ImGui::Text("without it, a thin film mid-drain could flicker in and out at a");
