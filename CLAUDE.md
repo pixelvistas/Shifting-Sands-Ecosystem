@@ -2283,3 +2283,51 @@ Only `bin/data/colorMaps/HeightColorMap.xml` changed - no shader or
 C++ changes needed, since the restored stock mechanism already reads
 this file's colors directly as its sole color source. Not yet tested
 on real hardware.
+
+## HeightColorMap.xml recolored AGAIN - the diverging ramp was too desaturated (2026-10-19)
+
+Same visit, immediately after. User pushed back directly: "This is way
+too desaturated, at least for someone who isn't colourblind. What is a
+better alternative? Grass should be some shade of green, water should
+be some shade of blue, snow should be some shade of white. The rest of
+the gradient is flexible." A real, specific correction - the diverging
+ramp above sacrificed ordinary legibility (vivid, intuitive color-to-
+feature mapping) for accessibility, when both were achievable at once.
+
+**Re-derived the actual accessibility lesson from this project's own
+history rather than over-applying "avoid green."** The real hazard,
+confirmed back in the 2026-09-24 accessibility pass, was never "green
+exists" - it was fruit's PURE SATURATED RED sitting directly next to
+shrub's PURE SATURATED GREEN, the textbook red-green worst case. Blue,
+green, tan, brown, gray, and white are all safely distinguishable from
+EACH OTHER under deuteranopia/protanopia - it's specifically a
+saturated red near a saturated green that collapses. So real grass-
+green, real water-blue, and real snow-white are all fine on their own;
+the only real constraint is keeping saturated red out of the ramp
+entirely (brown/tan/gold instead), which a classic hypsometric terrain
+tint does naturally anyway.
+
+**New design, vivid rather than muted:**
+- **Water** (8 keys, -220mm to -0.5mm): ColorBrewer's "Blues" sequential
+  scale, a standard pre-validated colorblind-safe blue ramp - real
+  saturated navy at depth (`#08306b`) lightening toward the shore
+  (`#deebf7`), not desaturated grayish blue.
+- **Grass/shoreline** (0mm/2.5mm): rich forest green `#1b7837` ->
+  yellow-green `#4d9221`.
+- **Flexible middle** (25-140mm): olive `#a6bd22` -> tan `#dfc27d` ->
+  brown `#bf812d` -> darker brown `#8c510a` - real soil/rock tones, the
+  "flexible" part of the request, deliberately avoiding any saturated
+  red stop anywhere in the sequence.
+- **Rock/snow** (200mm/220mm): light gray `#bfbfbf` -> white `#ffffff`.
+
+Same 16 height breakpoints as both prior versions, unchanged - only
+the RGB values at each key changed again. No shader/C++ changes needed,
+same as the previous recolor - `HeightColorMap.xml` is still the
+mechanism's sole color source.
+
+**Not independently re-run through a colorblind simulator** - the
+"no saturated red anywhere in the ramp" rule is reasoned from this
+project's own prior confirmed finding (the fruit/shrub collision was
+specifically a red-green pair), not a fresh validation pass. Flagged
+honestly, same caveat as the previous color iteration. Not yet tested
+on real hardware.
