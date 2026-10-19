@@ -2563,3 +2563,73 @@ real-hardware velocity numbers to check it against yet; the GUI's live
 readout is there specifically to make that the first thing checked
 once this is pulled, before assuming the slider's default is remotely
 close.
+
+**FOUND AND FIXED same day, once this was actually built and run:
+"tiny blinking blips that eventually disappear."** Two real, distinct
+bugs, not one:
+
+1. **No hysteresis on the respawn/liveness check.** The first version
+   compared `getWaterDepthAt()` against `MIN_VISIBLE_WATER_DEPTH_FRAC`
+   directly - a raw instantaneous threshold, exactly the same class of
+   bug `WATER_HYSTERESIS_FRAC`/`waterState` already exists to fix
+   elsewhere in this file (see the hydrology-phase pooling entries
+   above: "it's flickering around the waterline," fixed once already
+   for rendering and for Critter/HumanAgent movement). Using a second,
+   separate raw check here reopened that exact bug on a third path.
+   Fix: both checks now call `vegetationField->isWaterAt(kx, ky)` -
+   the SAME hysteresis-stabilized `waterState` Critter/HumanAgent
+   movement and the renderer already read - instead of a fresh raw
+   comparison. "Read the one shared, already-stabilized state" is
+   literally the lesson `isWaterAt()`'s own header note already
+   recorded from the first time this bug was fixed; this was a case of
+   not applying it to new code that needed the same property.
+2. **Independent random-sample respawn search degrades badly when the
+   wet fraction of the grid is small - confirmed, not just suspected,
+   by matching the actual reported symptom.** The original
+   `respawnParticle()` tried 20 independent random cells per attempt;
+   each try is a blind coin flip with no memory of where water actually
+   is, so once genuinely-wet cells are a small fraction of the ~153K-
+   cell grid, success probability per attempt collapses and more and
+   more particles fail every attempt and sit permanently parked off-
+   grid (invisible) - directly matching "eventually disappear" over
+   time, rather than a one-off glitch. Fix: a bounded LINEAR scan
+   (up to 6000 cells, wrapping from a random start) instead of
+   independent samples - a real body of water is spatially contiguous,
+   so a scan crossing through even a small arc of the grid's row-major
+   order reliably passes through it, unlike independent random
+   sampling which has no such locality benefit.
+
+**Separately, a real cosmetic bug, not a water-matching issue at
+all:** a near-stationary particle (correct, physically expected
+behavior in flat/undisturbed water with no real surface-height
+difference to drive flow) draws as a zero- or near-zero-length line
+(`ofDrawLine(prevPos, prevPos)`), which is exactly the "blinking" the
+user reported - a degenerate line is an edge case some GL line-
+rendering paths don't render consistently frame to frame. Fix: every
+visible particle now also draws a small filled circle at its current
+position (`ofDrawCircle`, radius derived from the existing
+`PARTICLE_THICKNESS` slider) - a stable, always-visible mark regardless
+of how much the particle moved that frame, with the streak line drawn
+on top showing real motion whenever there's genuine motion to show.
+
+**Important interpretive note, not yet confirmed either way:** the
+screenshot that surfaced this (a lake with only a couple of visible
+blips, mostly in the deepest part) may ALSO reflect a genuine mismatch
+between what LOOKS like water (`HeightColorMap.xml`'s elevation-only
+blue stops, rescaled just before this to this box's physical dig/mound
+range) and what `VegetationField` itself classifies as water
+(`waterLevelFrac`, derived from `TEMPERATURE`/`LIVING_RANGE_FRACTION`
+against `VegetationField`'s OWN calibrated range - a completely
+separate scale, same duplication this file already flagged once before
+in the 2026-09-24 "Separately identified, not a bug" entry, there
+between `SandSurfaceRenderer`'s cosmetic `elevationNorm` and
+`VegetationField`'s classification). If so, large visible "blue" areas
+on this branch may simply not be real water by the simulation's own
+definition at all, regardless of how robust the particle system's own
+respawn/liveness logic is - worth checking directly on real hardware
+(compare the Water Flow panel's ROI-center depth readout against
+whether that same spot visually looks wet) once this build is actually
+running, rather than assumed fixed by the two bugs above alone.
+
+Still not tested on real hardware - same constraint as the rest of
+this entry.

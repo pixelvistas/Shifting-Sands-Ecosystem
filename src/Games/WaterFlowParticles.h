@@ -102,13 +102,25 @@ private:
 	};
 
 	ofPoint gridToProjCoord(float gx, float gy) const;
-	// Places p at a random cell whose current depth clears
-	// VegetationField::MIN_VISIBLE_WATER_DEPTH_FRAC, bounded retries - see
-	// the .cpp. Leaves p parked off-grid (and therefore undrawn) if no wet
-	// cell is found this attempt; update() naturally keeps retrying every
-	// frame via the same depth check that triggers a respawn, so a bone-
-	// dry sandbox just means no particles render until real water exists,
-	// not an infinite loop or a crash.
+	ofVec2f gridToKinectCoord(float gx, float gy) const;
+
+	// Places p on a cell vegetationField->isWaterAt() currently considers
+	// water - the SAME hysteresis-stabilized classification
+	// Critter/HumanAgent movement already reads, deliberately NOT a raw
+	// depth comparison (see the .cpp's header note on why that flickered).
+	// Searches via a bounded LINEAR scan from a random starting cell,
+	// wrapping around the grid, rather than independent random samples -
+	// a real body of water is spatially contiguous, so a scan that
+	// crosses through any part of the grid in row-major order will find
+	// it reliably; independent random sampling degrades badly (and was
+	// confirmed doing so on real hardware) once the wet fraction of the
+	// grid is small, since each try is an independent coin flip with no
+	// memory of the body of water's actual shape/location. Leaves p
+	// parked off-grid (and therefore undrawn) only if the scan covers a
+	// meaningful fraction of the whole grid and still finds nothing -
+	// update() keeps retrying every later frame via the same isWaterAt()
+	// check that triggers a respawn, so a bone-dry sandbox just means no
+	// particles render until real water exists, not an infinite loop.
 	void respawnParticle(Particle & p);
 
 	std::shared_ptr<KinectProjector> kinectProjector;

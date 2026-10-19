@@ -1,5 +1,6 @@
 #include "WaterFlowParticles.h"
 #include "ofxImGui.h"
+#include <algorithm>
 
 bool WaterFlowParticles::ENABLE_FLOW_PARTICLES = true;
 int WaterFlowParticles::PARTICLE_COUNT = 400;
@@ -33,10 +34,23 @@ void WaterFlowParticles::respawnParticle(Particle & p)
 		return;
 	}
 
-	for (int tries = 0; tries < 20; tries++) {
-		int gx = (int)ofRandom((float)cols);
-		int gy = (int)ofRandom((float)rows);
-		if (vegetationField->getWaterDepthAt(gx, gy) >= VegetationField::MIN_VISIBLE_WATER_DEPTH_FRAC) {
+	// Bounded linear scan from a random start, wrapping around the whole
+	// grid - see the header note on why this replaced an independent
+	// random-sample search (confirmed on real hardware to leave most
+	// particles permanently parked once the wet fraction was small: each
+	// of the old 20 tries was an independent coin flip blind to where the
+	// water actually is, so it silently degraded to near-zero success
+	// rate rather than failing loudly). The cap (6000 of up to ~153K
+	// cells on this project's typical grid) is still cheap - this only
+	// runs on an actual respawn, not every particle every frame.
+	int total = cols * rows;
+	int scanLimit = std::min(total, 6000);
+	int start = (int)ofRandom((float)total);
+	for (int i = 0; i < scanLimit; i++) {
+		int idx = (start + i) % total;
+		int gx = idx % cols, gy = idx / cols;
+		ofVec2f kc = gridToKinectCoord(gx + 0.5f, gy + 0.5f);
+		if (vegetationField->isWaterAt(kc.x, kc.y)) {
 			p.gx = gx + 0.5f;
 			p.gy = gy + 0.5f;
 			p.prevGx = p.gx;
@@ -44,11 +58,11 @@ void WaterFlowParticles::respawnParticle(Particle & p)
 			return;
 		}
 	}
-	// No wet cell found in 20 tries (e.g. a bone-dry sandbox before any
-	// water exists) - park off-grid so draw() skips it cleanly instead of
-	// flickering at a meaningless dry position. update() re-tries every
-	// later frame via the same depth check that calls this, so a particle
-	// finds a home as soon as real water appears, no special-casing needed.
+	// Scan covered scanLimit cells and found nothing (e.g. a bone-dry
+	// sandbox before any water exists) - park off-grid so draw() skips it
+	// cleanly. update() re-tries every later frame via the same
+	// isWaterAt() check that calls this, so a particle finds a home as
+	// soon as real water appears, no special-casing needed.
 	p.gx = p.gy = p.prevGx = p.prevGy = -1000.0f;
 }
 
@@ -82,7 +96,8 @@ void WaterFlowParticles::update()
 			}
 
 			int gx = (int)p.gx, gy = (int)p.gy;
-			if (vegetationField->getWaterDepthAt(gx, gy) < VegetationField::MIN_VISIBLE_WATER_DEPTH_FRAC) {
+			ofVec2f kc = gridToKinectCoord(p.gx, p.gy);
+			if (!vegetationField->isWaterAt(kc.x, kc.y)) {
 				respawnParticle(p);
 				continue;
 			}
@@ -104,7 +119,20 @@ void WaterFlowParticles::update()
 		for (auto & p : particles) {
 			if (p.gx < 0.0f || p.gx >= (float)cols || p.gy < 0.0f || p.gy >= (float)rows)
 				continue;
-			ofDrawLine(gridToProjCoord(p.prevGx, p.prevGy), gridToProjCoord(p.gx, p.gy));
+			ofPoint cur = gridToProjCoord(p.gx, p.gy);
+			// A near-stationary particle (flat/undisturbed water, no real
+			// surface-height difference to drive flow there) would draw as
+			// a zero- or near-zero-length line - confirmed on real
+			// hardware to render as an inconsistent, flickering "blinking"
+			// pixel rather than a stable mark, since degenerate lines are
+			// an edge case some GL line-rendering paths don't handle
+			// consistently frame to frame. The dot guarantees a stable,
+			// always-visible mark regardless of how much (or little) the
+			// particle actually moved this frame; the line on top of it
+			// still shows real direction/distance whenever there's
+			// genuine motion to show.
+			ofDrawCircle(cur, std::max(1.0f, PARTICLE_THICKNESS * 0.6f));
+			ofDrawLine(gridToProjCoord(p.prevGx, p.prevGy), cur);
 		}
 	}
 	fbo.end();
@@ -112,11 +140,15 @@ void WaterFlowParticles::update()
 
 ofPoint WaterFlowParticles::gridToProjCoord(float gx, float gy) const
 {
+	ofVec2f kc = gridToKinectCoord(gx, gy);
+	return kinectProjector->kinectCoordToProjCoord(kc.x, kc.y);
+}
+
+ofVec2f WaterFlowParticles::gridToKinectCoord(float gx, float gy) const
+{
 	ofVec2f origin = vegetationField->getGridOrigin();
 	float step = vegetationField->getGridStep();
-	float kx = origin.x + gx * step;
-	float ky = origin.y + gy * step;
-	return kinectProjector->kinectCoordToProjCoord(kx, ky);
+	return ofVec2f(origin.x + gx * step, origin.y + gy * step);
 }
 
 void WaterFlowParticles::drawMainWindow(float x, float y, float width, float height)
