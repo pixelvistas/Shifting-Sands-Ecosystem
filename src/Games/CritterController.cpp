@@ -6,8 +6,16 @@ void CCritterController::setup(std::shared_ptr<KinectProjector> const& k, Vegeta
 {
 	kinectProjector = k;
 	vegetationField = v;
-	deerSpawnCount = 5;
-	humanSpawnCount = 5;
+	// Default 0 on this branch (ss/terrain-reference-visuals) - see
+	// CLAUDE.md. No agents auto-spawn on first valid ROI (setKinectROI()
+	// below calls addDeer(deerSpawnCount)/addHumans(humanSpawnCount), so
+	// 0 means a silent no-op) - this branch's whole point is a bare
+	// terrain/water look with no ELF simulation visuals, agents
+	// included. Still fully usable via the Population panel's "Add
+	// deer"/"Add humans" buttons and sliders if ever needed - only the
+	// automatic startup spawn is suppressed, not the mechanism.
+	deerSpawnCount = 0;
+	humanSpawnCount = 0;
 	maxDeerPopulation = 60;
 	maxHumanPopulation = 60;
 	deerColorRGB[0] = Critter::BODY_COLOR.r / 255.0f;

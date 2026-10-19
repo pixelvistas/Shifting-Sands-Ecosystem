@@ -2058,3 +2058,82 @@ the water line (-34mm on this box) and rises gradually to just under
 the snow line (67.9mm), rather than a short steep peak (crests into
 snow early) or a mound that stays entirely in the upper band (stuck in
 orange/maroon, this thread's actual recurring case).
+
+## New branch split: ss/terrain-reference-visuals (2026-10-19)
+
+Same visit, right after the verification pass above. User looked again
+at the confirming screenshots (vegetation hidden, population zeroed)
+and pushed back hard, correctly: "It's blotchy, it's all water. The
+water itself isn't transparent at all. On the hydrology side, there is
+no flow." This was a real correction to an overconfident claim just
+made - today's verification pass confirmed `terrainRamp()`'s COLOR MATH
+renders correctly across its range, which is a narrower claim than "the
+hydrology/visual system is working." Specifically NOT verified by
+anything done today:
+- Water/land shoreline distinctness - the new 6-stop ramp's low stop
+  (teal `(0,141,167)`) is a blue-family color sitting right next to
+  real water's blue, unlike the old 3-stop ramp's rust low stop which
+  was unambiguously land-colored. Plausible reopening of the exact
+  problem the 2026-09-25 "water needs its own distinct gradient" fix
+  solved once already.
+- Water transparency actually being VISIBLE - the `mix(lakebed,
+  waterRamp(waterDepthT), opacity)` blend exists in code, but
+  `opacity` saturates toward 1.0 (fully opaque) as `waterDepthT` rises,
+  and nothing has confirmed what depths are actually being reached in
+  practice - if most visible water sits near `MAX_WATER_DEPTH_FRAC`,
+  it would look solid and flat exactly as reported, with the
+  transparency code path real but practically unreachable.
+- Flow dynamics BEHAVIOR - today's entire verification was static
+  screenshots. The original hydrology-rewrite verification plan's four
+  real steps (sea stays stable at rest; dig a bowl, watch water flow in
+  over several seconds; mound into existing water, watch it displace;
+  FPS with `ENABLE_FLOW` on/off) have STILL never been run, on any
+  build, at any point in this project's history. "There is no flow" may
+  be literally true and simply never caught, since nothing has looked
+  for motion over time before.
+
+**User's decision, given this: branch split, not another fix-in-place
+round.** `ss/ecosim-model-visuals-kiqw12` (the branch this whole
+multi-day thread happened on) is explicitly left untouched - still the
+full ELF-port-plus-succession-model branch, still has the Dec-14
+roadmap's foundation (EcologyParams, CA spread, flow dynamics) intact.
+A new branch, `ss/terrain-reference-visuals`, branched from the same
+HEAD (`1647872`), is where the Figure-5-reference visual work
+continues - explicitly **with no ELF simulation visuals at all**
+(vegetation species speckle, agent icons), not toggled off but
+defaulted off, so every observation on this branch is automatically a
+clean bare-terrain/water comparison without needing to remember two
+separate manual steps (hide vegetation, zero population) before every
+single hardware test - exactly the repeated friction that made today's
+diagnosis slower than it needed to be.
+
+**Two default-only changes, both still fully reversible through
+existing GUI controls, nothing removed:**
+1. `VegetationField::DEBUG_HIDE_VEGETATION` default changed `false` ->
+   `true`. Still a live checkbox in the Vegetation panel if vegetation
+   state ever needs inspecting on this branch.
+2. `CCritterController::setup()`'s `deerSpawnCount`/`humanSpawnCount`
+   changed `5`/`5` -> `0`/`0`. These feed BOTH the automatic spawn on
+   first valid Kinect ROI (`setKinectROI()`'s "if (firstValidROI)"
+   block - confirmed this is the actual auto-spawn site, unconditional,
+   every launch) and the Population panel's manual "Add deer"/"Add
+   humans" button counts - `addDeer(0)`/`addHumans(0)` are silent
+   no-ops, so startup now adds zero agents, but the Population panel's
+   sliders/buttons still work exactly as before if agents are ever
+   wanted on this branch.
+
+**Explicitly NOT done**: no deletion of any ELF simulation code,
+agent logic, or vegetation growth mechanism - only what's drawn/spawned
+by default changed. The simulation keeps running underneath exactly as
+before; this branch just doesn't surface it visually unless asked to.
+
+**Next steps on this branch, not yet done**: the three real gaps
+identified above (shoreline color distinctness, water opacity/
+transparency reachability, and actually running the flow-dynamics
+behavioral test for the first time) still need real investigation -
+this branch split only removes the vegetation/agent confound, it
+doesn't yet fix any of the three. Per this project's standing "measure
+before tuning" rule, the next concrete step is adding a live water-
+depth readout (same pattern as the existing elevation readout) so
+`waterDepthT`/opacity can be read as a real number instead of inferred
+from a screenshot, before touching any color or opacity math again.

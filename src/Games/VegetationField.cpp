@@ -116,7 +116,14 @@ float VegetationField::MAX_WATER_DEPTH_FRAC = 0.05f;
 float VegetationField::NUT_VISIBILITY_THRESHOLD = 0.05f;
 float VegetationField::FOOD_PER_FULL_CELL = 255.0f;
 bool VegetationField::DEBUG_SHOW_SNOW = false;
-bool VegetationField::DEBUG_HIDE_VEGETATION = false;
+// Default true on this branch (ss/terrain-reference-visuals) - see
+// CLAUDE.md's "Terrain-reference-visuals branch" entry. This branch's
+// whole purpose is a bare-terrain/water look matching the Barthele et
+// al. Figure 5 reference, with no ELF simulation visuals (vegetation
+// speckle or agent icons) at all, not just toggleable off. Still a real
+// checkbox in the GUI, not hardcoded - can be turned back on to inspect
+// vegetation state if ever needed.
+bool VegetationField::DEBUG_HIDE_VEGETATION = true;
 
 namespace {
 	// One cell per kinect pixel - see the header note on matching ELF's
