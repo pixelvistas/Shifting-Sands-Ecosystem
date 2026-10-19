@@ -2387,3 +2387,74 @@ prior iteration: not independently re-run through a colorblind
 simulator, and not yet tested on real hardware. No shader/C++ changes
 needed - `HeightColorMap.xml` remains the sole color source for this
 branch's reverted stock rendering mechanism.
+
+**REAL ROOT CAUSE FOUND same day, once this version was actually seen
+on hardware: the problem was never the colors at any of the three
+recolor passes - it was the HEIGHT BREAKPOINTS inherited unmodified
+from stock Magic Sand.** User's screenshot showed almost the entire
+visible sandbox stuck in a narrow teal-to-green band, with only a weak
+yellow/orange smudge at the very peak - no deep navy, no crisp orange,
+no cream, no white, on any of the three recolor attempts despite three
+completely different color choices. Same recurring bug CLASS as the
+`landT`/`waterRamp()` renormalization fixes on the OTHER branch
+(`ss/ecosim-model-visuals-kiqw12`, 2026-09-28/10-16): a color ramp's
+declared elevation range being far wider than what a participant can
+physically reach makes most of the ramp's dynamic range permanently
+unreachable, no matter which colors sit at which breakpoint.
+
+Confirmed via direct code read, not assumption:
+`SandSurfaceRenderer.cpp` (`setup()`, ~line 94-99) sets `elevationMin`/
+`elevationMax` directly from `heightMap.getScalarRangeMin()`/
+`getScalarRangeMax()` - i.e. straight from `HeightColorMap.xml`'s own
+first/last key heights, NOT from any Kinect-calibrated range -
+`heightMapScale`/`heightMapOffset` (and thus `depthfrag`'s lookup
+position in the color table, computed in the vertex shader) are
+derived entirely from this declared span. Every recolor pass so far
+kept the stock file's inherited `-220mm` to `+220mm` declared range
+(440mm total) unquestioned - but this box's REAL measured limits
+(already established on the 2026-09-25 hardware-measurement session,
+same physical hardware, see the hydrology-phase entries above) are
+only **-41.8mm max dig / +80mm max mound** - under a third of the
+declared span. So on every real mound/dig this box can produce, the
+color lookup only ever lands in a narrow slice near the middle of the
+table, which is exactly why only muted greens/teals ever showed up
+regardless of which named color sat at which of the old `-220..220`
+breakpoints - the vivid extremes (navy, orange, cream, white) were
+mathematically unreachable by any real sculpting, the same failure
+mode "barely noticeable" species gradients and "unreachable water
+line" both turned out to be on the other branch, just never diagnosed
+here until actually looking at a real screenshot.
+
+**Fix: rescaled all 16 height breakpoints to this box's real physical
+range** (`-45mm` to `+85mm`, a few mm of margin past the measured
+`-41.8`/`+80` limits, same margin convention as the water-gradient
+floor fix on the other branch) **- colors unchanged in content, only
+WHERE each sits on the elevation axis.** The user's 7 named anchor
+colors keep their exact hex values, now placed at representative
+heights within the real range: Deep Water `-45mm` (the floor), Shallow
+Water `-3mm`, Lowland Grass `0mm` (kept immediately adjacent to Shallow
+Water - only 3mm apart - deliberately, to preserve the user's own
+stated intent that this pair act as "a stark, high-contrast border"),
+Foothill Grass `25mm`, High Highlands `55mm`, Mountain Peaks `78mm`
+(at the real mound limit), Snow Caps `85mm` (a few mm past it, so
+snow needs near-maximal mounding to reach, same "a few mm margin, not
+the absolute limit" lesson as the water-gradient floor tuning
+history). The other 9 keys are linear-RGB interpolations between
+whichever two of these 7 anchors they fall between, same mechanical
+technique as every prior pass - just applied to a realistic axis
+instead of the stock file's inherited one.
+
+**This is the first HeightColorMap.xml change in today's whole
+sequence that's a structural fix rather than a fourth color
+guess** - the first three passes could not have looked right no matter
+which colors were chosen, since the real sand never reached most of
+the table regardless. Still not independently re-run through a
+colorblind simulator (same caveat as every prior pass), and **the
+`-41.8`/`+80` figures being reused here are the SAME measurements
+already flagged throughout this file as specific to this box's
+calibration at the time they were taken** - if calibration or sand
+depth has changed since, these breakpoints need the same re-measure-
+and-rescale treatment, not just new colors. Not yet tested on real
+hardware - this fix is reasoned from the box's own documented prior
+measurements and a direct read of the transformation code, not a new
+hardware session.
