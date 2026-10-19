@@ -2137,3 +2137,106 @@ before tuning" rule, the next concrete step is adding a live water-
 depth readout (same pattern as the existing elevation readout) so
 `waterDepthT`/opacity can be read as a real number instead of inferred
 from a screenshot, before touching any color or opacity math again.
+
+## Reverted to stock Magic Sand height-colormap rendering (2026-10-19)
+
+Same visit, right after the branch split above. User corrected the
+scope directly: the two default-only changes (hide vegetation, no
+agent auto-spawn) weren't actually what was wanted. The real ask: "go
+back to before ELF -- to a version that looks more like the one in
+[Barthele et al.]. Read the paper again, they do explain how they got
+the visuals they did."
+
+**Re-read the paper's actual methodology section (not re-paraphrased)
+and found the exact mechanism, named explicitly:** section 4.2 states
+the colors in SARndbox's projected height map are "defined in a cpt-
+file containing four columns: The first one describes the end of a
+height interval, while the other three contain an RGB value for that
+interval," and that "the name of the file must remain 'HeightColorMap'
+to be correctly referenced." This is a literal height-interval color-
+key lookup table, nothing more - no custom shader math, no vegetation
+overlay, no species classification. Section 3's own description of the
+STOCK/default appearance ("low-level terrain in green and blue, higher-
+level terrain in red and white") is this exact mechanism's default
+output, which is also what Figure 5's four panels are variations of.
+
+**This mechanism already existed in this codebase, completely intact,
+the entire time - inherited unmodified from the original Magic Sand
+base this project forked from.** `bin/data/colorMaps/HeightColorMap.xml`
+is a height-interval key table in exactly this format (-220mm deep blue
+through 0mm teal/green through 60-90mm brown/red through 140-220mm
+gray/white) - never deleted, never even edited by any commit in this
+project's history. `SandSurfaceRenderer::loadSettings()` still loads it
+into `heightMap` every run, and `drawSandbox()` still sets
+`heightColorMapTransformation`/`heightColorMapSampler`/
+`heightMapNumEntries` as real shader uniforms every single frame -
+confirmed by direct grep, not assumption. The ecosystem-fork shader's
+own header comment even said so out loud: "heightColorMapSampler is
+left bound but unused below, kept only so the existing colormap-editing
+GUI machinery doesn't need to be torn out to keep this compiling." The
+data pipeline was never broken or removed - the fragment shader just
+stopped reading from it once `terrainRamp()`/`waterRamp()`/species
+logic took over as the primary color source, starting with `abb8fe3`
+("Bring back topology with an organic growth look, not the rainbow
+ramp") - note that commit's own message confirms a plain height-
+colormap "rainbow ramp" is literally what used to run here, before ANY
+of this fork's custom visual work, ELF included, ever began.
+
+**Fix: found `abb8fe3`'s parent commit (the literal last version before
+any of this fork's custom shader work started) via `git show
+abb8fe3^:<path>`, and restored both `heightMapShader.frag` variants
+(GL2/GL3) to that exact code, byte-for-byte** - not a reconstruction
+from memory or re-derived logic, the actual historical file. Core of
+both: `vec4 color = texture2DRect(heightColorMapSampler, vec2(depthfrag,
+0.5));`, then the same contour-line pass already used everywhere else
+in this project, unchanged. All ecosystem-specific uniforms (vegetation
+sampler, water/snow uniforms, debug toggles, `terrainRamp()`/
+`waterRamp()` themselves) are gone from these two files entirely on
+this branch.
+
+**Verified safe before committing, not just hoped correct:**
+1. Checked the VERTEX shader (`heightMapShader.vert`, both GL2/GL3)
+   diffs against the same pre-fork commit - the only change in either
+   is the ecosystem fork's addition of `texcoordfrag` (for the now-
+   removed vegetation sampling), left harmlessly unused by the restored
+   fragment shader. `depthfrag`'s own computation
+   (`elevation*heightColorMapTransformation.x+heightColorMapTransformation.y`)
+   is completely unchanged, so the restored fragment shader samples the
+   exact same texel-space coordinate the original code always expected
+   - no risk of silently sampling the wrong location.
+2. Confirmed no C++ changes are needed: `ofShader::setUniform*()` calls
+   for uniforms a shader no longer declares are standard, silent no-ops
+   in openFrameworks (`glGetUniformLocation` returns -1, oF checks for
+   that before calling `glUniform*`) - `SandSurfaceRenderer.cpp`'s
+   `drawSandbox()` still calls `setUniform1i("hasVegetation", ...)` etc.
+   every frame, completely harmlessly, since those uniforms simply don't
+   exist in this branch's shader program anymore.
+
+**Net effect**: this branch's visual output should now be the literal,
+unmodified stock Magic Sand / SARndbox-equivalent height-colormap
+rendering - the real "before ELF" state, not an approximation of it -
+using the exact mechanism the reference paper describes, with the
+inherited `HeightColorMap.xml` stops already in a plausible blue-green-
+tan-brown-red-gray-white hypsometric progression reasonably close to
+Figure 5's own look. `VegetationField`'s simulation (growth, agents,
+flow dynamics, EcologyParams) keeps running completely unaffected
+underneath - nothing about the simulation itself was touched, only
+which shader file gets compiled on this branch.
+
+**Not yet tested on real hardware** - same open status as every other
+visual change in this project's history, but this one carries unusually
+low risk given it's a restoration of code that demonstrably ran
+correctly before, not a new design.
+
+**Deliberately left open, worth a real decision later, not decided
+here:** whether to keep real simulated water DEPTH (from `stepFlow()`)
+visually represented at all on this branch - right now "water" is
+whatever `HeightColorMap.xml`'s own low-elevation blue stops naturally
+render for any sufficiently low cell, which is a static elevation-only
+proxy, not the actual simulated depth. This matches the reference
+paper's OWN basic/default appearance (its water-reactive demo, Figure
+4, uses a separate hand-triggered flooding tool, not the basic height
+map), so it's consistent with "look more like the reference," but it
+does mean this branch's water is currently just elevation-colored
+terrain, same as every other low spot - not wrong for this branch's
+stated goal, just worth being explicit about.

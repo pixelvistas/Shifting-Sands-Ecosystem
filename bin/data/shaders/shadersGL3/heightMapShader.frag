@@ -21,98 +21,22 @@ You should have received a copy of the GNU General Public License along
 with the Magic Sand; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
---- Ecosystem fork: no procedural rock/lichen texture. Water/snow/land
-classification is still picked on the CPU side (VegetationField.h);
-this shader turns that classification into color. Land's winner-take-
-all comparison logic (strictly-dominant-channel, no blending between
-types, matching BDlocation.getCellColor()'s shrubs>fruits&&shrubs>nuts
-chain) is unchanged from the original ELF-literal version - see git
-history/CLAUDE.md if the ELF-formula backstory is needed. The actual
-COLOR VALUES below are a 2026-09-24 departure from ELF's literal ones
-(and from this fork's own first-pass primary-color choices), per
-explicit user request: a colorblind-accessible, visually cohesive
-palette. Two different palettes, each used for what it's suited to:
-
-1. SPECIES/AGENT COLORS (shrub/fruit/nut here; deer/hunter/gatherer/
-   fisher in Critter.cpp/HumanAgent.cpp) keep each species' ORIGINAL
-   hue family (shrub green, fruit red/warm, nut teal/cool - user's
-   explicit instruction) but are deliberately NOT the muted Okabe-Ito
-   reference values an earlier pass of this work used - confirmed on
-   review that those changes were too conservative for several roles
-   (gatherer/deer/fruit moved only ~17-23% of the max possible RGB
-   distance from the originals - barely perceptible), because Okabe-Ito
-   is tuned to fix ONLY the specific red-green collision (fruit peak
-   and HUNTER_COLOR were the exact same (255,0,0), and fruit-vs-shrub's
-   pure-red/pure-green pair is the classic worst case for red-green
-   colorblindness, the most common form) without moving colors that
-   were never part of that problem (yellow, cyan, blue) far from their
-   familiar identity - a reasonable goal for data-viz, not the same
-   goal as looking bold/distinct, which was also asked for. These
-   values are bolder and more saturated instead, chosen to survive
-   deuteranopia by the same underlying principle Okabe-Ito uses -
-   separation via the RED and BLUE channels and overall lightness, not
-   hue alone (deuteranopia collapses the green-sensing cone, so two
-   colors differing only in "how green" still merge; they need to
-   differ in red/blue intensity to stay apart) - while matching the
-   jewel-toned saturation of the diverging ramp the user sourced
-   themselves (part 2 below), for a visually cohesive whole rather than
-   two mismatched palette styles. Each winning type still renders at
-   FULL saturation with NO fade regardless of density (matching ELF's
-   own no-threshold getCellColor() exactly, still) - only the peak
-   color values changed, not the winner-take-all mechanic.
-2. BACKGROUND/ELEVATION COLOR (negative-space/tie land - see
-   terrainRamp() below) - REDESIGNED TWICE on 2026-10-16. First pass
-   replaced the earlier 8-stop diverging ramp with a 3-stop monotonic
-   warm ramp (deep rust -> orange -> cream), reasoning from a verbal
-   paraphrase of Barthele et al.'s Figure 5 ("hot white peak to warm
-   base"). That paraphrase turned out to be wrong: after several real-
-   hardware comparisons still didn't look like the reference, the actual
-   Figure 5 image was re-opened and its pixels sampled directly (not
-   re-paraphrased) - it is NOT a single warm hue family at all, it's a
-   full rainbow/hypsometric ramp: teal/cyan (lowest) -> green -> yellow/
-   olive -> orange-brown -> dark maroon -> pale near-white (peak). This
-   matches the paper's own text exactly ("low-level terrain in green and
-   blue, higher-level terrain in red and white") - it's SARndbox's OWN
-   stock default height colormap, not a custom warm design.
-   **SECOND redesign: terrainRamp() is now that literal 6-stop rainbow**,
-   stops sampled directly from the reference image (see CLAUDE.md's
-   2026-10-16 "Literal Figure 5 colormap match" entry for the exact
-   sampled values and the direct user confirmation to use them as-is).
-   **Known, explicit, deliberate tradeoff**: this REINTRODUCES the
-   green-to-red adjacency the 2026-09-24 accessibility pass specifically
-   eliminated (a true jet-style collision risk under deuteranopia/
-   protanopia) - raised directly to the user before implementing, who
-   chose literal reference match over the accessibility property for
-   this specific element. Scoped narrowly: species/agent colors (shrub/
-   fruit/nut, deer/hunter/gatherer/fisher) are UNCHANGED and still use
-   the Okabe-Ito-derived palette from that pass - this tradeoff applies
-   only to background/tie-land and (via the water branch's lakebed read)
-   the color seen through shallow water, not to anything state-bearing.
-   Deliberately NOT applied to actively-growing vegetation, same
-   reasoning as before: doing so would replace the winner-take-all
-   speckled "CA" look (independent per-cell stochastic growth + no-fade
-   coloring, confirmed on real hardware as looking correct) with a
-   smooth gradient, since elevation doesn't have that per-cell
-   independence - this was an explicit design question the user raised
-   earlier and this is still the resolution: hybrid, not a full
-   replacement.
-3. WATER now shows a glimpse of the terrain color beneath it at shallow
-   depth, opaque at real depth - see main()'s water branch. Directly
-   requested from the same reference figure's top-right panel, where the
-   user read the water as "some sort of transparency to it; you can see
-   geological layers under it." waterRamp() itself (the two blue stops)
-   is unchanged; it's now blended with a continuous underwater read of
-   terrainRamp() (fed raw elevationNorm, not landT, so it keeps varying
-   smoothly with real depth rather than clamping to one shallow-water
-   value) rather than used as the final color outright.
-
-Snow remains flat white, unmodulated (matching Color.WHITE), except in
-debug mode (pale blue) - untouched by this palette work; it was never
-part of the accessibility problem being fixed.
-
-heightColorMapSampler is left bound but unused below, kept only so the
-existing colormap-editing GUI machinery doesn't need to be torn out to
-keep this compiling.
+--- ss/terrain-reference-visuals branch (2026-10-19): reverted to the
+literal pre-ecosystem-fork version of this file, byte-for-byte the same
+color logic as it had before any ELF/vegetation work began (commit
+`abb8fe3`'s parent - see CLAUDE.md's "Reverted to stock Magic Sand
+height-colormap rendering" entry for the full rationale). This is also
+exactly the mechanism Barthele, Sauer & Wilkening (2023) describe stock
+SARndbox using: a height-interval color-key table ("HeightColorMap" -
+see bin/data/colorMaps/HeightColorMap.xml, inherited unmodified from
+the original Magic Sand base and never actually removed, just left
+unused once the ecosystem fork's custom terrainRamp()/waterRamp()/
+species-color logic took over as the primary color source) sampled
+directly by elevation, no vegetation/species/water-depth classification
+or overlay of any kind. `heightColorMapSampler` was already bound every
+frame the whole time (SandSurfaceRenderer::drawSandbox() never stopped
+setting it) - the ecosystem-fork shader just never sampled it. Reviving
+it needed zero C++ changes, only this file.
 ***********************************************************************/
 
 #version 150
@@ -120,270 +44,25 @@ keep this compiling.
 out vec4 outputColor;
 
 in float depthfrag;
-in vec2 texcoordfrag;
 
 uniform sampler2DRect heightColorMapSampler;
 uniform sampler2DRect pixelCornerElevationSampler; // Sampler for the half pixel texture
 uniform float contourLineFactor;
 uniform int drawContourLines;
-uniform float heightMapNumEntries; // depthfrag is in [0, heightMapNumEntries) texel space, not 0..1 - see elevationNorm below
-uniform float time; // unused - kept bound alongside heightColorMapSampler above
-
-// Vegetation: see VegetationField.h. vegetationSampler packs three plant
-// densities (RGB) plus a water/snow flag (A) per grid cell;
-// vegetationGridOrigin/Step convert texcoordfrag (kinect pixel space)
-// into a texel lookup into it.
-uniform int hasVegetation;
-uniform sampler2DRect vegetationSampler;
-uniform vec2 vegetationGridOrigin;
-uniform float vegetationGridStep;
-// Debug aid - see VegetationField::DEBUG_SHOW_SNOW's header note. Snow
-// is normally flat white, identical to un-grown negative-space land;
-// this tints it pale blue instead so the two are visually separable
-// while diagnosing calibration.
-uniform int debugShowSnow;
-// Debug aid, 2026-10-16 - see VegetationField::DEBUG_HIDE_VEGETATION's
-// header note. When true, the three species branches below are skipped
-// entirely (bare terrainRamp(landT) shown instead), for a direct,
-// vegetation-free comparison against a reference DEM colormap image.
-uniform int debugHideVegetation;
-// New departure from ELF's literal getCellColor() (2026-09-24) - see
-// VegetationField.h's NUT_VISIBILITY_THRESHOLD comment. Nut's color
-// below, (0,h,h), has no channel pinned bright the way shrub/fruit do,
-// so without this a single successful nut growth tick at low elevation
-// renders solid near-black instantly - confirmed on real hardware as
-// random black speckle scattered through otherwise-unrelated land, not
-// a tie and not a contour line. Below this density, nut falls through
-// to the same negative-space default as a real tie instead.
-uniform float nutVisibilityThreshold;
-// TEMPERATURE - LIVING_RANGE_FRACTION (see VegetationField.h) - the
-// fraction-of-range threshold below which a cell's terrain sits below
-// the flat "sea" level. No longer used for water's own color gradient
-// (see waterRamp()/main()'s water branch below - that now reads real
-// per-cell depth decoded from the vegetation texture's alpha channel,
-// from VegetationField's flow simulation, not an elevation-based proxy)
-// - still needed here because land vegetation's landT just below does.
-uniform float waterLevelFrac;
-// TEMPERATURE (see VegetationField.h) - the fraction-of-range threshold
-// above which a cell classifies as snow. Added 2026-09-28 alongside
-// landT below - see that comment for why land vegetation needs this in
-// addition to waterLevelFrac.
-uniform float snowLevelFrac;
-
-// Water-only gradient - see the header note (part 2). Deliberately
-// separate from terrainRamp(): water previously shared that ramp at the
-// raw global elevationNorm, which rendered nearly identically to the
-// adjacent tie land right at the shoreline - dedicating the ramp's
-// first two stops to water fixed that. The gradient PARAMETER fed in
-// here has since changed again (2026-10, real flow/transport dynamics):
-// `t` is now real per-cell water depth decoded directly from the
-// vegetation texture's alpha channel in main() below, not a proxy
-// computed from elevation at all - see VegetationField.h's ENABLE_FLOW/
-// MAX_WATER_DEPTH_FRAC header notes. This function itself (the two
-// color stops) is unchanged - only what's fed into it changed.
-vec3 waterRamp(float t)
-{
-    vec3 deep = vec3(0.000, 0.259, 0.616);    // #00429d
-    vec3 shallow = vec3(0.294, 0.451, 0.635); // #4b73a2
-    return mix(deep, shallow, clamp(t, 0.0, 1.0));
-}
-
-// Negative-space/tie-land ramp - REDESIGNED 2026-10-16, see the header
-// note (part 2). A simple 3-stop monotonic WARM ramp - deep rust at the
-// low end, through a saturated burnt orange-red, to a pale warm cream
-// at the high end - replacing the earlier 8-stop blue-to-maroon
-// diverging ramp the user found visually confusing. Single hue family
-// plus a lightness/saturation sweep, no green or cyan stop anywhere, so
-// there's no red-green hue collision to collapse under deuteranopia/
-// protanopia in the first place (the same underlying principle that
-// makes Inferno/Magma a real alternative to jet). Also used, at a
-// DIFFERENT parameter, for water's underwater-terrain peek-through -
-// see main()'s water branch and waterRamp() above for why that's a
-// second call site, not a second function.
-vec3 terrainRamp(float t)
-{
-    // Literal 6-stop match to Barthele et al. Figure 5 (top-left panel),
-    // sampled directly from the reference image - see this file's header
-    // note (2026-10-16, second redesign) for the full rationale and the
-    // deliberate colorblind-accessibility tradeoff this accepts.
-    vec3 c0 = vec3(0.000, 0.553, 0.655); // teal - water's edge, lowest land
-    vec3 c1 = vec3(0.251, 0.702, 0.349); // green
-    vec3 c2 = vec3(0.800, 0.780, 0.300); // yellow/olive
-    vec3 c3 = vec3(0.749, 0.451, 0.149); // orange-brown
-    vec3 c4 = vec3(0.451, 0.200, 0.157); // dark maroon
-    vec3 c5 = vec3(0.900, 0.900, 0.900); // pale near-white - the peak
-
-    t = clamp(t, 0.0, 1.0) * 5.0;
-    if (t < 1.0) return mix(c0, c1, t);
-    if (t < 2.0) return mix(c1, c2, t - 1.0);
-    if (t < 3.0) return mix(c2, c3, t - 2.0);
-    if (t < 4.0) return mix(c3, c4, t - 3.0);
-    return mix(c4, c5, t - 4.0);
-}
 
 void main()
 {
-    // ELF's "cellheight" analog: a full-sensor-range normalized elevation
-    // (0..1). In ELF, cellheight is the SAME field used both for
-    // getCellColor()'s cosmetic modulation and for stepCells()'s
-    // temperature/water/snow threshold comparisons - not two independent
-    // normalizations. This mirrors that: elevationNorm here and
-    // VegetationField::normalizedElevation() both normalize against the
-    // same calibrated elevationMin/elevationMax range (see
-    // VegetationField.h's header note and SandSurfaceRenderer's
-    // getElevationMin()/getElevationMax()), just computed on different
-    // sides (GPU here for display, CPU there for classification) since
-    // they run at different times relative to each other.
-    float elevationNorm = clamp(depthfrag / heightMapNumEntries, 0.0, 1.0);
-
-    // Land-vegetation-only renormalization (2026-09-28). Shrub/fruit/nut
-    // can only ever classify between the water line and the snow line
-    // (VegetationField's own water/snow band tests gate them out
-    // everywhere else) - so their peak-to-white mix below was spending
-    // almost its whole 0..1 domain on elevationNorm values land can never
-    // actually have. Measured on this box's real tuned values
-    // (waterLevelFrac~0.377, snowLevelFrac~0.745): land only ever sees
-    // elevationNorm in [0.377, 0.745], which lands the mix between
-    // roughly (0.94,0.60,0.43) and (0.98,0.84,0.77) for fruit - both
-    // already most of the way to white, with the fully-saturated peak
-    // color (0.90,0.35,0.08) never reachable at all. Confirmed on real
-    // hardware as "the gradient is just barely noticeable." landT
-    // renormalizes to the actual reachable land band, so the peak color
-    // shows in full right at the water line and reaches pure white right
-    // at the snow line, same as terrainRamp()/waterRamp() already do for
-    // their own reachable ranges.
-    float landT = clamp((elevationNorm - waterLevelFrac) / max(snowLevelFrac - waterLevelFrac, 0.0001), 0.0, 1.0);
-
-    // Pre-classification default - per explicit user choice (2026-09-24),
-    // black rather than the previous full-brightness white: since a
-    // projector can't project true black, this reads as "add no light,
-    // let the sand's own tone show" rather than "cast a neutral white
-    // wash." Overwritten below whenever vegetation classifies the cell as
-    // something else. In practice this now only shows through briefly
-    // before hasVegetation first becomes true (the grid isn't ready yet)
-    // or with vegetation disabled entirely - NOT for ordinary untouched/
-    // tie land during real operation, which renders via terrainRamp() in
-    // the tie branch below instead (part of the 2026-09-24 palette work).
-    vec4 color = vec4(0.0, 0.0, 0.0, 1.0);
-
-    if (hasVegetation == 1)
-    {
-        vec2 vegUV = (texcoordfrag - vegetationGridOrigin) / vegetationGridStep;
-        vec4 veg = texture(vegetationSampler, vegUV);
-
-        if (veg.a > 0.98)
-        {
-            // Snow - packed at a reserved flat 255/255 in the alpha
-            // channel (2026-10, see VegetationField::update()) now that
-            // alpha otherwise carries continuous water depth rather than
-            // a 0/128/255 tri-state flag - snow still renders as
-            // BDlocation.getCellColor()'s flat Color.WHITE, unmodulated,
-            // except in debug mode (pale blue) so it doesn't read as
-            // identical to un-grown negative space. Untouched by the
-            // 2026-09-24 palette work - see the header note.
-            color.rgb = (debugShowSnow == 1) ? vec3(0.75, 0.85, 1.0) : vec3(1.0, 1.0, 1.0);
-        }
-        else if (veg.a > 0.0)
-        {
-            // Water - dedicated waterRamp(), not the shared terrainRamp()
-            // - see that function's comment for why. REAL per-cell depth
-            // (2026-10, replacing the earlier elevation-based proxy),
-            // decoded directly from the alpha channel: VegetationField
-            // packs depth into 1-249/255 (0 = dry/tie, reserving 255 for
-            // snow above), scaled by MAX_WATER_DEPTH_FRAC - see
-            // VegetationField::update()/stepFlow(). This is now genuine
-            // simulated water depth, not a cosmetic stand-in computed
-            // from elevation.
-            float waterDepthT = clamp((veg.a * 255.0 - 1.0) / 248.0, 0.0, 1.0);
-            // Transparency (2026-10-16) - requested directly from the
-            // Barthele et al. reference photo's top-right panel, where
-            // shallow water read as letting the terrain underneath show
-            // through. terrainRamp() here is fed the RAW elevationNorm,
-            // not landT - landT would clamp every underwater cell to the
-            // same shallow-water value, losing the sense of a real
-            // lakebed getting darker with depth; raw elevationNorm keeps
-            // it continuous below the water line too. Opacity floors at
-            // 0.3 so even the shallowest water still reads as water, not
-            // bare terrain, and ramps to fully opaque at real depth.
-            vec3 lakebed = terrainRamp(elevationNorm);
-            float opacity = mix(0.3, 1.0, waterDepthT);
-            color.rgb = mix(lakebed, waterRamp(waterDepthT), opacity);
-        }
-        else if (debugHideVegetation == 0 && veg.r > veg.g && veg.r > veg.b)
-        {
-            // Shrub-dominant - species color (part 1 of the header note),
-            // a rich emerald, kept in shrub's original green family, R=0
-            // so it never competes with fruit's high-red peak below.
-            // Blends toward white as elevation rises through the
-            // REACHABLE land band (landT, see above - 2026-09-28), not
-            // raw elevationNorm - full saturation at the water line, same
-            // as ELF's own no-fade getCellColor() at low elevation.
-            color.rgb = mix(vec3(0.0, 0.659, 0.349), vec3(1.0), landT);
-        }
-        else if (debugHideVegetation == 0 && veg.g > veg.r && veg.g > veg.b)
-        {
-            // Fruit-dominant - species color, a bold orange-red, kept in
-            // fruit's original red/warm family but with high red AND
-            // enough green to sit clearly away from pure red - not the
-            // same value as HUNTER_COLOR (see the header note), and
-            // R=0.9/B=0.08 gives strong red-channel separation from
-            // shrub's R=0 above, which is what actually survives
-            // deuteranopia (hue alone wouldn't). landT, not raw
-            // elevationNorm - see the 2026-09-28 note above.
-            color.rgb = mix(vec3(0.902, 0.353, 0.078), vec3(1.0), landT);
-        }
-        else if (debugHideVegetation == 0 && veg.b > veg.g && veg.b > veg.r && veg.b > nutVisibilityThreshold)
-        {
-            // Nut-dominant - species color, a saturated teal, kept in
-            // nut's original cool family, R=0/B high so it separates
-            // from fruit via the same red/blue-channel logic. Formula
-            // changed from the old black-at-h=0 pattern (0,h,h) to the
-            // SAME peak-to-white pattern shrub/fruit use above - this
-            // fixes the "random black speckle" problem at its root (see
-            // CLAUDE.md's 2026-09-24 note): nut can no longer render
-            // black at any elevation, so nutVisibilityThreshold below is
-            // now a belt-and-suspenders single-tick-flash guard, not the
-            // only fix. landT, not raw elevationNorm - see the
-            // 2026-09-28 note above.
-            color.rgb = mix(vec3(0.0, 0.675, 0.675), vec3(1.0), landT);
-        }
-        else
-        {
-            // Tie (including the initial all-zero state, which is by far
-            // the common one - most of the play area starts and often
-            // stays unvegetated) OR nut below nutVisibilityThreshold:
-            // background ramp (part 2 of the header note), same as water
-            // above - untouched land now reads as a real hypsometric base
-            // color by elevation rather than flat "no augmentation" white,
-            // and vegetation still visibly claims a cell the instant it
-            // establishes (full-saturation species color against this
-            // more varied background, if anything MORE visible than
-            // against flat white before).
-            //
-            // getCellColor() returns flat Color.PINK on a tie in ELF's own
-            // source (confirmed by running ELF's own TESTING-mode
-            // reference build) - this was already a deliberate departure
-            // from that before this palette work, not a fidelity claim.
-            // landT, not raw elevationNorm (2026-10-16) - tie land can
-            // only ever actually render between the water line and the
-            // snow line (same reachable band as the species channels -
-            // see landT's own header note), so without this the new
-            // 3-stop ramp above would suffer the exact same "barely
-            // noticeable, most of the range unreachable" bug the
-            // 2026-09-28 species-gradient fix addressed, just on a fresh
-            // ramp instead of the old one.
-            color.rgb = terrainRamp(landT);
-        }
-    }
+    vec2 depthPos = vec2(depthfrag, 0.5);
+    vec4 color = texture2DRect(heightColorMapSampler, depthPos); // colormap converted depth
 
     if (drawContourLines == 1)
     {
         // Contour line computation
         /* Calculate the contour line interval containing each pixel corner by evaluating the half-pixel offset elevation texture: */
-        float corner0=floor(texture(pixelCornerElevationSampler,vec2(gl_FragCoord.x,gl_FragCoord.y)).r*contourLineFactor);
-        float corner1=floor(texture(pixelCornerElevationSampler,vec2(gl_FragCoord.x+1.0,gl_FragCoord.y)).r*contourLineFactor);
-        float corner2=floor(texture(pixelCornerElevationSampler,vec2(gl_FragCoord.x,gl_FragCoord.y+1.0)).r*contourLineFactor);
-        float corner3=floor(texture(pixelCornerElevationSampler,vec2(gl_FragCoord.x+1.0,gl_FragCoord.y+1.0)).r*contourLineFactor);
+        float corner0=floor(texture2DRect(pixelCornerElevationSampler,vec2(gl_FragCoord.x,gl_FragCoord.y)).r*contourLineFactor);
+        float corner1=floor(texture2DRect(pixelCornerElevationSampler,vec2(gl_FragCoord.x+1.0,gl_FragCoord.y)).r*contourLineFactor);
+        float corner2=floor(texture2DRect(pixelCornerElevationSampler,vec2(gl_FragCoord.x,gl_FragCoord.y+1.0)).r*contourLineFactor);
+        float corner3=floor(texture2DRect(pixelCornerElevationSampler,vec2(gl_FragCoord.x+1.0,gl_FragCoord.y+1.0)).r*contourLineFactor);
 
         /* Find all pixel edges that cross at least one contour line: */
         int edgeMask=0;
