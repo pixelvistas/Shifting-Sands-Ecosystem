@@ -73,6 +73,11 @@ void ofApp::setup() {
 	critterController.setup(kinectProjector, &vegetationField);
 	critterController.setProjectorRes(projRes);
 	critterController.setKinectROI(kinectROI);
+
+	waterFlowParticles.setup(kinectProjector, &vegetationField);
+	waterFlowParticles.setProjectorRes(projRes);
+	waterFlowParticles.setKinectROI(kinectROI);
+
 	lastKinectROI = kinectROI;
 
 	imgui.setup();
@@ -125,10 +130,12 @@ void ofApp::update() {
 		}
 		vegetationField.setKinectROI(kinectROI);
 		critterController.setKinectROI(kinectROI);
+		waterFlowParticles.setKinectROI(kinectROI);
 	}
 
 	vegetationField.update();
 	critterController.update();
+	waterFlowParticles.update();
 }
 
 
@@ -146,6 +153,7 @@ void ofApp::draw()
 		// VegetationField.h), plus the ELF deer/human population - see
 		// ofApp.h's header note on what has been removed from this branch.
 		sandSurfaceRenderer->drawMainWindow(x, y, w, h);
+		waterFlowParticles.drawMainWindow(x, y, w, h);
 		critterController.drawMainWindow(x, y, w, h);
 	}
 
@@ -157,6 +165,7 @@ void ofApp::draw()
 			sandSurfaceRenderer->drawGui();
 			critterController.drawGui();
 			vegetationField.drawGui();
+			waterFlowParticles.drawGui();
 		}
 	imgui.end();
 	imgui.draw();
@@ -167,6 +176,7 @@ void ofApp::drawProjWindow(ofEventArgs &args)
 	if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING)
 	{
 		sandSurfaceRenderer->drawProjectorWindow();
+		waterFlowParticles.drawProjectorWindow();
 		critterController.drawProjectorWindow();
 	}
 	kinectProjector->drawProjectorWindow();

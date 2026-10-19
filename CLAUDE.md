@@ -2458,3 +2458,108 @@ and-rescale treatment, not just new colors. Not yet tested on real
 hardware - this fix is reasoned from the box's own documented prior
 measurements and a direct read of the transformation code, not a new
 hardware session.
+
+## Branch direction clarified, and water-flow particle visualization added (2026-10-19)
+
+Same visit. User clarified the actual intent behind the
+`ss/terrain-reference-visuals` split, which this file had been treating
+as a side investigation off the "real" branch: **"I asked you to split
+off because I felt it would be best to simplify the visuals, then build
+things step by step and eventually add the ELF visuals back. I want to
+stay on this branch so that we have a fallback with the previous one."**
+So this branch is now the primary forward development line - rebuild
+up from a clean, reference-matched bare-terrain baseline, re-adding ELF
+visuals deliberately later - and `ss/ecosim-model-visuals-kiqw12` is the
+fallback/reference copy, not the other way around as earlier entries in
+this file implied. Noted here so this doesn't get re-litigated later.
+
+**First piece built under that direction: a real-data particle/streak
+visualization of water flow**, closing a genuine gap flagged repeatedly
+in this file - `stepFlow()` (the hydrology phase's second slice, see
+above) has been computing real per-cell water transport since early
+October, but nothing has ever made that motion visible; water's color
+alone can't show flow, only depth. This is also literally the third
+piece of the Liu/ARsandbox014 succession-model methodology ("Future
+phase" section above) finally being built - vector-field/particle-flow
+imagery of water flow - deliberately NOT attempted back on 2026-10-16
+(re: `anvaka/fieldplay`) because at that time it would have been
+"the literal 'non-simulated decorative flow particles' option" already
+passed over in the Strategic Reset - there was no real flow simulation
+yet to drive it honestly. `stepFlow()` existing now removes that
+objection: every particle's motion comes directly from real simulated
+transport, not a second, separately-invented flow model.
+
+**New `WaterFlowParticles.h`/`.cpp`** (`src/Games/`), modeled directly
+on `CCritterController`'s shape (`setup()`/`setProjectorRes()`/
+`setKinectROI()`/`update()`/`drawMainWindow()`/`drawProjectorWindow()`/
+`drawGui()`, same FBO-compositing pattern) rather than inventing a new
+convention - kept as its own class, same precedent as `EcologyParams`,
+since it only ever *reads* `VegetationField`'s state and can be added/
+removed/retuned with zero risk to the actual simulation.
+
+**Two new read-only accessors added to `VegetationField`** (`.h`/`.cpp`),
+deliberately NOT touching `stepFlow()` itself: `getWaterDepthAt(gx,gy)`
+(just `waterDepth`'s own stored value) and `getFlowVelocityAt(gx,gy)` -
+a 2D grid-cells/second vector summed from the exact same surface-height
+(terrain+depth) difference to each of a cell's 4 neighbors that
+`stepFlow()`'s own pass 1 already computes, just vector-summed instead
+of kept as 4 separate scalars, and deliberately NOT scaled by
+`stepFlow()`'s own per-cell outflow-limiting factor (that factor exists
+to conserve depth correctly when actually moving water; a query reading
+direction/relative magnitude for display has no such conservation
+requirement, and skipping it means this can't affect, and isn't
+affected by, `stepFlow()`'s own pass ordering). Real simulated physics,
+queried rather than applied - not a parallel approximation.
+
+**Particle mechanics**: each particle tracks a continuous (sub-cell)
+grid position; every frame, a particle whose current cell's depth is
+below `MIN_VISIBLE_WATER_DEPTH_FRAC` (the SAME constant `stepFlow()`'s
+own hysteresis already uses - deliberately reused rather than a second
+threshold) gets respawned at a random wet cell (bounded 20-try search;
+a particle that can't find one this frame parks off-grid and keeps
+retrying every later frame, so a bone-dry sandbox before any water
+exists just means no particles render yet, not a hang). A live particle
+is advected by `getFlowVelocityAt()`'s vector, scaled by a new
+`PARTICLE_SPEED_SCALE` - a VISUALIZATION-ONLY multiplier, since real
+single-cell-to-single-cell surface-height differences can be tiny
+(much smaller than between cells several apart), separate from
+`FLOW_RATE` itself. Drawn as a short streak (previous position to
+current position), not a static dot, into an FBO exactly like
+`CCritterController`'s own compositing.
+
+**Cost, checked before writing anything** (this project's own standing
+rule after the CA spread layer's regression): a few hundred particles,
+each one depth read + one 4-neighbor velocity query per frame, no trig/
+random beyond occasional respawns - orders of magnitude cheaper than
+the ~150K-cell per-species passes that actually caused that regression.
+`ENABLE_FLOW_PARTICLES` is still a real A/B kill switch (default on),
+and `PARTICLE_COUNT` is live-tunable (default 400, GUI range 0-2000),
+same defensive posture as every other new mechanism in this file.
+
+**GUI**: new "Water Flow" ImGui panel (`WaterFlowParticles::drawGui()`)
+with the enable toggle, particle count/speed/thickness/color controls,
+and a live ROI-center depth + flow-velocity readout - same "measure
+before tuning" posture as every other panel in this project, so
+`PARTICLE_SPEED_SCALE` (first-guess, untested) can be set from a real
+number instead of by feel once this is actually on hardware.
+
+**Wired into `ofApp.h`/`.cpp`** following `critterController`'s exact
+pattern: `setup()`/`setProjectorRes()`/initial `setKinectROI()` at
+startup, re-`setKinectROI()` in the same block `critterController`'s
+is in, `update()` after `vegetationField.update()`, and drawn in both
+windows between `sandSurfaceRenderer` and `critterController` (so
+streaks sit under agent icons, over the terrain/water color) plus the
+new GUI panel. **Added to both `Magic-Sand-Ecosystem.vcxproj` and
+`.vcxproj.filters`**, matching `EcologyParams.cpp`/`.h`'s existing
+entries exactly - same standing reminder as when `EcologyParams` was
+added: this project's Visual Studio build lists source files
+explicitly, so a new file invisible to the `.vcxproj` would silently
+not compile at all.
+
+**Not yet tested on real hardware** - no openFrameworks SDK available
+in this session (same constraint as `EcologyParams`), so this hasn't
+been built. `PARTICLE_SPEED_SCALE=2000.0f` is a first guess with no
+real-hardware velocity numbers to check it against yet; the GUI's live
+readout is there specifically to make that the first thing checked
+once this is pulled, before assuming the slider's default is remotely
+close.

@@ -36,6 +36,7 @@ deer/human population.
 #include "SandSurfaceRenderer/SandSurfaceRenderer.h"
 #include "Games/CritterController.h"
 #include "Games/VegetationField.h"
+#include "Games/WaterFlowParticles.h"
 
 class ofApp : public ofBaseApp {
 
@@ -72,6 +73,10 @@ private:
 	// texture as a shader uniform) and with critterController (deer/humans
 	// query it for growth/water/snow) via query-only pointers.
 	VegetationField vegetationField;
+	// Visual-only layer showing stepFlow()'s real water transport as
+	// moving streaks - see WaterFlowParticles.h. Query-only against
+	// vegetationField, same ownership convention as critterController.
+	WaterFlowParticles waterFlowParticles;
 
 	// Main window ROI
 	ofRectangle mainWindowROI;

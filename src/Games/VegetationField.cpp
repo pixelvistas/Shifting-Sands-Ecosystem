@@ -346,6 +346,38 @@ void VegetationField::stepFlow(float waterLevelFrac)
 	std::swap(waterDepth, waterDepthNext);
 }
 
+// See the header note - visualization-only queries, read-only against
+// stepFlow()'s own state.
+float VegetationField::getWaterDepthAt(int gx, int gy) const
+{
+	if (gx < 0 || gx >= cols || gy < 0 || gy >= rows)
+		return 0.0f;
+	return waterDepth.at<float>(gy, gx);
+}
+
+ofVec2f VegetationField::getFlowVelocityAt(int gx, int gy) const
+{
+	if (gx < 0 || gx >= cols || gy < 0 || gy >= rows)
+		return ofVec2f(0.0f, 0.0f);
+
+	static const int dxN[4] = { -1, 1, 0, 0 };
+	static const int dyN[4] = { 0, 0, -1, 1 };
+
+	float surface = normalizedElevation(previousElevation.at<float>(gy, gx)) + waterDepth.at<float>(gy, gx);
+
+	ofVec2f v(0.0f, 0.0f);
+	for (int k = 0; k < 4; k++) {
+		int nx = gx + dxN[k], ny = gy + dyN[k];
+		if (nx < 0 || nx >= cols || ny < 0 || ny >= rows)
+			continue;
+		float nSurface = normalizedElevation(previousElevation.at<float>(ny, nx)) + waterDepth.at<float>(ny, nx);
+		float diff = surface - nSurface;
+		if (diff > 0.0f)
+			v += ofVec2f((float)dxN[k], (float)dyN[k]) * (diff * FLOW_RATE);
+	}
+	return v;
+}
+
 void VegetationField::setKinectROI(ofRectangle & KROI)
 {
 	kinectROI = KROI;

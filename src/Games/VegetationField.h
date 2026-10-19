@@ -297,6 +297,30 @@ public:
 	bool isWaterAt(float kx, float ky) const;
 	bool isSnowAt(float kx, float ky) const;
 
+	// For WaterFlowParticles' visualization only - stepFlow() itself never
+	// reads either of these, so querying them can't perturb the actual
+	// simulation. gx/gy are grid indices (see getCols()/getRows()), not
+	// kinect pixel coordinates like isWaterAt()/isSnowAt() above - matches
+	// how CCritterController already tracks agent positions in grid space.
+	//
+	// getWaterDepthAt() is just waterDepth's own stored value (0 outside
+	// the grid) - same units MIN_VISIBLE_WATER_DEPTH_FRAC compares against.
+	//
+	// getFlowVelocityAt() derives a 2D grid-cells/second vector from the
+	// exact same surface-height (terrain+depth) difference to each of a
+	// cell's 4 neighbors that stepFlow()'s own pass 1 computes (see the
+	// .cpp) - summed into one vector instead of 4 separate scalars, and
+	// deliberately NOT scaled by stepFlow()'s own per-cell outflow-limiting
+	// factor (that factor exists to conserve depth correctly when actually
+	// moving water; a visualization reading direction/relative magnitude
+	// has no such conservation requirement, and skipping it means this
+	// query can't affect, and isn't affected by, stepFlow()'s own pass
+	// ordering). This is real simulated transport, not a separately-
+	// invented approximation - the same physics, just queried instead of
+	// applied.
+	float getWaterDepthAt(int gx, int gy) const;
+	ofVec2f getFlowVelocityAt(int gx, int gy) const;
+
 	// Grid dimensions, for Critter/HumanAgent's pickX()/pickY() equivalents
 	// and to convert their own grid coordinates back to kinect pixel space.
 	int getCols() const { return cols; }
