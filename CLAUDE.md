@@ -1951,3 +1951,61 @@ Not yet tested on real hardware - this is the third iteration of this
 same ramp in one day, so same open question as every prior palette
 pass, but now at least confirmed to be targeting the CORRECT reference
 image this time, sampled directly rather than paraphrased.
+
+## Freeze called on visual churn, moratorium pending one clean verification pass (2026-10-19)
+
+User raised a direct worry: "I'm worried that these recent updates have
+caused too many issues. We had a working ELF port before" - prompted by
+three terrain-ramp redesigns in one sitting (3-stop warm ramp -> literal
+6-stop Figure 5 rainbow) plus a confusing real-hardware screenshot (a
+blurry brown-only patch, no green/yellow) that hadn't been explained yet.
+
+**Checked precisely rather than reassuring from memory** (`git diff
+1bbad8a HEAD --stat` and a line-level diff of the agent files):
+`CritterController.cpp`/`.h` (update order, spawn/death, population
+caps) have ZERO diff since the confirmed-working checkpoint.
+`Critter.cpp`/`HumanAgent.cpp` have 12 and 31 changed lines respectively,
+and every one of them is a color CONSTANT from the 2026-09-24
+accessibility pass - movement, eating, fishing, hunting, growth, and
+spawn/death logic are byte-identical to the checkpoint. So the actual
+ELF port the user is worried about losing was never touched by any of
+this - every real change since the checkpoint is confined to
+`VegetationField.h`/`.cpp`, `heightMapShader.frag` (GL2/GL3),
+`EcologyParams.h`/`.cpp` (new, still inert - nothing reads it), and
+`SandSurfaceRenderer.cpp`'s uniform wiring - the succession-model LAYER
+that sits alongside the ELF port, not inside it.
+
+**User's explicit decision, given this, via `AskUserQuestion`** (three
+options: stabilize current state / roll back only the palette to plain
+ELF-stock colors / full revert to `1bbad8a` discarding the whole
+succession-model phase): **chose to stabilize** - no revert, no further
+rollback. Rejected options carried real costs worth recording: a full
+revert would have discarded the already-tuned CA spread layer, the
+flow-dynamics rewrite, and reset the entire Dec-14 thesis roadmap this
+phase is the foundation of, for a problem that turned out to be visual-
+layer churn, not simulation regression.
+
+**Moratorium, effective now: no further terrain/water palette changes
+until ONE clean, measured verification pass confirms or refutes the
+current state** - the opposite failure mode from today's 3-redesigns-
+in-one-sitting pattern (each change made before the last was actually
+confirmed). Verification checklist (reuses existing diagnostics, no new
+code):
+1. `git log -1` already confirmed at `722f4c1` on hardware.
+2. Zero out population (Population panel - "Remove all deer"/"Remove
+   all humans") and enable `DEBUG_HIDE_VEGETATION`, exactly as the
+   2026-10-16 confirmation test did, to isolate bare terrain again.
+3. At the lowest and highest point of any raised/dug feature, read
+   "Raw elevation at ROI center" against the "Water line"/"Snow line"
+   mm readout - confirms whether that feature actually spans enough of
+   the band to show the ramp's low (teal/green) end, or whether (as
+   suspected for the blurry brown-only screenshot) it only occupies the
+   upper orange/maroon/white portion.
+4. Compare FPS with `ENABLE_FLOW` on vs. off - the flow-dynamics
+   rewrite's own still-open verification item, not yet done.
+5. Only after all four return clean, confirmed answers does any further
+   palette tuning resume - and the next change should be singular and
+   verified before a second one starts, not stacked.
+
+Not yet executed - this entry records the decision and the checklist to
+run, not a completed verification.
