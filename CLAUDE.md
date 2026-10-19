@@ -2240,3 +2240,46 @@ map), so it's consistent with "look more like the reference," but it
 does mean this branch's water is currently just elevation-colored
 terrain, same as every other low spot - not wrong for this branch's
 stated goal, just worth being explicit about.
+
+## HeightColorMap.xml recolored, colorblind-safe (2026-10-19)
+
+Same visit, immediately after reviving the stock mechanism above. User
+asked to work the branch's open items one at a time, starting with
+color, and clarified directly: wants a colorblind-safe alternative, not
+the stock file's own inherited (not colorblind-checked) blue-green-tan-
+brown-red-gray-white stops.
+
+**Reused the already-validated palette rather than inventing a new
+one** - the 2026-09-24 accessibility pass's 7-stop diverging ramp
+(`#00429d,#5c83a6,#a5c2bd,#ffffe0,#ffa59e,#dd4c65,#93003a`), explicitly
+sourced by the user and confirmed colorblind-safe at the time, just
+never previously applied to THIS mechanism (it was built for the
+ecosystem fork's now-removed GLSL `terrainRamp()`). Reusing it keeps
+this project consistent with its own prior accessibility decision
+instead of re-litigating a new palette from scratch.
+
+**Implementation: replaced `HeightColorMap.xml`'s 16 key colors via
+smooth linear interpolation through the 7-stop ramp**, keeping every
+other structural element of the file identical - same 16 height
+breakpoints (`-220mm` through `220mm`), same count, same water/land
+split at `0mm`. Each key's height was converted to `t =
+(height+220)/440` (0 at the floor, 1 at the ceiling) and the new RGB
+value taken from the piecewise-linear ramp at that `t`. Net look: deep
+blue `(0,66,157)` at the lowest water, warming through pale cream
+`(255,255,224)` right around the water's edge (0mm), through salmon/
+rose, to dark maroon `(147,0,58)` at the highest peak - monotonic
+blue-to-red through a light midpoint, no green stop anywhere to
+collide with red under deuteranopia/protanopia.
+
+**Not a new validation pass** - this is the SAME palette already
+checked once (2026-09-24 entry), just resampled at new points via
+linear interpolation. Interpolating between colorblind-safe endpoints
+is a reasonable, low-risk assumption (no point on a monotonic blue-
+pale-red path through this specific 7-stop sequence introduces a new
+green/red collision), but wasn't independently re-run through a
+simulator - flagged honestly, not re-asserted as freshly verified.
+
+Only `bin/data/colorMaps/HeightColorMap.xml` changed - no shader or
+C++ changes needed, since the restored stock mechanism already reads
+this file's colors directly as its sole color source. Not yet tested
+on real hardware.
