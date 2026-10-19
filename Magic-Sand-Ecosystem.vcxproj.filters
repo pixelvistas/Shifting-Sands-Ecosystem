@@ -19,7 +19,7 @@
 		<ClCompile Include="src\Games\EcologyParams.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
-		<ClCompile Include="src\Games\WaterFlowParticles.cpp">
+		<ClCompile Include="src\Games\WaterFlowField.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
 		<ClCompile Include="src\Games\HumanAgent.cpp">
@@ -737,7 +737,7 @@
 		<ClInclude Include="src\Games\EcologyParams.h">
 			<Filter>src\Games</Filter>
 		</ClInclude>
-		<ClInclude Include="src\Games\WaterFlowParticles.h">
+		<ClInclude Include="src\Games\WaterFlowField.h">
 			<Filter>src\Games</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Games\HumanAgent.h">

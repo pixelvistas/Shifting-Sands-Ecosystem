@@ -2633,3 +2633,89 @@ running, rather than assumed fixed by the two bugs above alone.
 
 Still not tested on real hardware - same constraint as the rest of
 this entry.
+
+## WaterFlowParticles replaced with WaterFlowField - wrong visualization paradigm, not a tuning problem (2026-10-19)
+
+Same visit, after the two bug fixes above. User's own description of
+the result: "What I'm seeing is something similar to the original
+critters we created - a bunch of points that respond to gravity
+(somewhat)." Pointed at Liu's work again plus a second reference (a
+Google Scholar citation) as the actual target. Direct fetch of that
+citation failed - `scholar.google.com` doesn't resolve from this
+session's network (confirmed via `WebFetch`, same class of outbound
+restriction this project already hit once before with
+jayvandyke.com/makezine.com - a general proxy restriction, not
+domain-specific). Rather than guess from a blocked link, asked the
+user directly via `AskUserQuestion`, grounding the options in Liu's own
+paper's literal wording (already read in full and quoted elsewhere in
+this file): water flow "visualized in Grasshopper as flow-direction/
+velocity/vorticity vector fields." **User confirmed: dense vector-field
+glyphs** - small arrows at a regular grid over the water, each showing
+local direction/speed, redrawn fresh every frame - not the discrete
+tracked-and-advected particles this file's prior two entries had just
+finished debugging.
+
+**This explains the user's "critters" comparison precisely, and
+retroactively reframes the last two bug-fix entries**: discrete dots
+that persist, move, and get replaced were always going to read as
+little creatures/agents, structurally - matching `Critter`'s own
+sparse-icon rendering convention this project already uses for deer/
+humans - no matter how well the flicker/respawn-starvation bugs got
+fixed. Those two fixes were still real, correct bug fixes in their own
+right (the hysteresis and respawn-search issues were genuine, confirmed
+bugs, not artifacts of the wrong paradigm) - but they could never have
+produced "vector-field imagery" by polishing a particle system, since a
+sparse set of discrete tracked points is a different visualization
+technique from a dense field of per-location direction/magnitude
+glyphs, not a degraded version of the same one.
+
+**Replaced the whole mechanism rather than retrofit it**: `WaterFlowParticles.h`/
+`.cpp` -> `WaterFlowField.h`/`.cpp` (renamed via `git mv`, not left
+under a now-inaccurate name), and every particle/respawn/advection
+concept (the `Particle` struct, `respawnParticle()`, the bounded linear
+scan, `PARTICLE_SPEED_SCALE`) is gone - replaced with a stateless
+per-frame sample grid. `update()` now just loops over sample points
+spaced `GLYPH_SPACING_CELLS` apart (default 8), skips any point
+`isWaterAt()` doesn't currently call water (same hysteresis-stabilized
+check the particle version's bug fix had just adopted - kept, since
+it's the right check regardless of visualization style), reads
+`VegetationField::getFlowVelocityAt()` fresh at that point, skips it
+if the magnitude is below `MIN_VELOCITY_TO_SHOW` (calm water
+legitimately has nothing to show, not a bug), and otherwise draws a
+standard two-stroke arrow glyph (shaft + angled arrowhead, both
+computed in grid space and converted to projector space only at the
+final draw call, so any projective warping from calibration is handled
+correctly for free - same technique the particle version's streak
+lines already used). No persistent state, no respawn logic, no
+liveness tracking needed at all - every glyph is independently
+recomputed from `VegetationField`'s current data each frame.
+
+**Cost re-checked for the new access pattern, not just assumed carried
+over**: a dense per-Kinect-pixel sample grid would be tens of thousands
+of arrows (both visually unreadable and a real per-frame cost); sampling
+every `GLYPH_SPACING_CELLS` cells instead keeps it under ~2500 sample
+points on this project's typical ~519x295 grid, each a cheap
+`isWaterAt()` check plus the unchanged 4-neighbor `getFlowVelocityAt()`
+query - same cheap operation class (no trig/random at volume) the
+particle version's own cost budget already confirmed safe, just
+re-verified for a different access pattern (a fixed sample grid instead
+of N tracked particles) rather than assumed to carry over unexamined.
+
+**`getWaterDepthAt()`/`getFlowVelocityAt()` (the two `VegetationField`
+accessors added for the particle version) are unchanged and reused
+as-is** - they were always genuine, paradigm-independent queries of
+real simulated state, not particle-specific plumbing, so nothing
+needed to change on the `VegetationField` side of this rename. Build
+wiring (`ofApp.h`/`.cpp`'s `waterFlowParticles` member and all call
+sites, both `.vcxproj`/`.vcxproj.filters` entries) updated to match the
+new name throughout - no file left referencing the old name except
+historical comments/this changelog.
+
+**Still not tested on real hardware** - same constraint as every entry
+in this file today. `GLYPH_SPACING_CELLS=8`, `MIN_VELOCITY_TO_SHOW=
+0.0005`, and `ARROW_LENGTH_SCALE=200` are all first-guess defaults with
+no real velocity numbers behind them yet (the same uncertainty flag
+`PARTICLE_SPEED_SCALE` carried before this rename) - the Water Flow
+panel's live ROI-center velocity readout is there specifically so these
+can be set from a real number instead of by feel once this is actually
+built and run.

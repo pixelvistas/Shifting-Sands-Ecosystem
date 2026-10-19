@@ -297,7 +297,7 @@ public:
 	bool isWaterAt(float kx, float ky) const;
 	bool isSnowAt(float kx, float ky) const;
 
-	// For WaterFlowParticles' visualization only - stepFlow() itself never
+	// For WaterFlowField's visualization only - stepFlow() itself never
 	// reads either of these, so querying them can't perturb the actual
 	// simulation. gx/gy are grid indices (see getCols()/getRows()), not
 	// kinect pixel coordinates like isWaterAt()/isSnowAt() above - matches
