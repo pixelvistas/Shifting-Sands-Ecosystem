@@ -2331,3 +2331,59 @@ project's own prior confirmed finding (the fruit/shrub collision was
 specifically a red-green pair), not a fresh validation pass. Flagged
 honestly, same caveat as the previous color iteration. Not yet tested
 on real hardware.
+
+## HeightColorMap.xml recolored A THIRD TIME - user-supplied 7-stop palette with per-stop accessibility rationale (2026-10-19)
+
+Same visit, immediately after. User supplied a specific 7-color table,
+each with a named zone and explicit reasoning, rather than asking for
+another from-scratch design pass:
+
+- Deep Water `#08306B` (Maximum Depths) - "highly saturated dark navy
+  blue that provides a strong baseline anchor."
+- Shallow Water `#41B6C4` (Coastal Lines/Lakes) - "bright cyan-teal
+  blue. Shifting toward teal makes it distinct from deep water and
+  land for all vision types."
+- Lowland Grass `#238B45` (Basins/Valleys) - "deep forest green. It
+  acts as a stark, high-contrast border against the bright shallow
+  water."
+- Foothill Grass `#74C476` (Mid-Elevations) - "soft sage green. By
+  keeping this lighter than the valley green, elevation change is
+  communicated via brightness."
+- High Highlands `#D95F02` (Steep Slopes) - "muted clay/terracotta
+  orange. Crucial alternative to brown: brown turns into mud-green for
+  red-green colorblind users, whereas this orange remains perfectly
+  distinct."
+- Mountain Peaks `#FDBE85` (Sub-Alpine Ridges) - "soft, sandy
+  cream-orange that bridges the gap between high rock and snow fields."
+- Snow Caps `#F7F7F7` (High Peaks) - "off-white. Never use pure white
+  for snow, as it can conflict with standard map [elements]."
+
+**Mapping onto the file's existing 16 height breakpoints**: the 7 named
+zones were placed at the 7 existing keys whose real-world role matches
+each name most directly - `-220:Deep Water`, `-2.5:Shallow Water`,
+`2.5:Lowland Grass`, `60:Foothill Grass`, `140:High Highlands`,
+`200:Mountain Peaks`, `220:Snow Caps` - so each is an EXACT, unmodified
+copy of the user's own hex value at that key, not a re-derived
+approximation. The remaining 9 keys (`-200,-170,-150,-125,-7.5,-0.5,0,
+25,90`) were filled by linear RGB interpolation between whichever two
+named anchors they fall between by height - the same piecewise-linear
+technique used for every previous recolor of this file, just applied to
+7 non-uniformly-spaced anchors instead of a uniformly-spaced ramp.
+Net effect: deep navy at the floor, warming through teal at the
+shoreline, a real green transition right at the 0mm water line (teal
+`(53,165,145)` at -0.5mm to green `(50,161,133)` at 0mm, continuing into
+grass `(35,139,69)` at 2.5mm) that gives a crisp, high-contrast land/
+water edge per the user's own stated intent for that pairing, then
+green through two foothill shades, an olive transition at 90mm, into
+the user's orange/peach highland-to-peak stops, ending in off-white
+snow.
+
+**Not a redesign - a direct implementation of user-supplied, already-
+reasoned values.** No new accessibility analysis performed on top of
+the user's own rationale; the interpolation between their anchors is a
+mechanical fill of the structural gap (7 named colors vs. 16 required
+breakpoints), not a judgment call on color choice. Same caveat as every
+prior iteration: not independently re-run through a colorblind
+simulator, and not yet tested on real hardware. No shader/C++ changes
+needed - `HeightColorMap.xml` remains the sole color source for this
+branch's reverted stock rendering mechanism.
