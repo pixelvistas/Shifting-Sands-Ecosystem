@@ -22,10 +22,15 @@ gradient - gravity-driven runoff, the direction water on the sand would
 actually travel - computed from VegetationField::getElevationGrid()
 (this frame's samples, no extra Kinect reads), downsampled, spatially
 blurred, and exponentially smoothed in time so sensor noise cannot make
-it jitter. Particles "rain" uniformly over the sandbox, run downhill
-with momentum and friction, and collect and slow down in basins - so
-pools read as places where flow converges, without depending on any
-classification threshold at all.
+it jitter. Particles spawn only on visibly blue water
+(VISIBLE_WATER_LINE_MM), run downhill with momentum and friction, and
+fade out where they meet the shore, so nothing is drawn on land.
+
+Known limitation (2026-10-20): inside standing water the bed gradient
+only says where the lake is deepest, so particles drift toward the
+bottom of each basin rather than showing a current. Real one-way
+channel flow needs a source and a sink in the hydrology model itself -
+see CLAUDE.md's 2026-10-20 hydrology entry.
 
 Purely visual: reads VegetationField, never writes it, no effect on the
 simulation. Same setup()/setProjectorRes()/setKinectROI()/update()/
@@ -64,6 +69,14 @@ public:
 
 	// Runtime kill switch, same A/B rationale as ENABLE_SPREAD/ENABLE_FLOW.
 	static bool ENABLE_FLOW_FIELD;
+	// Particles live only below this elevation (mm, the same scale as
+	// HeightColorMap.xml's key heights - its teal "Shallow Water" key at
+	// -3mm meets "Lowland Grass" at 0mm, so -1.5mm is where the projected
+	// colour visibly turns from water to land). Spawn only there; a
+	// particle that runs up onto land stops at the shore and fades out.
+	// Interim mask: it follows the visible colour map, not stepFlow()'s
+	// simulated depth - see CLAUDE.md's 2026-10-20 hydrology entry.
+	static float VISIBLE_WATER_LINE_MM;
 	static int PARTICLE_COUNT;
 	// Field resolution: grid cells per field sample. Larger = smoother,
 	// broader flow; smaller = follows finer sculpted detail.
@@ -103,10 +116,13 @@ private:
 		std::array<ofVec2f, MAX_TRAIL> trail;
 		int trailHead;
 		int trailCount;
+		bool active; // false = parked, no water anywhere to spawn into yet
 	};
 
 	void rebuildField(float dt);
+	float sampleField(const cv::Mat & m, float gx, float gy) const; // bilinear, grid coords
 	ofVec2f sampleGradient(float gx, float gy) const; // mm per grid cell, bilinear
+	bool isVisibleWater(float gx, float gy) const;
 	void respawn(Particle & p);
 	ofPoint gridToProjCoord(float gx, float gy) const;
 
@@ -116,7 +132,11 @@ private:
 	ofVec2f projRes;
 
 	// Smoothed, downsampled elevation and its gradient (field samples).
-	cv::Mat smoothElevation, gradX, gradY;
+	cv::Mat smoothElevation, fieldElevation, gradX, gradY;
+	// Field-sample indices currently below VISIBLE_WATER_LINE_MM, rebuilt
+	// each frame - respawning picks from this list, so it always succeeds
+	// when any water exists, however small a fraction of the table it is.
+	std::vector<int> wetSamples;
 	bool fieldReady = false;
 
 	std::vector<Particle> particles;

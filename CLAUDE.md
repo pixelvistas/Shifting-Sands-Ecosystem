@@ -2905,3 +2905,71 @@ this class. Not compiled or hardware-tested here (no openFrameworks SDK
 in this session); all defaults are first guesses, and the Water Flow
 panel shows ROI-center slope and implied terminal speed so
 GRAVITY/FRICTION can be set from real numbers.
+
+## Particles masked to visible water; hydrology/seed-dispersal design reviewed (2026-10-20)
+
+**Change:** `WaterFlowField` particles now exist only on visibly blue
+water. New `VISIBLE_WATER_LINE_MM` (default -1.5mm, live slider):
+spawning picks from a per-frame list of smoothed field samples below
+it (always succeeds if any water exists), and a particle whose next
+step would cross onto land stops at the shore and fades out. Scale
+check done before choosing the value: `SandSurfaceRenderer` negates
+the colour-map key heights and the vertex shader uses `+dot(basePlaneEq)`
+where `elevationAtKinectCoord()` uses `-dot`, so the two negations
+cancel - a `HeightColorMap.xml` key at height h renders exactly where
+`elevationAtKinectCoord()` returns h mm. The teal key at -3mm meets the
+green key at 0mm, hence -1.5mm. This is an interim mask that follows the
+COLOUR MAP, not `stepFlow()`'s simulated depth.
+
+**Known limitation, stated to the user:** inside standing water the bed
+gradient only points to the deepest spot, so particles drift to the
+bottom of each basin; there is no current, because nothing in the model
+supplies one.
+
+**Sources reviewed for the hydrology/seed-dispersal layer:**
+- `openearth/sandbox-fm` (cloned and read): couples the Kinect sandbox
+  to Deltares' Delft3D Flexible Mesh, a real 2D shallow-water solver.
+  Sand height is written into the model bed (`zk`) each frame; the
+  model's own boundary conditions (river discharge/tide, defined in
+  model schematizations hosted on Deltares SVN, not in the repo) drive
+  the flow. Particle display (`plots_cv2.py` `update_lic`/`seed_lic`):
+  dots are seeded only where water depth >= 0.5, advected by the model's
+  u/v velocity via `cv2.remap`, and erased wherever depth < 0.1. So
+  "particles only on water" and "particles follow solver velocity" are
+  both literally what it does.
+- Dewitz et al., "AR Sound Sandbox" (INTETAIN 2017, Springer LNICST,
+  DOI 10.1007/978-3-319-73062-2_5): the abstract confirms a Lattice
+  Boltzmann-based particle simulation running through the deformable
+  landscape. Full text was NOT readable from this session (Springer,
+  EUDL, mirevi.de, opus4.kobv.de all fail DNS through the proxy), so
+  the user's "particles all flow one way through participant-made
+  channels" reading of the figures could not be checked against the
+  text. It is consistent with a standard LBM channel setup (inlet on
+  one side, outlet on the other, sand above a threshold as bounce-back
+  walls), but that is an inference, not a confirmed fact.
+- Liu (2020), per the earlier full read recorded above: a 2D Lattice
+  Boltzmann model in Processing, shown as flow vector fields, plus
+  agent-based seed dispersal driven by the hydraulic sim. No equations.
+
+**Core finding for design:** one-way flow through channels is a
+boundary-condition property (a source and a sink), not a terrain
+property. `stepFlow()` currently has only the flat sea as a source and
+no sink, so at rest it is static by construction - which is why every
+flow visualization on it so far has shown noise or nothing.
+
+**Recommendation put to the user, not yet decided:** keep the
+height-field (virtual-pipe) shallow-water approach rather than switch to
+LBM - it uses continuous sand height and real depth (LBM treats sand as
+binary walls), and it is what sandbox-fm's solver class approximates.
+Upgrade `stepFlow()` to the full Mei et al. (2007) pipe model with
+persistent per-edge flux (gives inertia and a real velocity =
+flux / depth), add an inflow source and an outflow sink, render water
+from simulated depth instead of the colour map, and advect particles
+by that velocity, masked by depth. Seeds then ride the particles
+(hydrochory) and settle where velocity drops or at the shoreline,
+handing off to the Phase 3 suitability test. Open decisions for the
+user: where the source/sink sit (fixed opposite edges vs. operator-
+placed), whether the flat sea stays, and whether visible water should
+switch from the colour map to simulated depth on this branch.
+
+Not compiled or hardware-tested (no openFrameworks SDK in this session).

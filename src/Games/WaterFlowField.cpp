@@ -4,6 +4,7 @@
 #include <cmath>
 
 bool WaterFlowField::ENABLE_FLOW_FIELD = true;
+float WaterFlowField::VISIBLE_WATER_LINE_MM = -1.5f;
 int WaterFlowField::PARTICLE_COUNT = 1500;
 int WaterFlowField::FIELD_DOWNSAMPLE = 4;
 float WaterFlowField::FIELD_BLUR_SIGMA = 1.5f;
@@ -67,11 +68,17 @@ void WaterFlowField::rebuildField(float dt)
 		cv::addWeighted(coarse, alpha, smoothElevation, 1.0 - alpha, 0.0, smoothElevation);
 	}
 
-	cv::Mat blurred;
+	cv::Mat & blurred = fieldElevation;
 	if (FIELD_BLUR_SIGMA > 0.0f)
 		cv::GaussianBlur(smoothElevation, blurred, cv::Size(0, 0), FIELD_BLUR_SIGMA);
 	else
-		blurred = smoothElevation;
+		smoothElevation.copyTo(blurred);
+
+	wetSamples.clear();
+	const float * e = blurred.ptr<float>(0); // GaussianBlur/copyTo output is continuous
+	for (int i = 0; i < blurred.rows * blurred.cols; i++)
+		if (e[i] < VISIBLE_WATER_LINE_MM)
+			wetSamples.push_back(i);
 
 	// 3x3 Sobel scaled by 1/8 = central-difference derivative per field
 	// sample; divide by ds to get mm per GRID cell, the particles' units.
@@ -80,10 +87,10 @@ void WaterFlowField::rebuildField(float dt)
 	cv::Sobel(blurred, gradY, CV_32F, 0, 1, 3, scale);
 }
 
-ofVec2f WaterFlowField::sampleGradient(float gx, float gy) const
+float WaterFlowField::sampleField(const cv::Mat & m, float gx, float gy) const
 {
 	int ds = std::max(1, FIELD_DOWNSAMPLE);
-	int fw = gradX.cols, fh = gradX.rows;
+	int fw = m.cols, fh = m.rows;
 	// Field sample i covers grid cells [i*ds, (i+1)*ds) (INTER_AREA), so
 	// its center sits at (i + 0.5) * ds.
 	float fx = ofClamp(gx / ds - 0.5f, 0.0f, (float)(fw - 1));
@@ -92,23 +99,41 @@ ofVec2f WaterFlowField::sampleGradient(float gx, float gy) const
 	int x1 = std::min(x0 + 1, fw - 1), y1 = std::min(y0 + 1, fh - 1);
 	float tx = fx - x0, ty = fy - y0;
 
-	auto bilerp = [&](const cv::Mat & m) {
-		float a = m.at<float>(y0, x0), b = m.at<float>(y0, x1);
-		float c = m.at<float>(y1, x0), d = m.at<float>(y1, x1);
-		return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
-	};
-	return ofVec2f(bilerp(gradX), bilerp(gradY));
+	float a = m.at<float>(y0, x0), b = m.at<float>(y0, x1);
+	float c = m.at<float>(y1, x0), d = m.at<float>(y1, x1);
+	return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
+}
+
+ofVec2f WaterFlowField::sampleGradient(float gx, float gy) const
+{
+	return ofVec2f(sampleField(gradX, gx, gy), sampleField(gradY, gx, gy));
+}
+
+bool WaterFlowField::isVisibleWater(float gx, float gy) const
+{
+	return sampleField(fieldElevation, gx, gy) < VISIBLE_WATER_LINE_MM;
 }
 
 void WaterFlowField::respawn(Particle & p)
 {
-	p.pos.set(ofRandom(0.0f, (float)vegetationField->getCols()),
-		ofRandom(0.0f, (float)vegetationField->getRows()));
+	p.trailHead = 0;
+	p.trailCount = 0;
+	if (wetSamples.empty()) {
+		p.active = false; // no visible water anywhere - retried every frame
+		return;
+	}
+	int ds = std::max(1, FIELD_DOWNSAMPLE);
+	int fw = fieldElevation.cols;
+	int idx = wetSamples[(size_t)ofRandom(0.0f, (float)wetSamples.size()) % wetSamples.size()];
+	p.pos.set(((idx % fw) + ofRandom(1.0f)) * ds, ((idx / fw) + ofRandom(1.0f)) * ds);
+	// Jitter near a shoreline sample can land on the dry side of the
+	// bilinear boundary; the sample's own center is wet by construction.
+	if (!isVisibleWater(p.pos.x, p.pos.y))
+		p.pos.set(((idx % fw) + 0.5f) * ds, ((idx / fw) + 0.5f) * ds);
+	p.active = true;
 	p.vel.set(0.0f, 0.0f);
 	p.age = 0.0f;
 	p.life = ofRandom(LIFE_MIN_SEC, std::max(LIFE_MIN_SEC, LIFE_MAX_SEC));
-	p.trailHead = 0;
-	p.trailCount = 0;
 }
 
 void WaterFlowField::update()
@@ -141,8 +166,10 @@ void WaterFlowField::update()
 	float decay = std::exp(-FRICTION * dt);
 	for (Particle & p : particles) {
 		p.age += dt;
-		if (p.age >= p.life || p.pos.x < 0 || p.pos.y < 0 || p.pos.x >= cols || p.pos.y >= rows)
+		if (!p.active || p.age >= p.life || p.pos.x < 0 || p.pos.y < 0 || p.pos.x >= cols || p.pos.y >= rows)
 			respawn(p);
+		if (!p.active)
+			continue;
 
 		// Downhill = negative elevation gradient (elevation is positive
 		// for mounds, negative for digs).
@@ -151,11 +178,19 @@ void WaterFlowField::update()
 		float speed = p.vel.length();
 		if (speed > MAX_SPEED)
 			p.vel *= MAX_SPEED / speed;
-		p.pos += p.vel * dt;
+		ofVec2f next = p.pos + p.vel * dt;
 
-		if (p.pos.x < 0 || p.pos.y < 0 || p.pos.x >= cols || p.pos.y >= rows) {
+		if (next.x < 0 || next.y < 0 || next.x >= cols || next.y >= rows) {
 			respawn(p); // ran off the sandbox edge
 			continue;
+		}
+		if (!isVisibleWater(next.x, next.y)) {
+			// Hit the shore: stay put on the water side and fade out, so
+			// nothing is ever drawn on land.
+			p.vel.set(0.0f, 0.0f);
+			p.life = std::min(p.life, p.age + FADE_OUT_SEC);
+		} else {
+			p.pos = next;
 		}
 
 		p.trailHead = (p.trailHead + 1) % MAX_TRAIL;
@@ -172,7 +207,7 @@ void WaterFlowField::update()
 	float r = PARTICLE_COLOR[0], gC = PARTICLE_COLOR[1], b = PARTICLE_COLOR[2];
 	for (const Particle & p : particles) {
 		int n = std::min(p.trailCount, maxLen);
-		if (n < 2)
+		if (!p.active || n < 2)
 			continue;
 		float envelope = std::min(1.0f, p.age / FADE_IN_SEC) * std::min(1.0f, (p.life - p.age) / FADE_OUT_SEC);
 		float brightness = ofLerp(STILL_BRIGHTNESS, 1.0f, ofClamp(p.vel.length() / (0.5f * MAX_SPEED), 0.0f, 1.0f));
@@ -215,10 +250,13 @@ void WaterFlowField::drawProjectorWindow()
 void WaterFlowField::drawGui()
 {
 	ImGui::Begin("Water Flow");
-	ImGui::Text("Particles 'rain' over the sand and run downhill along");
-	ImGui::Text("the smoothed terrain gradient, collecting in basins.");
+	ImGui::Text("Particles appear on visible water and run downhill along");
+	ImGui::Text("the smoothed bed gradient, fading out at the shore.");
 	ImGui::Text("Visual only - does not affect the simulation.");
 	ImGui::Checkbox("Enable flow particles", &ENABLE_FLOW_FIELD);
+	ImGui::SliderFloat("Visible water line (mm)", &VISIBLE_WATER_LINE_MM, -45.0f, 20.0f);
+	ImGui::Text("Particles only below this elevation; match it to where");
+	ImGui::Text("HeightColorMap.xml turns from blue to green (~-1.5mm).");
 	ImGui::SliderInt("Particle count", &PARTICLE_COUNT, 0, 6000);
 
 	ImGui::Separator();
@@ -250,7 +288,11 @@ void WaterFlowField::drawGui()
 		ImGui::Text("ROI-center slope: %.3f mm/cell -> terminal speed ~%.1f cells/s",
 			g.length(), terminal);
 	}
-	ImGui::Text("Live particles: %d, trail vertices: %d", (int)particles.size(), (int)trailMesh.getNumVertices());
+	int active = 0;
+	for (const Particle & p : particles)
+		active += p.active ? 1 : 0;
+	ImGui::Text("Active particles: %d / %d, wet field samples: %d, trail vertices: %d",
+		active, (int)particles.size(), (int)wetSamples.size(), (int)trailMesh.getNumVertices());
 
 	ImGui::End();
 }
