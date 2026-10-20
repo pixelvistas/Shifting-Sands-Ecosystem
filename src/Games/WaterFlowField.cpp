@@ -5,6 +5,9 @@
 
 bool WaterFlowField::ENABLE_FLOW_FIELD = true;
 float WaterFlowField::VISIBLE_WATER_LINE_MM = -1.5f;
+int WaterFlowField::MASK_MODE = WaterFlowField::MASK_SIMULATED;
+int WaterFlowField::MOTION_MODE = WaterFlowField::MOTION_SIMULATED;
+float WaterFlowField::SIM_VELOCITY_SCALE = 1.0f;
 int WaterFlowField::PARTICLE_COUNT = 1500;
 int WaterFlowField::FIELD_DOWNSAMPLE = 4;
 float WaterFlowField::FIELD_BLUR_SIGMA = 1.5f;
@@ -76,9 +79,13 @@ void WaterFlowField::rebuildField(float dt)
 
 	wetSamples.clear();
 	const float * e = blurred.ptr<float>(0); // GaussianBlur/copyTo output is continuous
-	for (int i = 0; i < blurred.rows * blurred.cols; i++)
-		if (e[i] < VISIBLE_WATER_LINE_MM)
+	for (int i = 0; i < blurred.rows * blurred.cols; i++) {
+		bool wet = MASK_MODE == MASK_SIMULATED
+			? vegetationField->isWaterCell((i % blurred.cols) * ds + ds / 2, (i / blurred.cols) * ds + ds / 2)
+			: e[i] < VISIBLE_WATER_LINE_MM;
+		if (wet)
 			wetSamples.push_back(i);
+	}
 
 	// 3x3 Sobel scaled by 1/8 = central-difference derivative per field
 	// sample; divide by ds to get mm per GRID cell, the particles' units.
@@ -111,6 +118,8 @@ ofVec2f WaterFlowField::sampleGradient(float gx, float gy) const
 
 bool WaterFlowField::isVisibleWater(float gx, float gy) const
 {
+	if (MASK_MODE == MASK_SIMULATED)
+		return vegetationField->isWaterCell((int)gx, (int)gy);
 	return sampleField(fieldElevation, gx, gy) < VISIBLE_WATER_LINE_MM;
 }
 
@@ -173,8 +182,13 @@ void WaterFlowField::update()
 
 		// Downhill = negative elevation gradient (elevation is positive
 		// for mounds, negative for digs).
-		ofVec2f g = sampleGradient(p.pos.x, p.pos.y);
-		p.vel = p.vel * decay - g * (GRAVITY * dt);
+		if (MOTION_MODE == MOTION_SIMULATED) {
+			// Carried by the hydrology model's own velocity (cells/s).
+			p.vel = vegetationField->getFlowVelocityAt((int)p.pos.x, (int)p.pos.y) * SIM_VELOCITY_SCALE;
+		} else {
+			ofVec2f g = sampleGradient(p.pos.x, p.pos.y);
+			p.vel = p.vel * decay - g * (GRAVITY * dt);
+		}
 		float speed = p.vel.length();
 		if (speed > MAX_SPEED)
 			p.vel *= MAX_SPEED / speed;
@@ -254,6 +268,13 @@ void WaterFlowField::drawGui()
 	ImGui::Text("the smoothed bed gradient, fading out at the shore.");
 	ImGui::Text("Visual only - does not affect the simulation.");
 	ImGui::Checkbox("Enable flow particles", &ENABLE_FLOW_FIELD);
+	{
+		static const char * masks[] = { "Colour map (visible blue)", "Simulated water" };
+		static const char * motions[] = { "Bed slope", "Simulated velocity" };
+		ImGui::Combo("Particles live on", &MASK_MODE, masks, 2);
+		ImGui::Combo("Particles moved by", &MOTION_MODE, motions, 2);
+	}
+	ImGui::SliderFloat("Simulated velocity scale (visual only)", &SIM_VELOCITY_SCALE, 0.0f, 10.0f);
 	ImGui::SliderFloat("Visible water line (mm)", &VISIBLE_WATER_LINE_MM, -45.0f, 20.0f);
 	ImGui::Text("Particles only below this elevation; match it to where");
 	ImGui::Text("HeightColorMap.xml turns from blue to green (~-1.5mm).");

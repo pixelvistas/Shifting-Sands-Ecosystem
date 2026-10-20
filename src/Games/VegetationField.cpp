@@ -1,5 +1,7 @@
 #include "VegetationField.h"
 #include "ofxImGui.h"
+#include <algorithm>
+#include <cmath>
 
 // Fraction of the calibrated elevation range (see setElevationRange() and
 // the header note), not millimeters. Starts equal to BASE_TEMPERATURE so
@@ -92,21 +94,25 @@ float VegetationField::SPREAD_CHANCE_MULTIPLIER = 5.0f;
 // all removed) with real per-frame flow - see the header note. Default on,
 // same A/B posture ENABLE_SPREAD/the removed ENABLE_POOLING both used.
 bool VegetationField::ENABLE_FLOW = true;
-// First-guess, untested on real hardware - see the header note on why
-// stepFlow()'s own self-limiting outflow makes this mainly a "how many
-// frames to settle" knob rather than a stability knob.
-float VegetationField::FLOW_RATE = 4.0f;
-// See the header note - same physical noise source/magnitude as
-// ACTIVITY_NOISE_FLOOR, applied to stepFlow()'s own per-neighbor diff.
-float VegetationField::FLOW_NOISE_FLOOR_MM = 3.0f;
+// Virtual-pipe model (2026-10-20) - first guesses, untested on hardware;
+// see the header note for what each controls.
+float VegetationField::FLOW_GRAVITY = 80.0f;
+float VegetationField::FLOW_DAMPING_PER_SEC = 0.3f;
+int VegetationField::FLOW_SUBSTEPS = 2;
+float VegetationField::FLOW_TERRAIN_SMOOTHING_SEC = 0.3f;
+int VegetationField::SOURCE_EDGE = VegetationField::EDGE_LEFT;
+int VegetationField::SINK_EDGE = VegetationField::EDGE_RIGHT;
+float VegetationField::SOURCE_SPAN = 0.4f;
+float VegetationField::INFLOW_MM_PER_SEC = 8.0f;
+bool VegetationField::USE_FLAT_SEA = false;
 // First-guess, untested on real hardware - see the header note.
 float VegetationField::MIN_VISIBLE_WATER_DEPTH_FRAC = 0.004f;
 // FOUND (2026-09-28), under the pooling mechanic this replaces - see the
-// header note. ~4mm-equivalent on this box's ~285mm calibrated range, a
-// bit past ACTIVITY_NOISE_FLOOR's ~3mm so it reliably beats the same
-// physical sensor noise, not just usually. Value carried over unchanged
-// from the pooling era - same noise source, same required margin.
-float VegetationField::WATER_HYSTERESIS_FRAC = 0.014f;
+// header note. ~2mm-equivalent on this box's ~285mm calibrated range:
+// with the asymmetric band (on above MIN + this, off at MIN), a cell
+// needs ~3mm of water to count, and the smoothed terrain under it keeps
+// depth jitter well below that.
+float VegetationField::WATER_HYSTERESIS_FRAC = 0.007f;
 // First-guess, untested on real hardware - carried over in rough
 // magnitude from the old MAX_POOL_RISE_FRAC default - see the header note.
 float VegetationField::MAX_WATER_DEPTH_FRAC = 0.05f;
@@ -231,141 +237,195 @@ bool VegetationField::hasEstablishedNeighbor(int gx, int gy, cv::Mat const& dens
 	return false;
 }
 
-// Hydrology second slice - real per-cell water depth/flow, replacing the
-// priority-flood pooling this project shipped first (see
-// VegetationField.h's ENABLE_FLOW header note for why). Virtual pipes
-// (Mei/Decaudin/Hu-style), CPU-side, every frame - neither source paper
-// for this phase (Liu's "Third Simulation" or the ELF-authors' own AR
-// sandbox paper, re-read in full 2026-09-28) turned out to contain an
-// implementable fluvial algorithm to port instead, see CLAUDE.md.
+// Hydrology - virtual-pipe shallow-water model (Mei, Decaudin & Hu 2007,
+// "Fast Hydraulic Erosion Simulation and Visualization on GPU"), CPU-side,
+// rewritten 2026-10-20. Replaces the earlier "move water proportional to
+// the surface difference" scheme, which had no momentum: its water could
+// only settle, so at rest nothing ever moved.
 //
-// Each cell carries a persistent water DEPTH on top of its terrain
-// elevation; water surface height is terrain+depth, and flow between
-// 4-neighbors is driven by the difference in surface height, transported
-// proportional to that difference. Two passes, not one, specifically to
-// make this unconditionally stable regardless of FLOW_RATE/dt (no
-// CFL-style timestep restriction needed):
-//
-//   Pass 1 computes each cell's own outflow-limiting SCALE factor: the
-//   sum of what a cell would send to all 4 downhill neighbors, capped so
-//   the total never exceeds that cell's own current depth (a cell can
-//   never send more water than it has - self-limiting, not a global
-//   bound on the timestep).
-//
-//   Pass 2 applies each cell's net change - outflow to lower neighbors
-//   (scaled by THIS cell's own factor from pass 1) minus inflow from
-//   higher neighbors (scaled by THEIRS) - both sides recomputing the same
-//   diff from last frame's depth/elevation, so this is a pure Jacobi
-//   update (reads only last frame's state, writes only waterDepthNext)
-//   with no read-after-write hazard the way an in-place sweep would have.
-//
-// The existing flat waterLevelFrac (TEMPERATURE - LIVING_RANGE_FRACTION,
-// already tuned from real hardware) is reused as-is as the sea's surface
-// elevation: any cell whose terrain sits below it has its depth clamped
-// up to at least `waterLevelFrac - elevFrac` every frame, after the flow
-// step - an infinite reservoir/boundary condition, not a one-time seed,
-// so the sea can't be drained by flow pulling water away from it.
-// Depression-filling falls out of this for free: water flowing into an
-// enclosed basin has nowhere else to go and settles at the basin's real
-// rim through these same per-frame dynamics, no separate graph algorithm
-// needed.
+// Each cell has a water depth d on top of its (smoothed) terrain b, and
+// four outflow "pipes" to its neighbours carrying a flux f >= 0 that
+// persists between steps. Per substep:
+//   1. Source: add INFLOW_MM_PER_SEC along SOURCE_EDGE.
+//   2. Flux: each pipe accelerates by FLOW_GRAVITY * dt * (surface
+//      difference) and decays by friction; negative flux clamps to 0.
+//      The pipe across SINK_EDGE sees an outside surface at the cell's
+//      own bed, so water drains off that edge; pipes across the other
+//      edges are walls. If a cell's total outflow would exceed its depth
+//      this substep, all four are scaled down (K factor) - a cell never
+//      sends more water than it has, so depth cannot go negative and dry
+//      cells (d = 0) send nothing.
+//   3. Depth: d += dt * (inflow from neighbours' pipes - own outflow).
+//      Velocity = net flux through the cell / average depth.
+// Pipes have unit cross-section and length (one grid cell), folded into
+// FLOW_GRAVITY. Units inside: mm and grid cells.
 void VegetationField::stepFlow(float waterLevelFrac)
 {
-	float dt = ofGetLastFrameTime();
-	// Guard against a zero/negative dt (first frame, or a paused clock)
-	// and an unreasonably large one (a hitch/debugger pause) feeding a
-	// huge single-frame move into an explicit scheme - fall back to a
-	// nominal 60fps frame time in either case.
-	if (dt <= 0.0f || dt > 0.1f)
-		dt = 1.0f / 60.0f;
+	uint64_t t0 = ofGetElapsedTimeMicros();
 
-	static const int dxN[4] = { -1, 1, 0, 0 };
-	static const int dyN[4] = { 0, 0, -1, 1 };
+	float frameDt = ofGetLastFrameTime();
+	// Guard the first frame / a debugger pause from feeding a huge step
+	// into an explicit scheme.
+	if (frameDt <= 0.0f || frameDt > 0.1f)
+		frameDt = 1.0f / 60.0f;
 
-	// See FLOW_NOISE_FLOOR_MM's header note - a surface-height difference
-	// between two neighboring cells at or below this (both directions)
-	// is sensor noise, not real terrain, and is dropped from the flow
-	// computation entirely rather than merely damped, same convention
-	// ACTIVITY_NOISE_FLOOR already uses for its own single-cell delta.
-	// Computed once per call, not per-cell - elevationMin/elevationMax
-	// only change on a calibration update, not frame to frame.
-	float noiseFloorFrac = FLOW_NOISE_FLOOR_MM / std::max(1.0f, elevationMax - elevationMin);
+	const int n = rows * cols;
+	const float rangeMM = std::max(1.0f, elevationMax - elevationMin);
 
-	// previousElevation/waterDepth are guaranteed continuous (see
-	// setKinectROI(), never reshaped afterward) - same raw-pointer
-	// justification as hasEstablishedNeighbor()/recomputePools() used,
-	// and here every cell really is touched, every frame.
+	// Smoothed terrain (mm) - see FLOW_TERRAIN_SMOOTHING_SEC.
 	const float * elev = previousElevation.ptr<float>(0);
-	const float * depth = waterDepth.ptr<float>(0);
-	float * depthNext = waterDepthNext.ptr<float>(0);
-	float * scale = flowScale.ptr<float>(0);
-
-	// Pass 1 - outflow-limiting scale factor per cell (<=1.0).
-	for (int gy = 0; gy < rows; gy++) {
-		for (int gx = 0; gx < cols; gx++) {
-			int idx = gy * cols + gx;
-			float d = depth[idx];
-			if (d <= 0.0f) {
-				// A dry cell can send NOTHING, not "nothing to limit" -
-				// see FLOW_NOISE_FLOOR_MM's header note on the bug this
-				// fixes. scale[idx] is read by neighbors in pass 2 as
-				// how much THIS cell can give them; 1.0f (the previous
-				// value here) meant "fully able to send," the opposite
-				// of what a cell with no water at all should report.
-				scale[idx] = 0.0f;
-				continue;
-			}
-			float surface = normalizedElevation(elev[idx]) + d;
-			float totalOut = 0.0f;
-			for (int k = 0; k < 4; k++) {
-				int nx = gx + dxN[k], ny = gy + dyN[k];
-				if (nx < 0 || nx >= cols || ny < 0 || ny >= rows)
-					continue;
-				int nidx = ny * cols + nx;
-				float nSurface = normalizedElevation(elev[nidx]) + depth[nidx];
-				float diff = surface - nSurface;
-				if (diff > noiseFloorFrac)
-					totalOut += diff * FLOW_RATE * dt;
-			}
-			scale[idx] = (totalOut > d) ? (d / totalOut) : 1.0f;
-		}
+	float * terr = flowTerrain.ptr<float>(0);
+	if (!flowTerrainReady) {
+		for (int i = 0; i < n; i++)
+			terr[i] = std::isfinite(elev[i]) ? elev[i] : 0.0f;
+		flowTerrainReady = true;
+	} else {
+		float a = 1.0f - std::exp(-frameDt / std::max(0.01f, FLOW_TERRAIN_SMOOTHING_SEC));
+		for (int i = 0; i < n; i++)
+			if (std::isfinite(elev[i]))
+				terr[i] += (elev[i] - terr[i]) * a;
 	}
 
-	// Pass 2 - apply net change (outflow scaled by this cell's own
-	// factor, inflow scaled by the NEIGHBOR's factor), then enforce the
-	// flat-sea boundary condition.
-	for (int gy = 0; gy < rows; gy++) {
-		for (int gx = 0; gx < cols; gx++) {
-			int idx = gy * cols + gx;
-			float d = depth[idx];
-			float elevFrac = normalizedElevation(elev[idx]);
-			float surface = elevFrac + d;
-			float net = 0.0f;
-			for (int k = 0; k < 4; k++) {
-				int nx = gx + dxN[k], ny = gy + dyN[k];
-				if (nx < 0 || nx >= cols || ny < 0 || ny >= rows)
+	// Work in mm for the duration of this call.
+	float * depth = waterDepth.ptr<float>(0);
+	for (int i = 0; i < n; i++)
+		depth[i] *= rangeMM;
+
+	float * fL = fluxL.ptr<float>(0);
+	float * fR = fluxR.ptr<float>(0);
+	float * fT = fluxT.ptr<float>(0);
+	float * fB = fluxB.ptr<float>(0);
+	float * vx = velX.ptr<float>(0);
+	float * vy = velY.ptr<float>(0);
+
+	const int substeps = std::max(1, std::min(16, FLOW_SUBSTEPS));
+	const float dt = frameDt / substeps;
+	const float damp = std::exp(-FLOW_DAMPING_PER_SEC * dt);
+	const float g = FLOW_GRAVITY * dt;
+	const bool sinkL = SINK_EDGE == EDGE_LEFT, sinkR = SINK_EDGE == EDGE_RIGHT;
+	const bool sinkT = SINK_EDGE == EDGE_TOP, sinkB = SINK_EDGE == EDGE_BOTTOM;
+	// Below this depth a cell's velocity is reported as 0 - dividing a
+	// small flux by a near-zero depth would give meaningless huge speeds.
+	const float VELOCITY_MIN_DEPTH_MM = 0.5f;
+
+	float inflowVolume = 0.0f, outflowVolume = 0.0f;
+
+	for (int s = 0; s < substeps; s++) {
+		inflowVolume += addSourceInflow(depth, dt);
+
+		// Flux pass - reads depth, writes only this cell's own pipes.
+		for (int gy = 0; gy < rows; gy++) {
+			for (int gx = 0; gx < cols; gx++) {
+				int idx = gy * cols + gx;
+				float d = depth[idx];
+				if (d <= 0.0f) {
+					fL[idx] = fR[idx] = fT[idx] = fB[idx] = 0.0f;
 					continue;
-				int nidx = ny * cols + nx;
-				float nSurface = normalizedElevation(elev[nidx]) + depth[nidx];
-				float diff = surface - nSurface;
-				if (diff > noiseFloorFrac) {
-					net -= diff * FLOW_RATE * dt * scale[idx];
-				} else if (diff < -noiseFloorFrac) {
-					net += (-diff) * FLOW_RATE * dt * scale[nidx];
+				}
+				float h = terr[idx] + d;
+				// Surface difference to each neighbour; across the sink
+				// edge the outside surface is this cell's own bed, so the
+				// difference is its depth; across a wall there is no pipe.
+				float dhL = gx > 0 ? h - (terr[idx - 1] + depth[idx - 1]) : (sinkL ? d : 0.0f);
+				float dhR = gx < cols - 1 ? h - (terr[idx + 1] + depth[idx + 1]) : (sinkR ? d : 0.0f);
+				float dhT = gy > 0 ? h - (terr[idx - cols] + depth[idx - cols]) : (sinkT ? d : 0.0f);
+				float dhB = gy < rows - 1 ? h - (terr[idx + cols] + depth[idx + cols]) : (sinkB ? d : 0.0f);
+				float l = std::max(0.0f, fL[idx] * damp + g * dhL);
+				float r = std::max(0.0f, fR[idx] * damp + g * dhR);
+				float t = std::max(0.0f, fT[idx] * damp + g * dhT);
+				float b = std::max(0.0f, fB[idx] * damp + g * dhB);
+				float total = (l + r + t + b) * dt;
+				if (total > d) {
+					float k = d / total;
+					l *= k; r *= k; t *= k; b *= k;
+				}
+				fL[idx] = l; fR[idx] = r; fT[idx] = t; fB[idx] = b;
+			}
+		}
+
+		// Depth/velocity pass - reads fluxes, writes only this cell's
+		// own depth, so updating depth in place is safe.
+		for (int gy = 0; gy < rows; gy++) {
+			for (int gx = 0; gx < cols; gx++) {
+				int idx = gy * cols + gx;
+				float inL = gx > 0 ? fR[idx - 1] : 0.0f;          // from left neighbour
+				float inR = gx < cols - 1 ? fL[idx + 1] : 0.0f;   // from right neighbour
+				float inT = gy > 0 ? fB[idx - cols] : 0.0f;       // from neighbour above
+				float inB = gy < rows - 1 ? fT[idx + cols] : 0.0f; // from neighbour below
+				float out = fL[idx] + fR[idx] + fT[idx] + fB[idx];
+				float dOld = depth[idx];
+				float dNew = std::max(0.0f, dOld + dt * (inL + inR + inT + inB - out));
+				depth[idx] = dNew;
+
+				// Flux leaving through the sink edge is water removed
+				// from the table.
+				if (sinkL && gx == 0) outflowVolume += fL[idx] * dt;
+				if (sinkR && gx == cols - 1) outflowVolume += fR[idx] * dt;
+				if (sinkT && gy == 0) outflowVolume += fT[idx] * dt;
+				if (sinkB && gy == rows - 1) outflowVolume += fB[idx] * dt;
+
+				float dAvg = 0.5f * (dOld + dNew);
+				if (dAvg > VELOCITY_MIN_DEPTH_MM) {
+					vx[idx] = 0.5f * (inL - fL[idx] + fR[idx] - inR) / dAvg;
+					vy[idx] = 0.5f * (inT - fT[idx] + fB[idx] - inB) / dAvg;
+				} else {
+					vx[idx] = vy[idx] = 0.0f;
 				}
 			}
-			float newDepth = std::max(0.0f, d + net);
-			if (elevFrac < waterLevelFrac)
-				newDepth = std::max(newDepth, waterLevelFrac - elevFrac);
-			depthNext[idx] = newDepth;
 		}
 	}
 
-	std::swap(waterDepth, waterDepthNext);
+	// Optional legacy flat sea - see USE_FLAT_SEA.
+	if (USE_FLAT_SEA) {
+		for (int i = 0; i < n; i++) {
+			float elevFrac = normalizedElevation(terr[i]);
+			if (elevFrac < waterLevelFrac)
+				depth[i] = std::max(depth[i], (waterLevelFrac - elevFrac) * rangeMM);
+		}
+	}
+
+	// Diagnostics, then back to fraction-of-range storage.
+	float volume = 0.0f, maxDepth = 0.0f;
+	int wet = 0;
+	float wetMM = MIN_VISIBLE_WATER_DEPTH_FRAC * rangeMM;
+	for (int i = 0; i < n; i++) {
+		float d = depth[i];
+		volume += d;
+		if (d > maxDepth) maxDepth = d;
+		if (d > wetMM) wet++;
+		depth[i] = d / rangeMM;
+	}
+	lastWaterVolume = volume;
+	lastMaxDepthMM = maxDepth;
+	lastWetCells = wet;
+	lastInflowRate = inflowVolume / frameDt;
+	lastOutflowRate = outflowVolume / frameDt;
+	lastFlowMs = (ofGetElapsedTimeMicros() - t0) / 1000.0f;
 }
 
-// See the header note - visualization-only queries, read-only against
-// stepFlow()'s own state.
+float VegetationField::addSourceInflow(float * depthMM, float dt)
+{
+	if (INFLOW_MM_PER_SEC <= 0.0f || SOURCE_SPAN <= 0.0f)
+		return 0.0f;
+	bool vertical = SOURCE_EDGE == EDGE_LEFT || SOURCE_EDGE == EDGE_RIGHT;
+	int length = vertical ? rows : cols;
+	int span = std::max(1, (int)(length * std::min(1.0f, SOURCE_SPAN)));
+	int first = (length - span) / 2;
+	float add = INFLOW_MM_PER_SEC * dt;
+	for (int i = first; i < first + span; i++) {
+		int gx, gy;
+		switch (SOURCE_EDGE) {
+		case EDGE_LEFT:   gx = 0;        gy = i;        break;
+		case EDGE_RIGHT:  gx = cols - 1; gy = i;        break;
+		case EDGE_TOP:    gx = i;        gy = 0;        break;
+		default:          gx = i;        gy = rows - 1; break;
+		}
+		depthMM[gy * cols + gx] += add;
+	}
+	return add * span;
+}
+
+// See the header note - read-only queries of stepFlow()'s state.
 float VegetationField::getWaterDepthAt(int gx, int gy) const
 {
 	if (gx < 0 || gx >= cols || gy < 0 || gy >= rows)
@@ -377,41 +437,28 @@ ofVec2f VegetationField::getFlowVelocityAt(int gx, int gy) const
 {
 	if (gx < 0 || gx >= cols || gy < 0 || gy >= rows)
 		return ofVec2f(0.0f, 0.0f);
+	return ofVec2f(velX.at<float>(gy, gx), velY.at<float>(gy, gx));
+}
 
-	static const int dxN[4] = { -1, 1, 0, 0 };
-	static const int dyN[4] = { 0, 0, -1, 1 };
+bool VegetationField::isWaterCell(int gx, int gy) const
+{
+	if (!gridReady || gx < 0 || gx >= cols || gy < 0 || gy >= rows)
+		return false;
+	return waterState.at<float>(gy, gx) > 0.5f;
+}
 
-	// A dry cell has no water to have a velocity at all, regardless of
-	// how steep the terrain slope under it is - same "scale[idx]=0 for
-	// d<=0" fix stepFlow() itself needed (see FLOW_NOISE_FLOOR_MM's
-	// header note): without this, pure elevation differences between
-	// two bone-dry cells read as real flow here too, which is what kept
-	// showing arrows on dry slopes even after the noise floor alone
-	// filtered out sensor-jitter-level differences (2026-10-20).
-	float d = waterDepth.at<float>(gy, gx);
-	if (d <= 0.0f)
-		return ofVec2f(0.0f, 0.0f);
-
-	// Same noise floor stepFlow() itself applies - see FLOW_NOISE_FLOOR_MM's
-	// header note. Without this, a query at a genuinely dry, undisturbed
-	// cell would still report tiny nonzero "flow" from pure sensor jitter
-	// alone, which is exactly what a vector-field visualization of this
-	// query made visible on real hardware (2026-10-19).
-	float noiseFloorFrac = FLOW_NOISE_FLOOR_MM / std::max(1.0f, elevationMax - elevationMin);
-
-	float surface = normalizedElevation(previousElevation.at<float>(gy, gx)) + d;
-
-	ofVec2f v(0.0f, 0.0f);
-	for (int k = 0; k < 4; k++) {
-		int nx = gx + dxN[k], ny = gy + dyN[k];
-		if (nx < 0 || nx >= cols || ny < 0 || ny >= rows)
-			continue;
-		float nSurface = normalizedElevation(previousElevation.at<float>(ny, nx)) + waterDepth.at<float>(ny, nx);
-		float diff = surface - nSurface;
-		if (diff > noiseFloorFrac)
-			v += ofVec2f((float)dxN[k], (float)dyN[k]) * (diff * FLOW_RATE);
-	}
-	return v;
+void VegetationField::resetWater()
+{
+	if (!gridReady)
+		return;
+	waterDepth.setTo(0.0f);
+	fluxL.setTo(0.0f);
+	fluxR.setTo(0.0f);
+	fluxT.setTo(0.0f);
+	fluxB.setTo(0.0f);
+	velX.setTo(0.0f);
+	velY.setTo(0.0f);
+	waterState.setTo(0.0f);
 }
 
 void VegetationField::setKinectROI(ofRectangle & KROI)
@@ -431,15 +478,17 @@ void VegetationField::setKinectROI(ofRectangle & KROI)
 	fruitDensity = cv::Mat::zeros(rows, cols, CV_32F);
 	nutDensity = cv::Mat::zeros(rows, cols, CV_32F);
 	previousElevation = cv::Mat::zeros(rows, cols, CV_32F);
-	// Starts at 0 everywhere - stepFlow()'s own flat-sea boundary
-	// condition tops up any below-sea-level cell to the right depth on
-	// its very first call (see that function), so no special non-zero
-	// default is needed the way pooling's poolLevel required.
+	// A rebuilt grid starts dry, with no flux; water arrives from the
+	// source (see stepFlow()).
 	waterDepth = cv::Mat::zeros(rows, cols, CV_32F);
-	waterDepthNext = cv::Mat::zeros(rows, cols, CV_32F);
-	// Scratch space for stepFlow()'s outflow-scale pass - content is
-	// fully overwritten every call, only the allocation itself matters.
-	flowScale = cv::Mat::zeros(rows, cols, CV_32F);
+	fluxL = cv::Mat::zeros(rows, cols, CV_32F);
+	fluxR = cv::Mat::zeros(rows, cols, CV_32F);
+	fluxT = cv::Mat::zeros(rows, cols, CV_32F);
+	fluxB = cv::Mat::zeros(rows, cols, CV_32F);
+	velX = cv::Mat::zeros(rows, cols, CV_32F);
+	velY = cv::Mat::zeros(rows, cols, CV_32F);
+	flowTerrain = cv::Mat::zeros(rows, cols, CV_32F);
+	flowTerrainReady = false;
 	// Starts at "not water" everywhere - a sane default matching how
 	// nothing is classified before update() has run at all; the very
 	// first frame's hysteresis check has no meaningful prior state to
@@ -544,7 +593,7 @@ void VegetationField::update()
 			float & waterFlag = waterState.at<float>(gy, gx);
 			bool wasWater = waterFlag > 0.5f;
 			bool isWater = wasWater
-				? (depth > MIN_VISIBLE_WATER_DEPTH_FRAC - WATER_HYSTERESIS_FRAC)
+				? (depth > MIN_VISIBLE_WATER_DEPTH_FRAC)
 				: (depth > MIN_VISIBLE_WATER_DEPTH_FRAC + WATER_HYSTERESIS_FRAC);
 			waterFlag = isWater ? 1.0f : 0.0f;
 			bool isSnow = !isWater && elevFrac > snowLevelFrac;
@@ -964,29 +1013,37 @@ void VegetationField::drawGui()
 	ImGui::SliderFloat("Spread chance multiplier", &SPREAD_CHANCE_MULTIPLIER, 1.0f, 20.0f);
 	ImGui::Text("mm per grid cell (measured): %.2f -> spread radius is ~%d cells", mmPerCell, std::max(1, (int)(SPREAD_RADIUS_MM / mmPerCell)));
 	ImGui::Separator();
-	ImGui::Text("Hydrology, second slice: real per-cell water depth and flow -");
-	ImGui::Text("REPLACES the earlier depression-filling pooling mechanic entirely");
-	ImGui::Text("(see CLAUDE.md for why, and for the physical-legibility/SND framing");
-	ImGui::Text("that made this the priority). Water now has a real depth per cell");
-	ImGui::Text("and flows downhill toward lower neighbors every frame, driven by");
-	ImGui::Text("surface-height differences - pooling into an enclosed basin is an");
-	ImGui::Text("emergent result of that flow, not a separate algorithm.");
+	ImGui::Text("Hydrology: virtual-pipe water flow (Mei et al. 2007). Water enters");
+	ImGui::Text("along the source edge, flows downhill with momentum, pools in");
+	ImGui::Text("hollows, and drains off the sink edge.");
 	ImGui::Checkbox("Enable flow (uncheck to A/B test performance)", &ENABLE_FLOW);
-	ImGui::Text("If frame rate changes with this off, flow is a real per-frame cost -");
-	ImGui::Text("if not, something else is. No rebuild needed to check.");
-	ImGui::SliderFloat("Flow rate", &FLOW_RATE, 0.0f, 20.0f);
-	ImGui::Text("Self-limiting (a cell can never send more than its own depth in one");
-	ImGui::Text("frame, every frame, regardless of this value) - raising it mainly");
-	ImGui::Text("means water settles in fewer frames, not instability in the usual");
-	ImGui::Text("exploding-oscillation sense. Still untested on real hardware -");
-	ImGui::Text("lower it first if flow ever looks jittery/wrong in practice.");
-	ImGui::SliderFloat("Flow noise floor (mm)", &FLOW_NOISE_FLOOR_MM, 0.0f, 10.0f);
-	ImGui::Text("Found 2026-10-19: with no floor, pure Kinect sensor jitter drove");
-	ImGui::Text("real (if tiny) nonzero flow on every cell every frame, even on dry,");
-	ImGui::Text("undisturbed land - confirmed via a vector-field view of flow that");
-	ImGui::Text("showed arrows everywhere with no spatial pattern. Same noise source/");
-	ImGui::Text("magnitude as Activity noise floor above, applied to the difference");
-	ImGui::Text("between two neighboring cells instead of one cell's own delta.");
+	{
+		static const char * edges[] = { "Left", "Right", "Top", "Bottom" };
+		ImGui::Combo("Source edge", &SOURCE_EDGE, edges, 4);
+		ImGui::Combo("Sink edge", &SINK_EDGE, edges, 4);
+	}
+	ImGui::SliderFloat("Inflow (mm/s per source cell)", &INFLOW_MM_PER_SEC, 0.0f, 50.0f);
+	ImGui::SliderFloat("Source span (fraction of edge)", &SOURCE_SPAN, 0.0f, 1.0f);
+	ImGui::SliderFloat("Flow gravity", &FLOW_GRAVITY, 1.0f, 400.0f);
+	ImGui::SliderFloat("Flow friction (1/s)", &FLOW_DAMPING_PER_SEC, 0.0f, 10.0f);
+	ImGui::SliderInt("Flow substeps per frame", &FLOW_SUBSTEPS, 1, 8);
+	ImGui::Text("If water shimmers or checkerboards, raise substeps or friction,");
+	ImGui::Text("or lower gravity.");
+	ImGui::SliderFloat("Terrain smoothing (s)", &FLOW_TERRAIN_SMOOTHING_SEC, 0.0f, 2.0f);
+	ImGui::Checkbox("Also keep flat ELF sea (legacy)", &USE_FLAT_SEA);
+	if (ImGui::Button("Reset water (dry the table)"))
+		resetWater();
+	ImGui::Text("Flow cost: %.2f ms/frame, wet cells: %d", lastFlowMs, lastWetCells);
+	ImGui::Text("Water volume: %.0f, in: %.0f/s, out: %.0f/s (mm x cells^2)",
+		lastWaterVolume, lastInflowRate, lastOutflowRate);
+	ImGui::Text("Max depth: %.1f mm", lastMaxDepthMM);
+	if (gridReady) {
+		int cx = cols / 2, cy = rows / 2;
+		ofVec2f v = getFlowVelocityAt(cx, cy);
+		ImGui::Text("ROI centre: depth %.1f mm, velocity (%.1f, %.1f) cells/s",
+			getWaterDepthAt(cx, cy) * std::max(1.0f, elevationMax - elevationMin), v.x, v.y);
+	}
+	ImGui::Text("Steady state: 'in' and 'out' roughly equal, volume roughly flat.");
 	ImGui::SliderFloat("Min visible water depth (fraction)", &MIN_VISIBLE_WATER_DEPTH_FRAC, 0.0f, 0.02f);
 	ImGui::Text("Below this depth a cell doesn't count as 'visibly water' at all -");
 	ImGui::Text("without it, a thin film mid-drain could flicker in and out at a");

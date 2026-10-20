@@ -2973,3 +2973,57 @@ placed), whether the flat sea stays, and whether visible water should
 switch from the colour map to simulated depth on this branch.
 
 Not compiled or hardware-tested (no openFrameworks SDK in this session).
+
+## Hydrology step 1: virtual-pipe model with source and sink (2026-10-20)
+
+User deferred the three design questions to Claude's recommendation and
+approved step 1. Decisions taken: fixed source on one edge and open sink
+on the opposite edge (left -> right by default, both selectable), flat
+ELF sea removed as a water source (kept as an off-by-default legacy
+toggle, `USE_FLAT_SEA`), visible water to come from simulated depth in
+step 2.
+
+**`stepFlow()` rewritten as the full Mei, Decaudin & Hu (2007) virtual-
+pipe model.** Persistent per-edge outflow fluxes (`fluxL/R/T/B`) give the
+water momentum; the old scheme moved water proportional to the surface
+difference and could only settle, so at rest nothing moved. Per substep:
+source inflow, flux update (gravity x surface difference, exponential
+friction, clamp >= 0, K-factor scaling so a cell never sends more than
+it holds - dry cells send nothing), then depth and velocity
+(net flux / mean depth, zero below 0.5mm). The sink edge's outward pipe
+sees an outside surface at the cell's own bed, so water drains off it;
+the other edges are walls. Internals are in mm and grid cells (storage
+stays fraction-of-range for the existing consumers), so flow speed no
+longer depends on the calibrated range or the recurring ±300 bounds bug.
+Terrain under the water is exponentially smoothed
+(`FLOW_TERRAIN_SMOOTHING_SEC`=0.3) instead of the old `FLOW_NOISE_FLOOR_MM`
+deadband, which is removed along with `FLOW_RATE`, `waterDepthNext`,
+`flowScale`. New tunables: `FLOW_GRAVITY`=80, `FLOW_DAMPING_PER_SEC`=0.3,
+`FLOW_SUBSTEPS`=2, `SOURCE_EDGE`/`SINK_EDGE`, `SOURCE_SPAN`=0.4,
+`INFLOW_MM_PER_SEC`=8. New: `getFlowVelocityAt()` now returns the solver's
+real velocity, `isWaterCell()`, `resetWater()`, GUI readouts (cost ms,
+wet cells, volume, in/out rates, max depth, ROI-centre depth/velocity).
+
+**Hysteresis bug fixed:** the band was MIN -/+ HYST with MIN 0.004 <
+HYST 0.014, so the off-threshold was negative - a cell, once water,
+could never dry. Hidden while the flat sea never drained. Now on above
+MIN + HYST, off at MIN; HYST default lowered to 0.007 (~2mm).
+
+**Pre-hardware check (NumPy mirror of the same scheme, scratchpad only,
+not committed):** 260x150 grid, noisy terrain with a carved channel
+dropping ~40mm across the table. Stable at 30 and 40 fps (no NaN, no
+negative depth), volume conserved exactly, all wet-cell x-velocities
+positive (one-way). With friction 1.5/s flow crawled (~1.5 cells/s mean,
+terminal speed ~ G x slope / friction / depth); at 0.3/s it reaches true
+steady state (volume flat ~10k, outflow -> inflow, water confined to the
+channel, ~8 cells/s mean) - hence the 0.3 default. Velocity is bounded
+by ~1/substep-dt at thin cells near the sink (K limiter), cosmetic only.
+
+**Verification aid:** `WaterFlowField` gained "Particles live on"
+(colour map / simulated water) and "Particles moved by" (bed slope /
+simulated velocity), both defaulting to simulated, so the hydrology is
+visible as particles before step 2 draws simulated water. Not compiled
+or hardware-tested (no openFrameworks SDK in this session).
+
+Next: step 2 (draw water from simulated depth over the colour map),
+step 3 (polish particle advection), step 4 (hydrochorous seeds).

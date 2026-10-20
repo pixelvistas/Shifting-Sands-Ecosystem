@@ -77,6 +77,19 @@ public:
 	// Interim mask: it follows the visible colour map, not stepFlow()'s
 	// simulated depth - see CLAUDE.md's 2026-10-20 hydrology entry.
 	static float VISIBLE_WATER_LINE_MM;
+	// Where particles live and what moves them (2026-10-20). SIMULATED
+	// uses VegetationField's virtual-pipe water: particles only on cells
+	// it classifies as water, carried by its computed velocity - so the
+	// particles show the hydrology model itself. COLOUR_MAP / BED_SLOPE
+	// are the earlier behaviour (visible blue below VISIBLE_WATER_LINE_MM,
+	// rolling down the smoothed bed gradient).
+	enum { MASK_COLOUR_MAP = 0, MASK_SIMULATED = 1 };
+	enum { MOTION_BED_SLOPE = 0, MOTION_SIMULATED = 1 };
+	static int MASK_MODE;
+	static int MOTION_MODE;
+	// Multiplier on the simulated velocity (visual only), for when real
+	// flow is too slow or fast to read.
+	static float SIM_VELOCITY_SCALE;
 	static int PARTICLE_COUNT;
 	// Field resolution: grid cells per field sample. Larger = smoother,
 	// broader flow; smaller = follows finer sculpted detail.

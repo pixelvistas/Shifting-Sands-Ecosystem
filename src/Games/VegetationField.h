@@ -306,20 +306,19 @@ public:
 	// getWaterDepthAt() is just waterDepth's own stored value (0 outside
 	// the grid) - same units MIN_VISIBLE_WATER_DEPTH_FRAC compares against.
 	//
-	// getFlowVelocityAt() derives a 2D grid-cells/second vector from the
-	// exact same surface-height (terrain+depth) difference to each of a
-	// cell's 4 neighbors that stepFlow()'s own pass 1 computes (see the
-	// .cpp) - summed into one vector instead of 4 separate scalars, and
-	// deliberately NOT scaled by stepFlow()'s own per-cell outflow-limiting
-	// factor (that factor exists to conserve depth correctly when actually
-	// moving water; a visualization reading direction/relative magnitude
-	// has no such conservation requirement, and skipping it means this
-	// query can't affect, and isn't affected by, stepFlow()'s own pass
-	// ordering). This is real simulated transport, not a separately-
-	// invented approximation - the same physics, just queried instead of
-	// applied.
+	// getFlowVelocityAt() is the water velocity stepFlow() computed for
+	// that cell on its last substep (grid cells/second): net pipe flux
+	// through the cell divided by its depth, the standard virtual-pipe
+	// velocity (Mei et al. 2007). Zero for a dry or near-dry cell.
+	//
+	// isWaterCell() is the same hysteresis-stabilized classification
+	// isWaterAt() returns, indexed by grid cell instead of Kinect pixel.
 	float getWaterDepthAt(int gx, int gy) const;
 	ofVec2f getFlowVelocityAt(int gx, int gy) const;
+	bool isWaterCell(int gx, int gy) const;
+	// Empties all simulated water (depth, pipe fluxes, velocity, water
+	// classification) - for restarting a flow test from a dry table.
+	void resetWater();
 	// This frame's raw per-cell elevation (mm, rows x cols, CV_32F) - the
 	// same samples update() already took, so WaterFlowField can derive a
 	// terrain gradient without a second pass of Kinect reads. Read-only.
@@ -443,65 +442,41 @@ public:
 	// if this turns out to be a real per-frame cost or numerically
 	// unstable on real hardware, neither confirmed yet.
 	static bool ENABLE_FLOW;
-	// First-guess, untested on real hardware - scales how fast water
-	// surface height differences (terrain + depth) between 4-neighbors
-	// drive transport per second. stepFlow()'s own per-cell outflow is
-	// self-limiting (scaled down so a cell can never send more than its
-	// own current depth, every frame, regardless of this value) rather
-	// than relying on a strict CFL-style timestep bound, so raising this
-	// mainly trades "settles in fewer frames" for "bigger single-frame
-	// moves," not instability in the classic exploding-oscillation sense
-	// - but still untested on hardware, so lower this first if flow ever
-	// looks unstable/jittery in practice.
-	static float FLOW_RATE;
-	// Physical sensor noise floor (mm) for stepFlow()'s own per-neighbor
-	// surface-height DIFFERENCE, converted to a fraction of the current
-	// calibrated range inside stepFlow()/getFlowVelocityAt() each call -
-	// mirrors ACTIVITY_NOISE_FLOOR's already-established precedent and
-	// physical justification (the same ~1-2mm Kinect depth noise present
-	// on every cell every frame), just applied here to a DIFFERENCE
-	// between two neighboring cells' noisy readings rather than one
-	// cell's frame-to-frame delta. Found necessary (2026-10-19) once a
-	// vector-field visualization of getFlowVelocityAt() made the gap
-	// visible: with no floor at all, stepFlow() computed real, if tiny,
-	// nonzero flow from pure sensor jitter on literally every cell every
-	// frame, since nothing before this ever filtered it (the activity/
-	// temperature computation's own noise floor is a completely separate
-	// mechanism that stepFlow() never consulted) - confirmed directly by
-	// a real-hardware reading at a dry cell the panel's own classifier
-	// called "not water" (elevation well above the water line) still
-	// showing a small nonzero waterDepth/velocity sitting right at the
-	// visibility threshold, the signature of accumulated noise rather
-	// than real standing water. Differences at or below this floor are
-	// dropped from the flow computation entirely (not merely damped) -
-	// same "entirely, not damped" convention ACTIVITY_NOISE_FLOOR uses.
-	// First-guess default matches ACTIVITY_NOISE_FLOOR's own value (same
-	// physical noise source), kept as a SEPARATE tunable since it gates a
-	// conceptually different comparison (a pairwise difference, not a
-	// single cell's own delta) even though today's starting value is the
-	// same number.
+	// Virtual-pipe parameters (2026-10-20 rewrite, see stepFlow()). All
+	// internal hydrology quantities are in millimetres and grid cells, so
+	// flow speed no longer depends on the calibrated elevation range.
 	//
-	// FOUND same thread, one day later (2026-10-20): this noise floor
-	// alone did NOT fully fix the "arrows on dry land" symptom - a
-	// SEPARATE, more fundamental bug in stepFlow() let two completely
-	// DRY (zero-depth) cells manufacture real water transport purely
-	// from a genuine terrain SLOPE between them (not noise at all),
-	// since a dry cell's pass-1 "scale" factor was set to 1.0
-	// ("nothing to limit") rather than 0.0 ("nothing to send") - and
-	// that scale is what a NEIGHBOR reads in pass 2 to decide how much
-	// it can pull FROM this cell. A scale of 1.0 told every neighbor
-	// "this cell can fully supply whatever the elevation math implies,"
-	// regardless of whether it actually had any water at all. Fixed
-	// directly in stepFlow() (scale[idx]=0.0f for d<=0) and in
-	// getFlowVelocityAt() (returns zero outright for a cell with
-	// waterDepth<=0, before even looking at neighbor elevations) -
-	// see both functions' own comments in the .cpp. This is the
-	// explanation for why the FIRST noise-floor fix visibly reduced
-	// but didn't eliminate stray arrows: it correctly filtered small,
-	// jitter-level differences, but any REAL slope on dry land (which
-	// is most of a sculpted sand surface) still exceeded that floor
-	// and triggered this separate bug.
-	static float FLOW_NOISE_FLOOR_MM;
+	// FLOW_GRAVITY: pipe acceleration per mm of surface-height difference
+	// (cells^2/s^2 per mm). Shallow-water wave speed is roughly
+	// sqrt(FLOW_GRAVITY * depthMM) cells/s: 80 gives ~20 cells/s at 5mm.
+	static float FLOW_GRAVITY;
+	// Exponential decay of each pipe's flux (1/s) - friction. Higher =
+	// more sluggish, less sloshing; 0 = frictionless.
+	static float FLOW_DAMPING_PER_SEC;
+	// Simulation substeps per frame. The explicit scheme needs
+	// (wave speed * substep dt) well below 1 cell; more substeps = deeper
+	// water stays stable, at proportionally more CPU.
+	static int FLOW_SUBSTEPS;
+	// Time constant (s) of the exponential smoothing applied to the
+	// terrain the water flows over. Kinect noise on raw elevation would
+	// otherwise jiggle the water surface every frame; a real sculpting
+	// change still arrives within about this long.
+	static float FLOW_TERRAIN_SMOOTHING_SEC;
+	// Source and sink. Water is added along SOURCE_EDGE (over the centred
+	// SOURCE_SPAN fraction of that edge's length, INFLOW_MM_PER_SEC per
+	// source cell) and leaves freely through SINK_EDGE, which behaves as
+	// an open boundary; the other edges are walls. Defaults: in on the
+	// left, out on the right.
+	enum { EDGE_LEFT = 0, EDGE_RIGHT = 1, EDGE_TOP = 2, EDGE_BOTTOM = 3 };
+	static int SOURCE_EDGE;
+	static int SINK_EDGE;
+	static float SOURCE_SPAN;
+	static float INFLOW_MM_PER_SEC;
+	// Old behaviour: also keep every cell below the flat ELF water line
+	// topped up to that line every frame (an infinite, motionless sea).
+	// Off by default - it creates water from nothing and holds it still,
+	// which is what made every earlier flow visualization show nothing.
+	static bool USE_FLAT_SEA;
 	// Depth (fraction of the calibrated elevation range) below which a
 	// cell isn't considered "visibly water" at all - plays the same role
 	// WATER_HYSTERESIS_FRAC's margin sits around as the old flat/pool
@@ -522,11 +497,13 @@ public:
 	// Schmitt-trigger hysteresis - a cell must cross clearly PAST
 	// MIN_VISIBLE_WATER_DEPTH_FRAC by this margin to change state at all,
 	// not just brush it, and otherwise keeps whatever state it already
-	// had. Fraction of the calibrated range; default ~4mm-equivalent (a
-	// bit more than ACTIVITY_NOISE_FLOOR's ~3mm, since this needs to
-	// reliably beat the noise, not just usually) - value carried over
-	// unchanged from the pooling-era tuning, since the underlying noise
-	// source and required margin are the same.
+	// had. Fraction of the calibrated range.
+	//
+	// FIXED 2026-10-20: the band used to be MIN -/+ HYSTERESIS, and since
+	// MIN (0.004) < HYSTERESIS (0.014) the switch-off threshold was
+	// negative - a cell, once water, could never become dry again. That
+	// was invisible while the flat sea never drained. Now a cell switches
+	// on above MIN + HYSTERESIS and off at or below MIN.
 	static float WATER_HYSTERESIS_FRAC;
 	// Depth (fraction of the calibrated elevation range) a cell needs to
 	// reach for the alpha-channel encoding (see update()'s texture
@@ -642,6 +619,9 @@ private:
 	// time this runs - see update()) rather than re-sampling the Kinect a
 	// second time. See the .cpp for the algorithm.
 	void stepFlow(float waterLevelFrac);
+	// Adds one substep's inflow along SOURCE_EDGE (depth in mm); returns
+	// the volume added (mm x cells^2).
+	float addSourceInflow(float * depthMM, float dt);
 
 	std::shared_ptr<KinectProjector> kinectProjector;
 	ofRectangle kinectROI;
@@ -668,18 +648,23 @@ private:
 	bool activityBaselineReady;
 	float activityLevel;
 
-	// Hydrology second slice - persistent per-cell water depth (fraction
-	// of the calibrated range, same units as waterLevelFrac), updated
-	// every frame by stepFlow() - see ENABLE_FLOW/FLOW_RATE. Ping-pong
-	// pair: stepFlow() reads waterDepth (last frame's settled state) and
-	// writes waterDepthNext, then the two are swapped - a Jacobi update,
-	// not in-place, so a cell's new depth is computed from ALL four
-	// neighbors' last-frame values rather than a directionally-biased mix
-	// of already-updated and not-yet-updated ones. flowScale is scratch
-	// space for stepFlow()'s outflow-limiting pass (see the .cpp) - a
-	// persistent member purely to avoid a fresh heap allocation every
-	// frame, not meaningful state in its own right.
-	cv::Mat waterDepth, waterDepthNext, flowScale;
+	// Hydrology - persistent per-cell water depth, stored as a fraction of
+	// the calibrated range (the units MIN_VISIBLE_WATER_DEPTH_FRAC and the
+	// texture encoding use); stepFlow() converts to mm internally.
+	// fluxL/R/T/B are the virtual-pipe outflow fluxes from each cell to
+	// its left/right/top/bottom neighbour (mm x cells^2 / s, >= 0) and
+	// persist between frames - that persistence is the water's momentum.
+	// velX/velY are the resulting velocities (cells/s). flowTerrain is
+	// the time-smoothed terrain (mm) the water flows over.
+	cv::Mat waterDepth, fluxL, fluxR, fluxT, fluxB, velX, velY, flowTerrain;
+	bool flowTerrainReady = false;
+	// Diagnostics from the last stepFlow() call, for the GUI.
+	float lastFlowMs = 0.0f;
+	float lastWaterVolume = 0.0f;   // mm x cells^2
+	float lastMaxDepthMM = 0.0f;
+	float lastInflowRate = 0.0f;    // mm x cells^2 / s
+	float lastOutflowRate = 0.0f;   // mm x cells^2 / s
+	int lastWetCells = 0;
 
 	// Persistent per-cell "is this currently classified as water" state
 	// (0.0/1.0, CV_32F) - see WATER_HYSTERESIS_FRAC's header note. Not
