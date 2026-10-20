@@ -2802,6 +2802,69 @@ Not yet re-tested on real hardware - same constraint as the rest of
 today's work, but this fix is traced directly to two real numbers from
 an actual running build, not a code-review guess alone.
 
+## FOUND AND FIXED the real, complete root cause (2026-10-20) - the noise floor alone was not enough
+
+User rebuilt with the noise-floor fix and reported directly: "THIS IS
+NOT WORKING," with a screenshot still showing a handful of stray arrows
+scattered on clearly dry, high-elevation terrain (including right on
+the orange peak), while the real water body's shoreline showed nothing
+at all - far fewer arrows than before the noise floor, but still
+visibly wrong, not fixed.
+
+**Traced precisely by re-reading `stepFlow()`'s own pass 1/pass 2
+interaction line by line, not guessed:** a completely dry cell
+(`depth<=0`) in pass 1 was given `scale[idx] = 1.0f` - intended to mean
+"nothing to limit, since this cell has no outflow of its own to cap,"
+but `scale[idx]` is ALSO what pass 2 reads as `scale[nidx]` when a
+NEIGHBOR computes how much it can pull FROM this cell. A scale of
+`1.0f` told every neighbor "this cell can fully supply whatever the
+raw elevation-difference math implies," regardless of whether it
+actually held any water - so a real, ordinary terrain SLOPE between
+two completely dry cells (not sensor noise, genuine elevation
+variation, present almost everywhere a sandbox gets sculpted) was
+enough on its own to manufacture real `waterDepth` out of nothing,
+moving phantom water from high dry ground to low dry ground with zero
+actual water ever involved. `getFlowVelocityAt()` (added for the
+particle version, reused unchanged for the vector field) had the exact
+same structural gap: it computed outflow direction from the queried
+cell's own elevation difference to its neighbors without ever checking
+whether the queried cell held any real depth at all.
+
+**This also fully explains why yesterday's noise floor visibly helped
+but didn't finish the job**: `FLOW_NOISE_FLOOR_MM` correctly filters
+small, jitter-level differences, so the dense, uniform, covers-
+everything lattice from the first screenshot collapsed to just a few
+marks. But this second bug doesn't care about magnitude being small -
+it fires on any GENUINE slope exceeding the floor, dry or not, which
+is exactly why the remaining stray arrows clustered near real
+elevation features (the orange peak) rather than being randomly
+scattered like pure sensor noise would be.
+
+**Fix, in both places this logic independently exists:**
+- `stepFlow()`'s pass 1: dry cells now set `scale[idx] = 0.0f`, not
+  `1.0f` - "this cell can send nothing," the literal truth, not
+  "nothing needs limiting." Fixes both directions at once: a dry
+  cell's own outflow (pass 2's `scale[idx]` read) and a dry cell's
+  ability to be drained BY a neighbor (pass 2's `scale[nidx]` read)
+  both now correctly zero out.
+- `getFlowVelocityAt()`: now returns `(0,0)` immediately if the
+  queried cell's own `waterDepth<=0`, before computing anything from
+  neighbor elevations at all - a dry cell has no water to have a
+  velocity, full stop, regardless of how steep the ground under it is.
+
+**Both fixes are purely about gating on REAL EXISTING DEPTH, not a
+second noise threshold** - `FLOW_NOISE_FLOOR_MM` and this fix address
+two genuinely different failure modes (small-magnitude sensor jitter
+vs. large-magnitude but illegitimate dry-to-dry transport) and both
+are needed; neither alone would have fully closed the gap. The flat-
+sea boundary condition is unaffected either way - it still applies its
+own unconditional depth clamp after the flow step, regardless of this
+cell's pre-flow `scale`.
+
+Not yet re-tested on real hardware - same constraint as the rest of
+this multi-day thread, but this fix is traced to an exact, confirmed
+logic error (reading a wrong-purpose "nothing to limit" value as "able
+to fully supply"), not another guess from a screenshot alone.
 ## WaterFlowField rebuilt as a terrain-gradient particle-trail system (2026-10-20)
 
 User's hardware screenshot of the arrow version: a handful of white
