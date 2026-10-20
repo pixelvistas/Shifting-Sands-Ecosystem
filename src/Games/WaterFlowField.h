@@ -117,13 +117,11 @@ public:
 	static float STILL_BRIGHTNESS;
 	// Speed (cells/s) at which a particle reaches full brightness.
 	static float FULL_BRIGHTNESS_SPEED;
-	// Side length (px) of the square drawn at each particle's head, so a
-	// particle in still water (zero-length trail) is still visible.
-	static float HEAD_SIZE;
+
 	static float PARTICLE_COLOR[3];
 
 private:
-	static const int MAX_TRAIL = 48;
+	static const int MAX_TRAIL = 120;
 
 	struct Particle {
 		ofVec2f pos;   // grid coordinates (see VegetationField::getCols())

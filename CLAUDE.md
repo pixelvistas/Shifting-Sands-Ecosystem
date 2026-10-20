@@ -3068,3 +3068,14 @@ those keys to a dry tone is the obvious fix but is a palette decision
 for the user. No GLSL validator available in this session (no network
 for apt), so shaders were checked by hand only; not compiled or
 hardware-tested.
+
+**Follow-up, same day: filled-quad particles reverted at the user's
+request ("I prefer the look of the old particles... make the tails
+longer").** Back to `OF_PRIMITIVE_LINES` trails, `TRAIL_THICKNESS` 2,
+no head squares (`HEAD_SIZE` removed). `TRAIL_LENGTH` default 20 -> 60
+frames, `MAX_TRAIL` 48 -> 120 so the slider can go further. Kept from
+the quad pass: `STILL_BRIGHTNESS` 0.7 and the `FULL_BRIGHTNESS_SPEED`
+normalisation (alpha only, not shape). The simulated-water shader
+overlay is unaffected. Caveat stated to the user: longer tails only help
+moving particles - a particle in still water still has a near-zero-
+length trail, and core-profile drivers may still clamp line width to 1px.
