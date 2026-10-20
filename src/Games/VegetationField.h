@@ -320,6 +320,10 @@ public:
 	// applied.
 	float getWaterDepthAt(int gx, int gy) const;
 	ofVec2f getFlowVelocityAt(int gx, int gy) const;
+	// This frame's raw per-cell elevation (mm, rows x cols, CV_32F) - the
+	// same samples update() already took, so WaterFlowField can derive a
+	// terrain gradient without a second pass of Kinect reads. Read-only.
+	const cv::Mat & getElevationGrid() const { return previousElevation; }
 
 	// Grid dimensions, for Critter/HumanAgent's pickX()/pickY() equivalents
 	// and to convert their own grid coordinates back to kinect pixel space.

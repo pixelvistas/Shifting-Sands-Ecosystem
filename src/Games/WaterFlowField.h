@@ -1,51 +1,49 @@
 /***********************************************************************
-WaterFlowField.h - a dense vector-field-of-arrows visualization of
-VegetationField's real simulated water transport (stepFlow()), REPLACING
-the discrete advected-particle approach this file started as
-(WaterFlowParticles, see CLAUDE.md's 2026-10-19 entries for that
-history).
+WaterFlowField.h - a particle-trail ("runoff") visualization of how water
+moves across the sculpted terrain, REPLACING the dense vector-arrow
+version this file briefly was (see CLAUDE.md's 2026-10-19/20 entries).
 
-The particle version was built on a mistaken assumption about which
-visualization convention this project was targeting: it read as a
-sparse field of tracked, advected dots - after a round of flicker/
-respawn fixes, the user's own direct description was "something similar
-to the original critters we created - a bunch of points that respond to
-gravity (somewhat)." That's the wrong metaphor entirely. The actual
-target, confirmed directly by the user and consistent with Liu's own
-paper (quoted in CLAUDE.md's "Future phase" section: water flow
-"visualized in Grasshopper as flow-direction/velocity/vorticity vector
-fields"), is a dense field of small arrow/tick glyphs covering the
-water, each showing the LOCAL flow direction and relative speed at that
-point, recomputed fresh every frame - the standard scientific-
-visualization convention for a vector field, not a particle-tracking
-system. This class has no persistent per-glyph state at all (no
-position to track, no respawn/liveness logic needed) - every glyph is
-just a direct, stateless read of VegetationField::getFlowVelocityAt()
-at a fixed grid-space sample point, redrawn from scratch each frame.
+Why the arrow version failed on hardware ("rapid blinking arrows"):
+1. It was gated per frame on isWaterAt() AND on getFlowVelocityAt()
+   clearing MIN_VELOCITY_TO_SHOW. stepFlow()'s water settles to a flat
+   surface at rest, so its real velocity is ~0 almost everywhere - the
+   only signal left near that threshold is Kinect depth noise, which
+   flips a glyph on/off frame to frame.
+2. isWaterAt() is VegetationField's water, which on this branch is a
+   different elevation scale from what HeightColorMap.xml paints blue,
+   so arrows appeared where nothing looked wet and vice versa.
 
-Still its own class, same precedent as EcologyParams and the particle
-version before it - it only ever reads VegetationField's state
-(getWaterDepthAt()/getFlowVelocityAt(), both query-only, added
-alongside the particle version and reused unchanged here) and can be
-retuned/removed with zero risk to the actual simulation. Still follows
-CCritterController's setup()/setProjectorRes()/setKinectROI()/update()/
-drawMainWindow()/drawProjectorWindow()/drawGui() shape and FBO-
-compositing pattern.
+This version follows the convention the reference systems actually use
+(SND, Liu's flow imagery, fieldplay-style flow maps): many particles
+advected through a SMOOTH, persistent vector field, each leaving a
+fading trail, each with a finite lifespan that fades in and out (so
+nothing ever pops on/off). The field is the terrain's own downhill
+gradient - gravity-driven runoff, the direction water on the sand would
+actually travel - computed from VegetationField::getElevationGrid()
+(this frame's samples, no extra Kinect reads), downsampled, spatially
+blurred, and exponentially smoothed in time so sensor noise cannot make
+it jitter. Particles "rain" uniformly over the sandbox, run downhill
+with momentum and friction, and collect and slow down in basins - so
+pools read as places where flow converges, without depending on any
+classification threshold at all.
 
-Cost: a grid of sample points spaced GLYPH_SPACING_CELLS apart (not one
-query per Kinect pixel - that would be tens of thousands of arrows,
-visually unreadable as well as needlessly expensive), each one
-isWaterAt() check + one getFlowVelocityAt() query (unchanged 4-neighbor
-read) - at the default 8-cell spacing on a ~519x295 grid that's under
-2500 sample points, each doing simple arithmetic with no trig/random at
-volume, the same cheap operation class the particle version's own cost
-budget already confirmed safe.
+Purely visual: reads VegetationField, never writes it, no effect on the
+simulation. Same setup()/setProjectorRes()/setKinectROI()/update()/
+draw*()/drawGui() shape as CCritterController. Trails are drawn as a
+VBO mesh directly in projector space (no FBO - an alpha-blended FBO
+over a transparent clear squares alpha and washes faint trails out).
+
+Cost: field grid is cols/FIELD_DOWNSAMPLE x rows/FIELD_DOWNSAMPLE (~130x74
+at the defaults - one resize + one blur per frame); particles are one
+bilinear lookup + one kinectCoordToProjCoord() each per frame, and the
+trails are drawn as a single VBO mesh. No per-cell work at volume.
 
 Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 ***********************************************************************/
 
 #pragma once
 #include "ofMain.h"
+#include <array>
 
 #include "../KinectProjector/KinectProjector.h"
 #include "VegetationField.h"
@@ -53,9 +51,8 @@ Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 class WaterFlowField
 {
 public:
-	// vegetationField is owned by ofApp and shared here (and with
-	// CCritterController/SandSurfaceRenderer) as a query-only pointer -
-	// same ownership convention as CCritterController::setup().
+	// vegetationField is owned by ofApp and shared here as a query-only
+	// pointer - same ownership convention as CCritterController::setup().
 	void setup(std::shared_ptr<KinectProjector> const& k, VegetationField* vegetationField);
 	void setProjectorRes(ofVec2f & PR);
 	void setKinectROI(ofRectangle & KROI);
@@ -65,68 +62,63 @@ public:
 	void drawProjectorWindow();
 	void drawGui();
 
-	// Runtime kill switch, same A/B-testing rationale as ENABLE_SPREAD/
-	// ENABLE_FLOW - instant rollback without a rebuild if this turns out
-	// to carry an unexpected per-frame cost on real hardware (untested).
+	// Runtime kill switch, same A/B rationale as ENABLE_SPREAD/ENABLE_FLOW.
 	static bool ENABLE_FLOW_FIELD;
-	// How many grid cells apart sample points sit, in both axes - a
-	// real tunable, not just a performance knob: too dense and
-	// neighboring arrows overlap into unreadable clutter, too sparse and
-	// real local flow variation gets missed between samples. First-
-	// guess default, same "tune once actually seen on hardware" posture
-	// as every other constant here.
-	static int GLYPH_SPACING_CELLS;
-	// getFlowVelocityAt()'s magnitude below which a sample point is
-	// treated as "no visible flow here" and skipped entirely, rather
-	// than drawing a meaningless near-zero-length arrow - calm,
-	// undisturbed water legitimately has little to no real surface-
-	// height difference to drive flow, so skipping it is physically
-	// correct, not a bug to paper over. First-guess, untested -
-	// drawGui()'s live velocity readout is there specifically to set
-	// this (and ARROW_LENGTH_SCALE below) from a real number instead of
-	// by feel once this is actually on hardware.
-	static float MIN_VELOCITY_TO_SHOW;
-	// getFlowVelocityAt() returns real grid-cells/second transport
-	// amounts, which can be visually tiny at single-cell granularity
-	// (see VegetationField.h's own note on this) - this is a
-	// VISUALIZATION-ONLY multiplier converting real velocity magnitude
-	// into an arrow length in grid cells, clamped to
-	// [ARROW_MIN_LEN_CELLS, ARROW_MAX_LEN_CELLS] below so a very fast
-	// local flow can't draw an arrow longer than makes sense next to
-	// its neighbors. Not a change to the underlying physics.
-	static float ARROW_LENGTH_SCALE;
-	static float ARROW_MIN_LEN_CELLS;
-	static float ARROW_MAX_LEN_CELLS;
-	// Glyph line thickness (px) and color (0..1 RGB) - deliberately a
-	// pale near-white/cyan by default, distinguishable from water's own
-	// darker blue so glyphs read as "showing flow on top of water," not
-	// part of the water color itself. Live-tunable via
-	// ImGui::ColorEdit3, matching deer's existing precedent.
-	static float GLYPH_THICKNESS;
-	static float GLYPH_COLOR[3];
+	static int PARTICLE_COUNT;
+	// Field resolution: grid cells per field sample. Larger = smoother,
+	// broader flow; smaller = follows finer sculpted detail.
+	static int FIELD_DOWNSAMPLE;
+	// Spatial blur (in field samples) and temporal smoothing time
+	// constant (seconds) applied to the elevation before differentiating -
+	// these are what stop Kinect noise from making the flow jitter.
+	static float FIELD_BLUR_SIGMA;
+	static float FIELD_SMOOTHING_SEC;
+	// Particle dynamics, in grid cells and seconds: acceleration per mm/cell
+	// of slope, velocity decay rate (1/s), and a speed cap. Terminal speed
+	// on a slope s (mm/cell) is roughly GRAVITY * s / FRICTION.
+	static float GRAVITY;
+	static float FRICTION;
+	static float MAX_SPEED;
+	// Lifespan range (s) - each particle fades in, lives, fades out, and
+	// respawns at a random location.
+	static float LIFE_MIN_SEC;
+	static float LIFE_MAX_SEC;
+	// Trail length in frames (capped at MAX_TRAIL) and line width (px).
+	static int TRAIL_LENGTH;
+	static float TRAIL_THICKNESS;
+	// Particles brighten with speed; pooled/stalled particles dim to this
+	// fraction so fast runoff channels stand out over still basins.
+	static float STILL_BRIGHTNESS;
+	static float PARTICLE_COLOR[3];
 
 private:
-	// gx/gy are grid indices (see VegetationField::getCols()/getRows()),
-	// NOT kinect pixel coordinates - matches how CCritterController
-	// already tracks positions in grid space.
-	ofPoint gridToProjCoord(float gx, float gy) const;
-	ofVec2f gridToKinectCoord(float gx, float gy) const;
+	static const int MAX_TRAIL = 48;
 
-	// Draws one arrow glyph: a shaft from gridPos toward gridPos +
-	// normalize(gridDir)*lengthCells, plus a small two-stroke arrowhead
-	// at the tip - the standard vector-field glyph shape. All math is
-	// done in grid space and only converted to projector space at the
-	// final draw call (gridToProjCoord()), the same approach the
-	// particle version used for its streak lines - this way any
-	// projective warping the Kinect/projector calibration applies is
-	// handled correctly for free, rather than needing a separate
-	// rotation computed in projector-pixel space.
-	void drawArrow(ofVec2f gridPos, ofVec2f gridDir, float lengthCells);
+	struct Particle {
+		ofVec2f pos;   // grid coordinates (see VegetationField::getCols())
+		ofVec2f vel;   // grid cells / second
+		float age;
+		float life;
+		// Ring buffer of past projector-space positions, newest at head.
+		std::array<ofVec2f, MAX_TRAIL> trail;
+		int trailHead;
+		int trailCount;
+	};
+
+	void rebuildField(float dt);
+	ofVec2f sampleGradient(float gx, float gy) const; // mm per grid cell, bilinear
+	void respawn(Particle & p);
+	ofPoint gridToProjCoord(float gx, float gy) const;
 
 	std::shared_ptr<KinectProjector> kinectProjector;
 	VegetationField* vegetationField; // query-only, owned by ofApp - see setup()
 	ofRectangle kinectROI;
 	ofVec2f projRes;
 
-	ofFbo fbo;
+	// Smoothed, downsampled elevation and its gradient (field samples).
+	cv::Mat smoothElevation, gradX, gradY;
+	bool fieldReady = false;
+
+	std::vector<Particle> particles;
+	ofVboMesh trailMesh;
 };

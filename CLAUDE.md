@@ -2801,3 +2801,44 @@ arrows even after `stepFlow()` itself was fixed.
 Not yet re-tested on real hardware - same constraint as the rest of
 today's work, but this fix is traced directly to two real numbers from
 an actual running build, not a code-review guess alone.
+
+## WaterFlowField rebuilt as a terrain-gradient particle-trail system (2026-10-20)
+
+User's hardware screenshot of the arrow version: a handful of white
+ticks blinking in one corner, nothing over the visibly blue lake. Two
+root causes, both structural rather than tuning:
+1. Every glyph was gated per frame on `isWaterAt()` AND on
+   `getFlowVelocityAt()` clearing `MIN_VELOCITY_TO_SHOW`. `stepFlow()`'s
+   water settles flat at rest, so real velocity is ~0 nearly everywhere;
+   what remains near the threshold is sensor noise, so glyphs flip on/off
+   every frame.
+2. `isWaterAt()` is VegetationField's water classification, which on
+   this branch uses a different elevation scale from the
+   `HeightColorMap.xml` blue the user actually sees (already flagged in
+   the 2026-10-19 entries), so arrows and visible water don't coincide.
+
+**Replacement (same class name, so no build-file changes):** the
+convention the reference systems actually use (SND, Liu's flow imagery,
+fieldplay-style flow maps) - many particles advected through a smooth,
+persistent field, each leaving a fading trail and fading in/out over a
+finite lifespan, so nothing ever pops. The field is the terrain's own
+downhill gradient (gravity-driven runoff), computed from a new read-only
+`VegetationField::getElevationGrid()` (this frame's existing samples,
+no extra Kinect reads), downsampled (`FIELD_DOWNSAMPLE`=4), Gaussian-
+blurred (`FIELD_BLUR_SIGMA`=1.5) and exponentially smoothed in time
+(`FIELD_SMOOTHING_SEC`=0.5) before a Sobel derivative - that smoothing
+is what keeps noise from making the flow jitter. Particles rain
+uniformly, accelerate downhill (`GRAVITY`=30 cells/s^2 per mm/cell of
+slope, `FRICTION`=2/s, `MAX_SPEED`=60 cells/s), collect and dim in
+basins (`STILL_BRIGHTNESS`), and respawn after 2-6s. Trails are one VBO
+line mesh drawn directly in projector space (the FBO was dropped: an
+alpha-blended FBO over a transparent clear squares alpha and washes
+faint trails out). Deliberately independent of any water-classification
+threshold, so it cannot inherit the HeightColorMap/VegetationField scale
+mismatch. Purely visual, no effect on the simulation.
+
+`stepFlow()`/`getFlowVelocityAt()` are untouched and no longer read by
+this class. Not compiled or hardware-tested here (no openFrameworks SDK
+in this session); all defaults are first guesses, and the Water Flow
+panel shows ROI-center slope and implied terminal speed so
+GRAVITY/FRICTION can be set from real numbers.

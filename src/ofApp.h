@@ -73,8 +73,8 @@ private:
 	// texture as a shader uniform) and with critterController (deer/humans
 	// query it for growth/water/snow) via query-only pointers.
 	VegetationField vegetationField;
-	// Visual-only layer showing stepFlow()'s real water transport as a
-	// dense vector-field of arrows - see WaterFlowField.h. Query-only
+	// Visual-only layer: particles running downhill over the smoothed
+	// terrain gradient, with fading trails - see WaterFlowField.h. Query-only
 	// against vegetationField, same ownership convention as
 	// critterController.
 	WaterFlowField waterFlowField;
