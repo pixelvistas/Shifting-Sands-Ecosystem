@@ -476,6 +476,27 @@ public:
 	// conceptually different comparison (a pairwise difference, not a
 	// single cell's own delta) even though today's starting value is the
 	// same number.
+	//
+	// FOUND same thread, one day later (2026-10-20): this noise floor
+	// alone did NOT fully fix the "arrows on dry land" symptom - a
+	// SEPARATE, more fundamental bug in stepFlow() let two completely
+	// DRY (zero-depth) cells manufacture real water transport purely
+	// from a genuine terrain SLOPE between them (not noise at all),
+	// since a dry cell's pass-1 "scale" factor was set to 1.0
+	// ("nothing to limit") rather than 0.0 ("nothing to send") - and
+	// that scale is what a NEIGHBOR reads in pass 2 to decide how much
+	// it can pull FROM this cell. A scale of 1.0 told every neighbor
+	// "this cell can fully supply whatever the elevation math implies,"
+	// regardless of whether it actually had any water at all. Fixed
+	// directly in stepFlow() (scale[idx]=0.0f for d<=0) and in
+	// getFlowVelocityAt() (returns zero outright for a cell with
+	// waterDepth<=0, before even looking at neighbor elevations) -
+	// see both functions' own comments in the .cpp. This is the
+	// explanation for why the FIRST noise-floor fix visibly reduced
+	// but didn't eliminate stray arrows: it correctly filtered small,
+	// jitter-level differences, but any REAL slope on dry land (which
+	// is most of a sculpted sand surface) still exceeded that floor
+	// and triggered this separate bug.
 	static float FLOW_NOISE_FLOOR_MM;
 	// Depth (fraction of the calibrated elevation range) below which a
 	// cell isn't considered "visibly water" at all - plays the same role

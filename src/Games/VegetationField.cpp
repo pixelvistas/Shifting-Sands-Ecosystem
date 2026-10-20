@@ -306,7 +306,13 @@ void VegetationField::stepFlow(float waterLevelFrac)
 			int idx = gy * cols + gx;
 			float d = depth[idx];
 			if (d <= 0.0f) {
-				scale[idx] = 1.0f;
+				// A dry cell can send NOTHING, not "nothing to limit" -
+				// see FLOW_NOISE_FLOOR_MM's header note on the bug this
+				// fixes. scale[idx] is read by neighbors in pass 2 as
+				// how much THIS cell can give them; 1.0f (the previous
+				// value here) meant "fully able to send," the opposite
+				// of what a cell with no water at all should report.
+				scale[idx] = 0.0f;
 				continue;
 			}
 			float surface = normalizedElevation(elev[idx]) + d;
@@ -375,6 +381,17 @@ ofVec2f VegetationField::getFlowVelocityAt(int gx, int gy) const
 	static const int dxN[4] = { -1, 1, 0, 0 };
 	static const int dyN[4] = { 0, 0, -1, 1 };
 
+	// A dry cell has no water to have a velocity at all, regardless of
+	// how steep the terrain slope under it is - same "scale[idx]=0 for
+	// d<=0" fix stepFlow() itself needed (see FLOW_NOISE_FLOOR_MM's
+	// header note): without this, pure elevation differences between
+	// two bone-dry cells read as real flow here too, which is what kept
+	// showing arrows on dry slopes even after the noise floor alone
+	// filtered out sensor-jitter-level differences (2026-10-20).
+	float d = waterDepth.at<float>(gy, gx);
+	if (d <= 0.0f)
+		return ofVec2f(0.0f, 0.0f);
+
 	// Same noise floor stepFlow() itself applies - see FLOW_NOISE_FLOOR_MM's
 	// header note. Without this, a query at a genuinely dry, undisturbed
 	// cell would still report tiny nonzero "flow" from pure sensor jitter
@@ -382,7 +399,7 @@ ofVec2f VegetationField::getFlowVelocityAt(int gx, int gy) const
 	// query made visible on real hardware (2026-10-19).
 	float noiseFloorFrac = FLOW_NOISE_FLOOR_MM / std::max(1.0f, elevationMax - elevationMin);
 
-	float surface = normalizedElevation(previousElevation.at<float>(gy, gx)) + waterDepth.at<float>(gy, gx);
+	float surface = normalizedElevation(previousElevation.at<float>(gy, gx)) + d;
 
 	ofVec2f v(0.0f, 0.0f);
 	for (int k = 0; k < 4; k++) {
