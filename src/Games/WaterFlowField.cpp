@@ -18,8 +18,10 @@ float WaterFlowField::MAX_SPEED = 60.0f;
 float WaterFlowField::LIFE_MIN_SEC = 2.0f;
 float WaterFlowField::LIFE_MAX_SEC = 6.0f;
 int WaterFlowField::TRAIL_LENGTH = 20;
-float WaterFlowField::TRAIL_THICKNESS = 2.0f;
-float WaterFlowField::STILL_BRIGHTNESS = 0.25f;
+float WaterFlowField::TRAIL_THICKNESS = 3.0f;
+float WaterFlowField::STILL_BRIGHTNESS = 0.7f;
+float WaterFlowField::FULL_BRIGHTNESS_SPEED = 10.0f;
+float WaterFlowField::HEAD_SIZE = 4.0f;
 float WaterFlowField::PARTICLE_COLOR[3] = { 0.85f, 0.95f, 1.0f };
 
 // Fade-in/out durations (s) - every particle enters and leaves gradually,
@@ -214,27 +216,49 @@ void WaterFlowField::update()
 			p.trailCount++;
 	}
 
-	// One mesh of line segments, alpha fading from head to tail and
-	// scaled by the particle's life envelope and speed.
-	trailMesh.setMode(OF_PRIMITIVE_LINES);
+	// One triangle mesh: each trail segment is a quad TRAIL_THICKNESS px
+	// wide and each head a HEAD_SIZE px square. Filled triangles render at
+	// the requested size on every driver; GL_LINES wider than 1px are
+	// silently drawn 1px wide on core-profile contexts, which is what made
+	// the line version nearly invisible on the sand (2026-10-20).
+	trailMesh.setMode(OF_PRIMITIVE_TRIANGLES);
 	int maxLen = (int)ofClamp((float)TRAIL_LENGTH, 2.0f, (float)MAX_TRAIL);
 	float r = PARTICLE_COLOR[0], gC = PARTICLE_COLOR[1], b = PARTICLE_COLOR[2];
+	float halfW = 0.5f * TRAIL_THICKNESS;
+	float halfHead = 0.5f * HEAD_SIZE;
+	auto addQuad = [&](ofVec2f p0, ofVec2f p1, ofVec2f p2, ofVec2f p3, float a01, float a23) {
+		// p0,p1 at one end, p2,p3 at the other
+		ofFloatColor c01(r, gC, b, a01), c23(r, gC, b, a23);
+		trailMesh.addVertex(ofVec3f(p0.x, p0.y, 0)); trailMesh.addColor(c01);
+		trailMesh.addVertex(ofVec3f(p1.x, p1.y, 0)); trailMesh.addColor(c01);
+		trailMesh.addVertex(ofVec3f(p2.x, p2.y, 0)); trailMesh.addColor(c23);
+		trailMesh.addVertex(ofVec3f(p1.x, p1.y, 0)); trailMesh.addColor(c01);
+		trailMesh.addVertex(ofVec3f(p3.x, p3.y, 0)); trailMesh.addColor(c23);
+		trailMesh.addVertex(ofVec3f(p2.x, p2.y, 0)); trailMesh.addColor(c23);
+	};
 	for (const Particle & p : particles) {
 		int n = std::min(p.trailCount, maxLen);
-		if (!p.active || n < 2)
+		if (!p.active || n < 1)
 			continue;
 		float envelope = std::min(1.0f, p.age / FADE_IN_SEC) * std::min(1.0f, (p.life - p.age) / FADE_OUT_SEC);
-		float brightness = ofLerp(STILL_BRIGHTNESS, 1.0f, ofClamp(p.vel.length() / (0.5f * MAX_SPEED), 0.0f, 1.0f));
+		float brightness = ofLerp(STILL_BRIGHTNESS, 1.0f, ofClamp(p.vel.length() / std::max(0.1f, FULL_BRIGHTNESS_SPEED), 0.0f, 1.0f));
 		float base = ofClamp(envelope * brightness, 0.0f, 1.0f);
+
+		const ofVec2f & head = p.trail[p.trailHead];
+		addQuad(head + ofVec2f(-halfHead, -halfHead), head + ofVec2f(halfHead, -halfHead),
+			head + ofVec2f(-halfHead, halfHead), head + ofVec2f(halfHead, halfHead), base, base);
+
 		for (int i = 0; i < n - 1; i++) {
 			const ofVec2f & a = p.trail[(p.trailHead - i + MAX_TRAIL) % MAX_TRAIL];
 			const ofVec2f & c = p.trail[(p.trailHead - i - 1 + MAX_TRAIL) % MAX_TRAIL];
+			ofVec2f d = c - a;
+			float len = d.length();
+			if (len < 0.01f)
+				continue;
+			ofVec2f nrm = ofVec2f(-d.y, d.x) * (halfW / len);
 			float a0 = base * (1.0f - (float)i / n);
 			float a1 = base * (1.0f - (float)(i + 1) / n);
-			trailMesh.addVertex(ofVec3f(a.x, a.y, 0));
-			trailMesh.addColor(ofFloatColor(r, gC, b, a0));
-			trailMesh.addVertex(ofVec3f(c.x, c.y, 0));
-			trailMesh.addColor(ofFloatColor(r, gC, b, a1));
+			addQuad(a + nrm, a - nrm, c + nrm, c - nrm, a0, a1);
 		}
 	}
 }
@@ -256,7 +280,6 @@ void WaterFlowField::drawProjectorWindow()
 		return;
 	ofPushStyle();
 	ofEnableBlendMode(OF_BLENDMODE_ALPHA);
-	ofSetLineWidth(TRAIL_THICKNESS);
 	trailMesh.draw();
 	ofPopStyle();
 }
@@ -298,7 +321,9 @@ void WaterFlowField::drawGui()
 	ImGui::Text("Appearance");
 	ImGui::SliderInt("Trail length (frames)", &TRAIL_LENGTH, 2, MAX_TRAIL);
 	ImGui::SliderFloat("Trail thickness", &TRAIL_THICKNESS, 0.5f, 8.0f);
+	ImGui::SliderFloat("Head size (px)", &HEAD_SIZE, 0.0f, 12.0f);
 	ImGui::SliderFloat("Still-particle brightness", &STILL_BRIGHTNESS, 0.0f, 1.0f);
+	ImGui::SliderFloat("Full-brightness speed (cells/s)", &FULL_BRIGHTNESS_SPEED, 0.5f, 60.0f);
 	ImGui::ColorEdit3("Particle color", PARTICLE_COLOR);
 
 	// Measure-before-tuning readout: slope at the ROI center (mm/cell) and

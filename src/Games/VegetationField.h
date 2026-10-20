@@ -477,6 +477,9 @@ public:
 	// Off by default - it creates water from nothing and holds it still,
 	// which is what made every earlier flow visualization show nothing.
 	static bool USE_FLAT_SEA;
+	// Draw the simulated water as a blue overlay on top of the height
+	// colour map (heightMapShader.frag's drawSimWater uniform).
+	static bool DRAW_SIMULATED_WATER;
 	// Depth (fraction of the calibrated elevation range) below which a
 	// cell isn't considered "visibly water" at all - plays the same role
 	// WATER_HYSTERESIS_FRAC's margin sits around as the old flat/pool

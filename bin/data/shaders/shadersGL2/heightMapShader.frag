@@ -37,11 +37,36 @@ uniform sampler2DRect heightColorMapSampler;
 uniform sampler2DRect pixelCornerElevationSampler; // Sampler for the half pixel texture
 uniform float contourLineFactor;
 uniform int drawContourLines;
+// Simulated water overlay - see main().
+varying vec2 texcoordfrag;
+uniform sampler2DRect vegetationSampler;
+uniform vec2 vegetationGridOrigin;
+uniform float vegetationGridStep;
+uniform int hasVegetation;
+uniform int drawSimWater;
 
 void main()
 {
     vec2 depthPos = vec2(depthfrag, 0.5);
     vec4 color = texture2DRect(heightColorMapSampler, depthPos); // colormap converted depth
+
+    // Simulated water overlay (ss/terrain-reference-visuals, 2026-10-20).
+    // The colour map above only shows elevation; this draws where
+    // VegetationField's flow model actually has water. Its texture's
+    // alpha packs water depth into 1..249 (0 = dry, 255 = snow, ignored
+    // here), scaled by MAX_WATER_DEPTH_FRAC. Colours are the Deep/Shallow
+    // Water stops from HeightColorMap.xml; deeper water is more opaque.
+    if (drawSimWater == 1 && hasVegetation == 1)
+    {
+        vec2 vegUV = (texcoordfrag - vegetationGridOrigin) / vegetationGridStep;
+        float a = texture2DRect(vegetationSampler, vegUV).a * 255.0;
+        if (a > 0.5 && a < 249.5)
+        {
+            float t = clamp((a - 1.0) / 248.0, 0.0, 1.0);
+            vec3 water = mix(vec3(0.255, 0.714, 0.769), vec3(0.031, 0.188, 0.420), t);
+            color.rgb = mix(color.rgb, water, mix(0.6, 0.95, t));
+        }
+    }
 
     if (drawContourLines == 1)
     {

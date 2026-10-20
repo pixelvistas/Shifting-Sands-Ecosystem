@@ -115,6 +115,11 @@ public:
 	// Particles brighten with speed; pooled/stalled particles dim to this
 	// fraction so fast runoff channels stand out over still basins.
 	static float STILL_BRIGHTNESS;
+	// Speed (cells/s) at which a particle reaches full brightness.
+	static float FULL_BRIGHTNESS_SPEED;
+	// Side length (px) of the square drawn at each particle's head, so a
+	// particle in still water (zero-length trail) is still visible.
+	static float HEAD_SIZE;
 	static float PARTICLE_COLOR[3];
 
 private:

@@ -3027,3 +3027,44 @@ or hardware-tested (no openFrameworks SDK in this session).
 
 Next: step 2 (draw water from simulated depth over the colour map),
 step 3 (polish particle advection), step 4 (hydrochorous seeds).
+
+## Hydrology step 2 + particle visibility fix (2026-10-20)
+
+User's hardware screenshot after step 1: particles appeared only as
+faint white specks in the deep right-hand basin and the bottom-right
+corner, "barely visible on the sand." Read as: the simulated water had
+reached and was filling the basin (expected - a depression must fill to
+its rim before spilling toward the sink), but the particles were
+unreadable and the simulated water itself was not drawn at all.
+
+**Particle visibility:** trails were `OF_PRIMITIVE_LINES` with
+`ofSetLineWidth()`; on core-profile GL contexts widths above 1px are
+silently ignored, and a particle in near-still water has a near-zero-
+length trail, dimmed to `STILL_BRIGHTNESS`=0.25 - so pooled particles
+were 1px, quarter-brightness dots. Now one `OF_PRIMITIVE_TRIANGLES`
+mesh: each segment a quad `TRAIL_THICKNESS` (3px) wide, each particle a
+`HEAD_SIZE` (4px) square head so still particles stay visible;
+`STILL_BRIGHTNESS` 0.7; brightness now normalised by a separate
+`FULL_BRIGHTNESS_SPEED` (10 cells/s) instead of the bed-slope mode's
+`MAX_SPEED` (60), which made simulated-velocity particles (~8 cells/s)
+permanently dim.
+
+**Step 2, simulated water drawn:** `heightMapShader.frag` (GL2/GL3, in
+sync) gained an overlay after the colour-map lookup: it samples the
+vegetation texture `SandSurfaceRenderer` was already binding every frame
+(`vegetationSampler`/`vegetationGridOrigin`/`vegetationGridStep`/
+`hasVegetation`, plus `texcoordfrag` which the vertex shader still
+outputs), decodes alpha 1..249 as depth (0 dry, 255 snow ignored), and
+blends Shallow `#41B6C4` -> Deep `#08306B` (the user's own palette
+stops) at 60-95% opacity by depth. New `VegetationField::
+DRAW_SIMULATED_WATER` (default on, checkbox in the Hydrology section),
+sent as the `drawSimWater` uniform. Contour lines still draw on top.
+Only cells the hysteresis classifier calls water (~3mm+) are drawn.
+
+**Known confound, raised with the user, not changed:** `HeightColorMap.
+xml`'s keys below 0mm are blues, so dry low ground still LOOKS like
+water under the colour map, competing with the real overlay. Recolouring
+those keys to a dry tone is the obvious fix but is a palette decision
+for the user. No GLSL validator available in this session (no network
+for apt), so shaders were checked by hand only; not compiled or
+hardware-tested.

@@ -105,6 +105,7 @@ int VegetationField::SINK_EDGE = VegetationField::EDGE_RIGHT;
 float VegetationField::SOURCE_SPAN = 0.4f;
 float VegetationField::INFLOW_MM_PER_SEC = 8.0f;
 bool VegetationField::USE_FLAT_SEA = false;
+bool VegetationField::DRAW_SIMULATED_WATER = true;
 // First-guess, untested on real hardware - see the header note.
 float VegetationField::MIN_VISIBLE_WATER_DEPTH_FRAC = 0.004f;
 // FOUND (2026-09-28), under the pooling mechanic this replaces - see the
@@ -1031,6 +1032,7 @@ void VegetationField::drawGui()
 	ImGui::Text("or lower gravity.");
 	ImGui::SliderFloat("Terrain smoothing (s)", &FLOW_TERRAIN_SMOOTHING_SEC, 0.0f, 2.0f);
 	ImGui::Checkbox("Also keep flat ELF sea (legacy)", &USE_FLAT_SEA);
+	ImGui::Checkbox("Draw simulated water over the colour map", &DRAW_SIMULATED_WATER);
 	if (ImGui::Button("Reset water (dry the table)"))
 		resetWater();
 	ImGui::Text("Flow cost: %.2f ms/frame, wet cells: %d", lastFlowMs, lastWetCells);

@@ -253,6 +253,7 @@ void SandSurfaceRenderer::drawSandbox() {
 
     bool hasVegetation = vegetationField && vegetationField->getTexture().isAllocated();
     heightMapShader.setUniform1i("hasVegetation", hasVegetation);
+    heightMapShader.setUniform1i("drawSimWater", VegetationField::DRAW_SIMULATED_WATER ? 1 : 0);
     if (hasVegetation) {
         heightMapShader.setUniformTexture("vegetationSampler", vegetationField->getTexture(), 5);
         heightMapShader.setUniform2f("vegetationGridOrigin", vegetationField->getGridOrigin());
