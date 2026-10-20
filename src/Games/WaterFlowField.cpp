@@ -6,7 +6,11 @@
 bool WaterFlowField::ENABLE_FLOW_FIELD = true;
 float WaterFlowField::VISIBLE_WATER_LINE_MM = -1.5f;
 int WaterFlowField::MASK_MODE = WaterFlowField::MASK_SIMULATED;
-int WaterFlowField::MOTION_MODE = WaterFlowField::MOTION_SIMULATED;
+int WaterFlowField::MOTION_MODE = WaterFlowField::MOTION_LATTICE;
+bool WaterFlowField::EMIT_AT_SOURCE = true;
+int WaterFlowField::SOURCE_BAND_CELLS = 6;
+float WaterFlowField::STALL_SPEED = 1.0f;
+float WaterFlowField::STALL_SEC = 1.5f;
 float WaterFlowField::SIM_VELOCITY_SCALE = 1.0f;
 int WaterFlowField::PARTICLE_COUNT = 1500;
 int WaterFlowField::FIELD_DOWNSAMPLE = 4;
@@ -15,8 +19,10 @@ float WaterFlowField::FIELD_SMOOTHING_SEC = 0.5f;
 float WaterFlowField::GRAVITY = 30.0f;
 float WaterFlowField::FRICTION = 2.0f;
 float WaterFlowField::MAX_SPEED = 60.0f;
-float WaterFlowField::LIFE_MIN_SEC = 2.0f;
-float WaterFlowField::LIFE_MAX_SEC = 6.0f;
+// Long enough to cross the table at stream speed; stalled particles are
+// retired early by STALL_SEC instead.
+float WaterFlowField::LIFE_MIN_SEC = 15.0f;
+float WaterFlowField::LIFE_MAX_SEC = 40.0f;
 int WaterFlowField::TRAIL_LENGTH = 60;
 float WaterFlowField::TRAIL_THICKNESS = 2.0f;
 float WaterFlowField::STILL_BRIGHTNESS = 0.7f;
@@ -128,6 +134,17 @@ void WaterFlowField::respawn(Particle & p)
 {
 	p.trailHead = 0;
 	p.trailCount = 0;
+	p.stillTime = 0.0f;
+	p.vel.set(0.0f, 0.0f);
+	p.age = 0.0f;
+	p.life = ofRandom(LIFE_MIN_SEC, std::max(LIFE_MIN_SEC, LIFE_MAX_SEC));
+	if (EMIT_AT_SOURCE && !sourceCells.empty()) {
+		int idx = sourceCells[(size_t)ofRandom(0.0f, (float)sourceCells.size()) % sourceCells.size()];
+		int cols = vegetationField->getCols();
+		p.pos.set((idx % cols) + ofRandom(1.0f), (idx / cols) + ofRandom(1.0f));
+		p.active = true;
+		return;
+	}
 	if (wetSamples.empty()) {
 		p.active = false; // no visible water anywhere - retried every frame
 		return;
@@ -141,9 +158,6 @@ void WaterFlowField::respawn(Particle & p)
 	if (!isVisibleWater(p.pos.x, p.pos.y))
 		p.pos.set(((idx % fw) + 0.5f) * ds, ((idx / fw) + 0.5f) * ds);
 	p.active = true;
-	p.vel.set(0.0f, 0.0f);
-	p.age = 0.0f;
-	p.life = ofRandom(LIFE_MIN_SEC, std::max(LIFE_MIN_SEC, LIFE_MAX_SEC));
 }
 
 void WaterFlowField::update()
@@ -160,6 +174,27 @@ void WaterFlowField::update()
 
 	float dt = ofClamp((float)ofGetLastFrameTime(), 0.0f, 0.1f);
 	rebuildField(dt);
+	if (MOTION_MODE == MOTION_LATTICE)
+		lattice.update(*vegetationField, dt);
+
+	// Wet cells along the source edge - see EMIT_AT_SOURCE.
+	sourceCells.clear();
+	if (EMIT_AT_SOURCE) {
+		int band = std::max(1, SOURCE_BAND_CELLS);
+		for (int gy = 0; gy < rows; gy++) {
+			for (int gx = 0; gx < cols; gx++) {
+				bool inBand;
+				switch (VegetationField::SOURCE_EDGE) {
+				case VegetationField::EDGE_LEFT:  inBand = gx < band; break;
+				case VegetationField::EDGE_RIGHT: inBand = gx >= cols - band; break;
+				case VegetationField::EDGE_TOP:   inBand = gy < band; break;
+				default:                          inBand = gy >= rows - band; break;
+				}
+				if (inBand && vegetationField->isWaterCell(gx, gy))
+					sourceCells.push_back(gy * cols + gx);
+			}
+		}
+	}
 
 	// Grow/shrink to the requested count; new particles get a random
 	// starting age so they don't all fade in and out in lockstep.
@@ -183,7 +218,10 @@ void WaterFlowField::update()
 
 		// Downhill = negative elevation gradient (elevation is positive
 		// for mounds, negative for digs).
-		if (MOTION_MODE == MOTION_SIMULATED) {
+		if (MOTION_MODE == MOTION_LATTICE) {
+			// Carried by the lattice-Boltzmann velocity (cells/s).
+			p.vel = lattice.velocityAt(p.pos.x, p.pos.y) * SIM_VELOCITY_SCALE;
+		} else if (MOTION_MODE == MOTION_SIMULATED) {
 			// Carried by the hydrology model's own velocity (cells/s).
 			p.vel = vegetationField->getFlowVelocityAt((int)p.pos.x, (int)p.pos.y) * SIM_VELOCITY_SCALE;
 		} else {
@@ -193,6 +231,10 @@ void WaterFlowField::update()
 		float speed = p.vel.length();
 		if (speed > MAX_SPEED)
 			p.vel *= MAX_SPEED / speed;
+		// Retire particles stuck in dead water - see STALL_SEC.
+		p.stillTime = speed < STALL_SPEED ? p.stillTime + dt : 0.0f;
+		if (p.stillTime > STALL_SEC)
+			p.life = std::min(p.life, p.age + FADE_OUT_SEC);
 		ofVec2f next = p.pos + p.vel * dt;
 
 		if (next.x < 0 || next.y < 0 || next.x >= cols || next.y >= rows) {
@@ -273,10 +315,30 @@ void WaterFlowField::drawGui()
 	ImGui::Checkbox("Enable flow particles", &ENABLE_FLOW_FIELD);
 	{
 		static const char * masks[] = { "Colour map (visible blue)", "Simulated water" };
-		static const char * motions[] = { "Bed slope", "Simulated velocity" };
+		static const char * motions[] = { "Bed slope", "Pipe-model velocity", "Lattice flow (LBM)" };
 		ImGui::Combo("Particles live on", &MASK_MODE, masks, 2);
-		ImGui::Combo("Particles moved by", &MOTION_MODE, motions, 2);
+		ImGui::Combo("Particles moved by", &MOTION_MODE, motions, 3);
 	}
+	ImGui::Checkbox("Release particles at the source edge", &EMIT_AT_SOURCE);
+	ImGui::SliderInt("Source band (cells)", &SOURCE_BAND_CELLS, 1, 40);
+	ImGui::SliderFloat("Stall speed (cells/s)", &STALL_SPEED, 0.0f, 10.0f);
+	ImGui::SliderFloat("Stall time before fading (s)", &STALL_SEC, 0.1f, 10.0f);
+	ImGui::Text("Source cells: %d", (int)sourceCells.size());
+
+	ImGui::Separator();
+	ImGui::Text("Lattice flow (LBM) - how the water moves, solved inside the");
+	ImGui::Text("pipe model's water: wet = fluid, dry sand = wall, driven in");
+	ImGui::Text("from the source edge, draining out of the sink edge.");
+	ImGui::Checkbox("Enable lattice flow", &LatticeFlow::ENABLE);
+	ImGui::SliderInt("Lattice downsample (cells)", &LatticeFlow::DOWNSAMPLE, 2, 12);
+	ImGui::SliderFloat("Inlet speed (lattice)", &LatticeFlow::INLET_SPEED, 0.0f, 0.2f);
+	ImGui::SliderFloat("Relaxation tau (lower = more eddies)", &LatticeFlow::TAU, 0.51f, 2.0f);
+	ImGui::SliderInt("Lattice steps per frame", &LatticeFlow::STEPS_PER_FRAME, 1, 8);
+	ImGui::SliderFloat("Wet fraction for fluid", &LatticeFlow::WET_FRACTION, 0.1f, 1.0f);
+	ImGui::Text("Fluid cells: %d, inlet cells: %d, cost: %.2f ms",
+		lattice.getFluidCells(), lattice.getInletCells(), lattice.getLastMs());
+	ImGui::Text("Max lattice speed: %.3f (keep below ~0.3), resets: %d",
+		lattice.getMaxLatticeSpeed(), lattice.getResets());
 	ImGui::SliderFloat("Simulated velocity scale (visual only)", &SIM_VELOCITY_SCALE, 0.0f, 10.0f);
 	ImGui::SliderFloat("Visible water line (mm)", &VISIBLE_WATER_LINE_MM, -45.0f, 20.0f);
 	ImGui::Text("Particles only below this elevation; match it to where");
@@ -294,8 +356,8 @@ void WaterFlowField::drawGui()
 	ImGui::SliderFloat("Gravity", &GRAVITY, 0.0f, 200.0f);
 	ImGui::SliderFloat("Friction (1/s)", &FRICTION, 0.0f, 10.0f);
 	ImGui::SliderFloat("Max speed (cells/s)", &MAX_SPEED, 1.0f, 300.0f);
-	ImGui::SliderFloat("Life min (s)", &LIFE_MIN_SEC, 0.2f, 20.0f);
-	ImGui::SliderFloat("Life max (s)", &LIFE_MAX_SEC, 0.2f, 20.0f);
+	ImGui::SliderFloat("Life min (s)", &LIFE_MIN_SEC, 0.2f, 60.0f);
+	ImGui::SliderFloat("Life max (s)", &LIFE_MAX_SEC, 0.2f, 60.0f);
 
 	ImGui::Separator();
 	ImGui::Text("Appearance");

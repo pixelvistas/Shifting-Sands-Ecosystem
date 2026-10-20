@@ -3079,3 +3079,56 @@ normalisation (alpha only, not shape). The simulated-water shader
 overlay is unaffected. Caveat stated to the user: longer tails only help
 moving particles - a particle in still water still has a near-zero-
 length trail, and core-profile drivers may still clamp line width to 1px.
+
+## Hybrid hydrology: lattice-Boltzmann flow inside the pipe model's water (2026-10-20)
+
+User: the line-trail particles were "better, but not quite looking like
+the hydrology model I'm expecting, or like the Dewitz particle system."
+Asked (message truncated) why not use LBM like Dewitz/Liu. Answered
+candidly: the earlier "LBM treats sand as binary walls" objection was a
+tradeoff, not a disqualifier. The pipe model is gravity-driven runoff -
+water fills basins and only a narrow spill path moves, so its steady
+state is mostly still - while the references' look (a continuous,
+obstacle-skirting, eddying one-way stream) is what a 2D LBM driven from
+an inlet produces. Costs of pure LBM stated: no depth/wet-dry (weakens
+the "moisture fed by genuine water flow physics" contribution claim),
+threshold-wall flicker, stability tuning, December timeline. **User chose
+the recommended hybrid:** pipe model keeps deciding WHERE water is
+(wet/dry, depth, pooling, future moisture field); a coarse LBM decides
+HOW it moves.
+
+**New `LatticeFlow.h/.cpp`** (own class, added to both `.vcxproj` and
+`.vcxproj.filters`), owned by `WaterFlowField`, read-only against
+`VegetationField`. D2Q9 BGK on the grid downsampled by `DOWNSAMPLE`=4
+(~9.6K cells); a lattice cell is fluid when >= `WET_FRACTION` (0.5) of
+its fine cells are `isWaterCell()`; newly wet cells start at rest; dry
+sand and grid edges are halfway bounce-back walls. Inlet: fluid cells on
+`VegetationField::SOURCE_EDGE` within `SOURCE_SPAN`, set to equilibrium
+at density 1 and inward `INLET_SPEED`. Outlet: fluid cells on
+`SINK_EDGE` set to equilibrium at density 1 with the interior
+neighbour's velocity. Cells with non-finite or out-of-range density
+reset to rest (counted in the GUI). Velocity reported in grid cells/s
+(lattice speed x DOWNSAMPLE x steps / frameDt), bilinear, zero on walls.
+
+**Tested before committing** by compiling the real `LatticeFlow.cpp`
+against small ofMain/VegetationField stubs (scratchpad, not committed)
+on a 519x295 meandering channel with a side basin and an island:
+- First version (copy-from-neighbour outlet): flow decayed 3.7 -> 0.6
+  cells/s as pressure built inside and choked the inflow.
+- Interior-density inlet + pressure outlet: positive feedback, lattice
+  speed 0.62 and hundreds of cell resets.
+- Final (density-1 inlet, density-1 pressure outlet): steady, 0 resets,
+  ~0.3 ms/frame, flow follows the meander, recirculation in the basin
+  and island wake. Inlet 0.12 / tau 0.55 (defaults): max lattice speed
+  0.143, channel centre ~17-21 cells/s, 0 resets.
+
+**`WaterFlowField` changes:** new `MOTION_LATTICE` mode (default) using
+`LatticeFlow::velocityAt()`; `EMIT_AT_SOURCE` (default on) releases
+particles from wet cells within `SOURCE_BAND_CELLS` (6) of the source
+edge, falling back to anywhere on the water; `STALL_SPEED`/`STALL_SEC`
+(1 cell/s for 1.5 s) retire particles stuck in dead water; lifespans
+raised to 15-40 s so particles can cross the table. GUI: lattice
+section with tunables and readouts (fluid/inlet cells, cost ms, max
+lattice speed, resets). Avoided `near` as an identifier (a Windows
+macro). WaterFlowField changes not compiled (no oF SDK); not
+hardware-tested.

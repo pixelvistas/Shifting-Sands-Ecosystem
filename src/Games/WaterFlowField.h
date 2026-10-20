@@ -52,6 +52,7 @@ Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 
 #include "../KinectProjector/KinectProjector.h"
 #include "VegetationField.h"
+#include "LatticeFlow.h"
 
 class WaterFlowField
 {
@@ -84,13 +85,25 @@ public:
 	// are the earlier behaviour (visible blue below VISIBLE_WATER_LINE_MM,
 	// rolling down the smoothed bed gradient).
 	enum { MASK_COLOUR_MAP = 0, MASK_SIMULATED = 1 };
-	enum { MOTION_BED_SLOPE = 0, MOTION_SIMULATED = 1 };
+	// MOTION_LATTICE (default, 2026-10-20 hybrid): carried by LatticeFlow's
+	// lattice-Boltzmann velocity, solved inside the pipe model's water.
+	enum { MOTION_BED_SLOPE = 0, MOTION_SIMULATED = 1, MOTION_LATTICE = 2 };
 	static int MASK_MODE;
 	static int MOTION_MODE;
 	// Multiplier on the simulated velocity (visual only), for when real
 	// flow is too slow or fast to read.
 	static float SIM_VELOCITY_SCALE;
 	static int PARTICLE_COUNT;
+	// Release particles at the water's source edge (within
+	// SOURCE_BAND_CELLS of it) instead of anywhere on the water, so they
+	// trace the stream from inlet to outlet; falls back to anywhere on the
+	// water when no water touches the source yet.
+	static bool EMIT_AT_SOURCE;
+	static int SOURCE_BAND_CELLS;
+	// A particle slower than STALL_SPEED (cells/s) for STALL_SEC seconds
+	// fades out, so particles do not pile up in dead water or eddy cores.
+	static float STALL_SPEED;
+	static float STALL_SEC;
 	// Field resolution: grid cells per field sample. Larger = smoother,
 	// broader flow; smaller = follows finer sculpted detail.
 	static int FIELD_DOWNSAMPLE;
@@ -133,6 +146,7 @@ private:
 		int trailHead;
 		int trailCount;
 		bool active; // false = parked, no water anywhere to spawn into yet
+		float stillTime;
 	};
 
 	void rebuildField(float dt);
@@ -154,6 +168,11 @@ private:
 	// when any water exists, however small a fraction of the table it is.
 	std::vector<int> wetSamples;
 	bool fieldReady = false;
+
+	// Wet grid cells near the source edge, rebuilt each frame (see
+	// EMIT_AT_SOURCE).
+	std::vector<int> sourceCells;
+	LatticeFlow lattice;
 
 	std::vector<Particle> particles;
 	ofVboMesh trailMesh;

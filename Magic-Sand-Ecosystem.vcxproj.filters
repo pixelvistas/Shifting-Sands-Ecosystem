@@ -22,6 +22,9 @@
 		<ClCompile Include="src\Games\WaterFlowField.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
+		<ClCompile Include="src\Games\LatticeFlow.cpp">
+			<Filter>src\Games</Filter>
+		</ClCompile>
 		<ClCompile Include="src\Games\HumanAgent.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
@@ -738,6 +741,9 @@
 			<Filter>src\Games</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Games\WaterFlowField.h">
+			<Filter>src\Games</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Games\LatticeFlow.h">
 			<Filter>src\Games</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Games\HumanAgent.h">
