@@ -150,3 +150,23 @@ At the user's request, before the first sandbox test; no other behaviour changed
 
 Not compiled against openFrameworks (no SDK in this session); not yet
 tested on hardware.
+
+## 2026-10-21 - Obstacle mask: base level, slope-test blur, open inlet
+
+At the user's request, before hardware testing; nothing else changed.
+
+- `OBSTACLE_BASE_MM` (default 0 mm, GUI "Slope walls only above"): the
+  slope criterion now marks a cell solid only where its (3x3-smoothed)
+  elevation is also above this level, so the walls of dug pits and
+  channels stay fluid. The height criterion (`OBSTACLE_HEIGHT_MM`) is
+  unchanged.
+- `OBSTACLE_BLUR_SIGMA` (default 2 lattice cells, ~11 mm; GUI "Slope-test
+  blur", 0-6): a separable Gaussian on the time-smoothed elevation, used
+  only for the slope test, so Kinect depth terraces do not form striped
+  walls. Below 0.5 it falls back to the previous 3x3 field. The downhill
+  term and the height/base tests still use the 3x3 field, so particle
+  motion is unchanged.
+- The lattice column (or row) on the inlet edge is always fluid: its
+  obstacle evidence is held at 0, so a wall there opens immediately
+  through the existing open-at-equilibrium path.
+- The obstacle overlay is unchanged.

@@ -12,6 +12,12 @@ int DewitzFlow::INLET_EDGE = DewitzFlow::EDGE_LEFT;
 int DewitzFlow::STEPS_PER_FRAME = 1;
 float DewitzFlow::OBSTACLE_HEIGHT_MM = 25.0f;
 float DewitzFlow::OBSTACLE_SLOPE = 0.8f;
+// Slope walls only above the table surface: the sides of dug pits and
+// channels are below 0 mm and stay fluid.
+float DewitzFlow::OBSTACLE_BASE_MM = 0.0f;
+// ~11 mm at the default 3 x ~1.9 mm lattice cell - wider than the few-mm
+// depth terraces of the Kinect.
+float DewitzFlow::OBSTACLE_BLUR_SIGMA = 2.0f;
 float DewitzFlow::OBSTACLE_SMOOTH_SEC = 0.3f;
 float DewitzFlow::TERRAIN_SMOOTH_SEC = 0.3f;
 // tools/dewitz_proto.py saturates the downhill term at ~1.17x its mounds'
@@ -65,6 +71,8 @@ void DewitzFlow::resize(int c, int r, int d)
 	rho.assign(n, 1.0f);
 	elev.assign(n, 0.0f);
 	blurred.assign(n, 0.0f);
+	slopeElev.assign(n, 0.0f);
+	blurTmp.assign(n, 0.0f);
 	downX.assign(n, 0.0f);
 	downY.assign(n, 0.0f);
 	evidence.assign(n, 0.0f);
@@ -186,6 +194,37 @@ void DewitzFlow::updateTerrain(const float * elevMM, int c, int r, float mmPerCe
 		}
 	}
 
+	// Heavier separable Gaussian blur of the elevation, used only for the
+	// obstacle slope test (the downhill term keeps the 3x3 field above).
+	// Sigma below 0.5 lattice cells falls back to the 3x3 field.
+	if (OBSTACLE_BLUR_SIGMA >= 0.5f) {
+		float sg = OBSTACLE_BLUR_SIGMA;
+		int rad = std::min(32, (int)std::ceil(3.0f * sg));
+		std::vector<float> kern(2 * rad + 1);
+		float ksum = 0.0f;
+		for (int t = -rad; t <= rad; t++) {
+			kern[t + rad] = std::exp(-0.5f * t * t / (sg * sg));
+			ksum += kern[t + rad];
+		}
+		for (float & kv : kern) kv /= ksum;
+		for (int j = 0; j < ny; j++)
+			for (int i = 0; i < nx; i++) {
+				float acc = 0.0f;
+				for (int t = -rad; t <= rad; t++)
+					acc += kern[t + rad] * elev[j * nx + std::min(nx - 1, std::max(0, i + t))];
+				blurTmp[j * nx + i] = acc;
+			}
+		for (int j = 0; j < ny; j++)
+			for (int i = 0; i < nx; i++) {
+				float acc = 0.0f;
+				for (int t = -rad; t <= rad; t++)
+					acc += kern[t + rad] * blurTmp[std::min(ny - 1, std::max(0, j + t)) * nx + i];
+				slopeElev[j * nx + i] = acc;
+			}
+	} else {
+		slopeElev = blurred;
+	}
+
 	// Gradient (rise/run), capped downhill direction, raw obstacle test,
 	// and obstacle evidence smoothed in time.
 	float ea = terrainReady ? 1.0f - std::exp(-dt / std::max(0.01f, OBSTACLE_SMOOTH_SEC)) : 1.0f;
@@ -201,8 +240,17 @@ void DewitzFlow::updateTerrain(const float * elevMM, int c, int r, float mmPerCe
 			float scale = 1.0f / std::max(slope, sat);
 			downX[k] = -gx * scale;
 			downY[k] = -gy * scale;
-			bool raw = blurred[k] > OBSTACLE_HEIGHT_MM || slope > OBSTACLE_SLOPE;
-			evidence[k] += ((raw ? 1.0f : 0.0f) - evidence[k]) * ea;
+			float sgx = (slopeElev[j * nx + ir] - slopeElev[j * nx + il]) / ((ir - il) * mmPerLatticeCell);
+			float sgy = (slopeElev[jb * nx + i] - slopeElev[jt * nx + i]) / ((jb - jt) * mmPerLatticeCell);
+			float obstacleSlope = std::sqrt(sgx * sgx + sgy * sgy);
+			bool raw = blurred[k] > OBSTACLE_HEIGHT_MM
+				|| (blurred[k] > OBSTACLE_BASE_MM && obstacleSlope > OBSTACLE_SLOPE);
+			bool inletColumn = (INLET_EDGE == EDGE_LEFT && i == 0) || (INLET_EDGE == EDGE_RIGHT && i == nx - 1)
+				|| (INLET_EDGE == EDGE_TOP && j == 0) || (INLET_EDGE == EDGE_BOTTOM && j == ny - 1);
+			if (inletColumn)
+				evidence[k] = 0.0f; // always fluid; opens at once via the hysteresis below
+			else
+				evidence[k] += ((raw ? 1.0f : 0.0f) - evidence[k]) * ea;
 		}
 	}
 

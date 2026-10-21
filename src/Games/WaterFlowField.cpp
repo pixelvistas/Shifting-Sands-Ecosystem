@@ -547,6 +547,8 @@ void WaterFlowField::drawDewitzGui()
 	ImGui::Text("Obstacles and gradient");
 	ImGui::SliderFloat("Obstacle height (mm)", &DewitzFlow::OBSTACLE_HEIGHT_MM, 0.0f, 120.0f);
 	ImGui::SliderFloat("Obstacle slope (rise/run)", &DewitzFlow::OBSTACLE_SLOPE, 0.1f, 3.0f);
+	ImGui::SliderFloat("Slope walls only above (mm)", &DewitzFlow::OBSTACLE_BASE_MM, -60.0f, 60.0f);
+	ImGui::SliderFloat("Slope-test blur (lattice cells)", &DewitzFlow::OBSTACLE_BLUR_SIGMA, 0.0f, 6.0f);
 	ImGui::SliderFloat("Obstacle smoothing (s)", &DewitzFlow::OBSTACLE_SMOOTH_SEC, 0.0f, 2.0f);
 	ImGui::SliderFloat("Terrain smoothing (s)", &DewitzFlow::TERRAIN_SMOOTH_SEC, 0.0f, 2.0f);
 	ImGui::SliderFloat("Downhill saturation slope", &DewitzFlow::GRADIENT_SATURATION, 0.05f, 3.0f);

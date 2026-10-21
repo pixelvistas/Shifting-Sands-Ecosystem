@@ -8,8 +8,12 @@ Section 3.3, as specified for this project (docs/DEVLOG.md, 2026-10-21):
    multi-relaxation-time (MRT, Lallemand & Luo 2000) with the shear rate
    set from TAU (default 1.98); a BGK toggle is kept for comparison.
 2. Obstacles from the depth image: smoothed elevation above
-   OBSTACLE_HEIGHT_MM or slope above OBSTACLE_SLOPE is a solid
-   (bounce-back) cell. The mask is smoothed in time with hysteresis so
+   OBSTACLE_HEIGHT_MM, or slope above OBSTACLE_SLOPE where the elevation
+   is also above OBSTACLE_BASE_MM (so pit and channel walls stay fluid),
+   is a solid (bounce-back) cell. The slope for this test is taken on a
+   more heavily blurred field (OBSTACLE_BLUR_SIGMA) so Kinect depth
+   terracing does not produce striped walls. The inlet column is always
+   fluid. The mask is smoothed in time with hysteresis so
    Kinect noise does not flicker walls; a wall that opens starts at
    equilibrium with its fluid neighbours' mean velocity.
 3. A gradient map of the smoothed terrain gives the direction of
@@ -97,7 +101,9 @@ public:
 	static int INLET_EDGE;             // outlet is the opposite edge
 	static int STEPS_PER_FRAME;
 	static float OBSTACLE_HEIGHT_MM;   // above this = solid
-	static float OBSTACLE_SLOPE;       // rise/run above this = solid
+	static float OBSTACLE_SLOPE;       // rise/run above this = solid...
+	static float OBSTACLE_BASE_MM;     // ...but only where elevation is above this
+	static float OBSTACLE_BLUR_SIGMA;  // Gaussian blur (lattice cells) before the slope test
 	static float OBSTACLE_SMOOTH_SEC;  // time constant of the mask evidence
 	static float TERRAIN_SMOOTH_SEC;   // time constant of the elevation EMA
 	static float GRADIENT_SATURATION;  // slope at which downhill term = 1
@@ -125,6 +131,7 @@ private:
 	std::vector<float> ux, uy, rho;     // per lattice cell
 	std::vector<float> elev;            // smoothed elevation, mm
 	std::vector<float> blurred;         // spatially smoothed elevation, mm
+	std::vector<float> slopeElev, blurTmp; // heavier blur for the obstacle slope test, mm
 	std::vector<float> downX, downY;    // capped downhill direction
 	std::vector<float> evidence;        // obstacle evidence, 0..1
 	std::vector<unsigned char> solid;
