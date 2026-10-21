@@ -250,6 +250,7 @@
     <ClCompile Include="src\Games\EcologyParams.cpp" />
     <ClCompile Include="src\Games\WaterFlowField.cpp" />
     <ClCompile Include="src\Games\LatticeFlow.cpp" />
+    <ClCompile Include="src\Games\DewitzFlow.cpp" />
     <ClCompile Include="src\Games\HumanAgent.cpp" />
     <ClCompile Include="src\KinectProjector\KinectGrabber.cpp" />
     <ClCompile Include="src\KinectProjector\KinectProjector.cpp" />
@@ -313,6 +314,7 @@
     <ClInclude Include="src\Games\EcologyParams.h" />
     <ClInclude Include="src\Games\WaterFlowField.h" />
     <ClInclude Include="src\Games\LatticeFlow.h" />
+    <ClInclude Include="src\Games\DewitzFlow.h" />
     <ClInclude Include="src\Games\HumanAgent.h" />
     <ClInclude Include="src\KinectProjector\KinectGrabber.h" />
     <ClInclude Include="src\KinectProjector\KinectProjector.h" />

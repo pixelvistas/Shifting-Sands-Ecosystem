@@ -6,7 +6,10 @@
 bool WaterFlowField::ENABLE_FLOW_FIELD = true;
 float WaterFlowField::VISIBLE_WATER_LINE_MM = -1.5f;
 int WaterFlowField::MASK_MODE = WaterFlowField::MASK_SIMULATED;
-int WaterFlowField::MOTION_MODE = WaterFlowField::MOTION_LATTICE;
+int WaterFlowField::MOTION_MODE = WaterFlowField::MOTION_DEWITZ;
+float WaterFlowField::DEWITZ_FADE = 0.08f;
+float WaterFlowField::DEWITZ_POINT_ALPHA = 0.6f;
+float WaterFlowField::DEWITZ_COLOR[3] = { 0.75f, 0.92f, 1.0f };
 bool WaterFlowField::EMIT_AT_SOURCE = true;
 int WaterFlowField::SOURCE_BAND_CELLS = 6;
 float WaterFlowField::STALL_SPEED = 1.0f;
@@ -43,6 +46,13 @@ void WaterFlowField::setup(std::shared_ptr<KinectProjector> const& k, Vegetation
 void WaterFlowField::setProjectorRes(ofVec2f & PR)
 {
 	projRes = PR;
+	// GL_RGB, no alpha channel: with RGBA, alpha-blending the black fade
+	// quad would also erode the FBO's alpha, and the additive composite
+	// (which scales by source alpha) would dim over time.
+	dewitzFbo.allocate(std::max(1, (int)projRes.x), std::max(1, (int)projRes.y), GL_RGB);
+	dewitzFbo.begin();
+	ofClear(0, 0, 0, 255);
+	dewitzFbo.end();
 }
 
 void WaterFlowField::setKinectROI(ofRectangle & KROI)
@@ -173,6 +183,10 @@ void WaterFlowField::update()
 		return;
 
 	float dt = ofClamp((float)ofGetLastFrameTime(), 0.0f, 0.1f);
+	if (MOTION_MODE == MOTION_DEWITZ) {
+		updateDewitz(dt);
+		return;
+	}
 	rebuildField(dt);
 	if (MOTION_MODE == MOTION_LATTICE)
 		lattice.update(*vegetationField, dt);
@@ -284,8 +298,64 @@ void WaterFlowField::update()
 	}
 }
 
+void WaterFlowField::updateDewitz(float dt)
+{
+	const cv::Mat & elev = vegetationField->getElevationGrid();
+	int cols = vegetationField->getCols(), rows = vegetationField->getRows();
+	dewitz.update(elev.ptr<float>(0), cols, rows, vegetationField->getMmPerCell(), dt);
+
+	// Projector-coordinate lookup on a coarse grid of fine cells.
+	lutW = cols / PROJ_LUT_STEP + 2;
+	lutH = rows / PROJ_LUT_STEP + 2;
+	projLut.resize((size_t)lutW * lutH);
+	for (int j = 0; j < lutH; j++)
+		for (int i = 0; i < lutW; i++) {
+			ofPoint p = gridToProjCoord((float)std::min(i * PROJ_LUT_STEP, cols - 1), (float)std::min(j * PROJ_LUT_STEP, rows - 1));
+			projLut[(size_t)j * lutW + i].set(p.x, p.y);
+		}
+
+	dewitzPoints.clear();
+	dewitzPoints.setMode(OF_PRIMITIVE_POINTS);
+	const std::vector<float> & X = dewitz.particleX();
+	const std::vector<float> & Y = dewitz.particleY();
+	for (size_t k = 0; k < X.size(); k++) {
+		float fx = X[k] / PROJ_LUT_STEP, fy = Y[k] / PROJ_LUT_STEP;
+		int i0 = std::min((int)fx, lutW - 2), j0 = std::min((int)fy, lutH - 2);
+		float tx = fx - i0, ty = fy - j0;
+		const ofVec2f & a = projLut[(size_t)j0 * lutW + i0];
+		const ofVec2f & b = projLut[(size_t)j0 * lutW + i0 + 1];
+		const ofVec2f & c = projLut[(size_t)(j0 + 1) * lutW + i0];
+		const ofVec2f & d = projLut[(size_t)(j0 + 1) * lutW + i0 + 1];
+		ofVec2f p = (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
+		dewitzPoints.addVertex(ofVec3f(p.x, p.y, 0));
+	}
+
+	if (!dewitzFbo.isAllocated())
+		return;
+	dewitzFbo.begin();
+	ofPushStyle();
+	ofEnableBlendMode(OF_BLENDMODE_ALPHA);
+	ofSetColor(0, 0, 0, (int)(ofClamp(DEWITZ_FADE, 0.0f, 1.0f) * 255));
+	ofDrawRectangle(0, 0, dewitzFbo.getWidth(), dewitzFbo.getHeight());
+	ofSetColor(DEWITZ_COLOR[0] * 255, DEWITZ_COLOR[1] * 255, DEWITZ_COLOR[2] * 255,
+		ofClamp(DEWITZ_POINT_ALPHA, 0.0f, 1.0f) * 255);
+	dewitzPoints.draw();
+	ofPopStyle();
+	dewitzFbo.end();
+}
+
 void WaterFlowField::drawMainWindow(float x, float y, float width, float height)
 {
+	if (MOTION_MODE == MOTION_DEWITZ) {
+		if (!dewitzFbo.isAllocated())
+			return;
+		ofPushStyle();
+		ofEnableBlendMode(OF_BLENDMODE_ADD);
+		ofSetColor(255);
+		dewitzFbo.draw(x, y, width, height);
+		ofPopStyle();
+		return;
+	}
 	if (projRes.x <= 0 || projRes.y <= 0 || trailMesh.getNumVertices() == 0)
 		return;
 	ofPushMatrix();
@@ -297,6 +367,16 @@ void WaterFlowField::drawMainWindow(float x, float y, float width, float height)
 
 void WaterFlowField::drawProjectorWindow()
 {
+	if (MOTION_MODE == MOTION_DEWITZ) {
+		if (!dewitzFbo.isAllocated())
+			return;
+		ofPushStyle();
+		ofEnableBlendMode(OF_BLENDMODE_ADD); // black adds nothing
+		ofSetColor(255);
+		dewitzFbo.draw(0, 0);
+		ofPopStyle();
+		return;
+	}
 	if (trailMesh.getNumVertices() == 0)
 		return;
 	ofPushStyle();
@@ -315,9 +395,14 @@ void WaterFlowField::drawGui()
 	ImGui::Checkbox("Enable flow particles", &ENABLE_FLOW_FIELD);
 	{
 		static const char * masks[] = { "Colour map (visible blue)", "Simulated water" };
-		static const char * motions[] = { "Bed slope", "Pipe-model velocity", "Lattice flow (LBM)" };
+		static const char * motions[] = { "Bed slope", "Pipe-model velocity", "Lattice flow (LBM)", "Dewitz (2018)" };
 		ImGui::Combo("Particles live on", &MASK_MODE, masks, 2);
-		ImGui::Combo("Particles moved by", &MOTION_MODE, motions, 3);
+		ImGui::Combo("Particles moved by", &MOTION_MODE, motions, 4);
+	}
+	if (MOTION_MODE == MOTION_DEWITZ) {
+		drawDewitzGui();
+		ImGui::End();
+		return;
 	}
 	ImGui::Checkbox("Release particles at the source edge", &EMIT_AT_SOURCE);
 	ImGui::SliderInt("Source band (cells)", &SOURCE_BAND_CELLS, 1, 40);
@@ -382,4 +467,81 @@ void WaterFlowField::drawGui()
 		active, (int)particles.size(), (int)wetSamples.size(), (int)trailMesh.getNumVertices());
 
 	ImGui::End();
+}
+
+void WaterFlowField::drawDewitzGui()
+{
+	ImGui::Text("Dewitz et al. (2018), Sec. 3.3: whole-box lattice-Boltzmann flow,");
+	ImGui::Text("hills/steep edges as walls, plus downhill and attractor pulls.");
+	ImGui::Text("Visual only - the pipe-model hydrology is untouched.");
+	ImGui::Text("(\"Particles live on\" above does not apply in this mode.)");
+
+	ImGui::Separator();
+	ImGui::Text("Lattice");
+	ImGui::SliderInt("Downsample (fine cells per lattice cell)", &DewitzFlow::DOWNSAMPLE, 2, 4);
+	ImGui::SliderFloat("Tau (Dewitz: 1.98)", &DewitzFlow::TAU, 0.51f, 2.5f);
+	ImGui::Checkbox("MRT collision (off = BGK)", &DewitzFlow::USE_MRT);
+	ImGui::SliderFloat("Inlet speed (lattice)", &DewitzFlow::INLET_SPEED, 0.0f, 0.15f);
+	{
+		static const char * edges[] = { "Left", "Right", "Top", "Bottom" };
+		ImGui::Combo("Inlet edge (outlet opposite)", &DewitzFlow::INLET_EDGE, edges, 4);
+	}
+	ImGui::SliderInt("Lattice steps per frame", &DewitzFlow::STEPS_PER_FRAME, 1, 4);
+
+	ImGui::Separator();
+	ImGui::Text("Obstacles and gradient");
+	ImGui::SliderFloat("Obstacle height (mm)", &DewitzFlow::OBSTACLE_HEIGHT_MM, 0.0f, 120.0f);
+	ImGui::SliderFloat("Obstacle slope (rise/run)", &DewitzFlow::OBSTACLE_SLOPE, 0.1f, 3.0f);
+	ImGui::SliderFloat("Obstacle smoothing (s)", &DewitzFlow::OBSTACLE_SMOOTH_SEC, 0.0f, 2.0f);
+	ImGui::SliderFloat("Terrain smoothing (s)", &DewitzFlow::TERRAIN_SMOOTH_SEC, 0.0f, 2.0f);
+	ImGui::SliderFloat("Downhill saturation slope", &DewitzFlow::GRADIENT_SATURATION, 0.05f, 3.0f);
+
+	ImGui::Separator();
+	ImGui::Text("Particles: dir = W_FLOW*u/|u|max + W_GRAD*downhill + W_ATTR*attractors");
+	ImGui::SliderFloat("W_FLOW", &DewitzFlow::W_FLOW, 0.0f, 3.0f);
+	ImGui::SliderFloat("W_GRAD", &DewitzFlow::W_GRAD, 0.0f, 3.0f);
+	ImGui::SliderFloat("W_ATTR", &DewitzFlow::W_ATTR, 0.0f, 3.0f);
+	ImGui::SliderFloat("Speed (cells/s at |dir| = 1)", &DewitzFlow::SPEED, 0.0f, 400.0f);
+	ImGui::SliderInt("Particle count", &DewitzFlow::PARTICLE_COUNT, 0, 100000);
+	ImGui::SliderFloat("Particle life (s, 0 = until exit)", &DewitzFlow::PARTICLE_LIFE_SEC, 0.0f, 60.0f);
+
+	ImGui::Separator();
+	ImGui::Text("Attractors (grid cells; ArUco markers later)");
+	ImGui::SliderFloat("Attractor radius (cells)", &DewitzFlow::ATTRACTOR_RADIUS, 1.0f, 100.0f);
+	int cols = vegetationField ? vegetationField->getCols() : 0;
+	int rows = vegetationField ? vegetationField->getRows() : 0;
+	if (ImGui::Button("Add attractor at ROI centre") && cols > 0)
+		dewitz.attractors.push_back({ cols * 0.5f, rows * 0.5f });
+	for (size_t a = 0; a < dewitz.attractors.size(); a++) {
+		ImGui::PushID((int)a);
+		ImGui::SliderFloat("x", &dewitz.attractors[a].x, 0.0f, (float)std::max(1, cols));
+		ImGui::SameLine();
+		ImGui::SliderFloat("y", &dewitz.attractors[a].y, 0.0f, (float)std::max(1, rows));
+		ImGui::SameLine();
+		bool remove = ImGui::Button("Remove");
+		ImGui::PopID();
+		if (remove) {
+			dewitz.attractors.erase(dewitz.attractors.begin() + a);
+			break;
+		}
+	}
+
+	ImGui::Separator();
+	ImGui::Text("Drawing (points into a black FBO, composited additively)");
+	ImGui::SliderFloat("Trail fade per frame", &DEWITZ_FADE, 0.0f, 0.5f);
+	ImGui::SliderFloat("Point alpha", &DEWITZ_POINT_ALPHA, 0.0f, 1.0f);
+	ImGui::ColorEdit3("Point colour", DEWITZ_COLOR);
+
+	ImGui::Separator();
+	ImGui::Text("Lattice %dx%d, steps %lld, obstacle cells %d, wall flips last frame %d",
+		dewitz.latticeWidth(), dewitz.latticeHeight(), dewitz.getSteps(), dewitz.getObstacleCells(), dewitz.getMaskFlips());
+	ImGui::Text("Density resets %lld, non-finite %lld, max lattice speed %.3f",
+		dewitz.getResets(), dewitz.getNonFinite(), dewitz.getMaxSpeed());
+	ImGui::Text("Lattice %.2f ms, particles %.2f ms, exits %d, respawns %d (last frame)",
+		dewitz.getLatticeMs(), dewitz.getParticleMs(), dewitz.getExitsLastFrame(), dewitz.getRespawnsLastFrame());
+	if (cols > 0) {
+		float fx, fy, gx, gy;
+		dewitz.sampleTerms(cols * 0.5f, rows * 0.5f, fx, fy, gx, gy);
+		ImGui::Text("ROI centre: flow (%.2f, %.2f), downhill (%.2f, %.2f)", fx, fy, gx, gy);
+	}
 }

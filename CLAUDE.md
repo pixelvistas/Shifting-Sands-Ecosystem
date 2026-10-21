@@ -1,5 +1,12 @@
 # Project notes for Claude
 
+## Current state
+
+- Branch `ss/dewitz-flow`: visible flow particles use `DewitzFlow` (`src/Games/DewitzFlow.h/.cpp`), a Dewitz et al. (2018) Sec. 3.3 reproduction - whole-box D2Q9 MRT lattice-Boltzmann (tau 1.98), obstacles from hills/steep slopes, downhill pull, GUI attractors.
+- It is purely visual; `VegetationField::stepFlow()` (virtual pipes) remains the hydrology/moisture model, unchanged.
+- Parameters: static members at the top of `DewitzFlow.cpp`; drawing parameters (`DEWITZ_*`) in `WaterFlowField.cpp`; all live in the "Water Flow" panel (mode "Dewitz (2018)").
+- Headless test: `tools/dewitz_harness/build.sh`, reference `tools/dewitz_proto.py`; decisions and results in `docs/DEVLOG.md`.
+
 ## Reference point: "confirmed working checkpoint" = commit `1bbad8a`
 
 Last commit before the CA-style spread layer / succession-model phase

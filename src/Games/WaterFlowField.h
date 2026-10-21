@@ -53,6 +53,7 @@ Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 #include "../KinectProjector/KinectProjector.h"
 #include "VegetationField.h"
 #include "LatticeFlow.h"
+#include "DewitzFlow.h"
 
 class WaterFlowField
 {
@@ -87,7 +88,11 @@ public:
 	enum { MASK_COLOUR_MAP = 0, MASK_SIMULATED = 1 };
 	// MOTION_LATTICE (default, 2026-10-20 hybrid): carried by LatticeFlow's
 	// lattice-Boltzmann velocity, solved inside the pipe model's water.
-	enum { MOTION_BED_SLOPE = 0, MOTION_SIMULATED = 1, MOTION_LATTICE = 2 };
+	// MOTION_DEWITZ (default, 2026-10-21): Dewitz et al. (2018) Sec. 3.3 -
+	// whole-box LBM + downhill + attractors, drawn as glowing points. See
+	// DewitzFlow.h; this mode ignores the water masks and draws through
+	// its own fading, additively composited FBO.
+	enum { MOTION_BED_SLOPE = 0, MOTION_SIMULATED = 1, MOTION_LATTICE = 2, MOTION_DEWITZ = 3 };
 	static int MASK_MODE;
 	static int MOTION_MODE;
 	// Multiplier on the simulated velocity (visual only), for when real
@@ -133,6 +138,13 @@ public:
 
 	static float PARTICLE_COLOR[3];
 
+	// Dewitz-mode drawing: points into an FBO cleared to black, faded each
+	// frame by a black quad at DEWITZ_FADE alpha, composited additively
+	// over the terrain (black adds nothing).
+	static float DEWITZ_FADE;
+	static float DEWITZ_POINT_ALPHA;
+	static float DEWITZ_COLOR[3];
+
 private:
 	static const int MAX_TRAIL = 120;
 
@@ -173,6 +185,19 @@ private:
 	// EMIT_AT_SOURCE).
 	std::vector<int> sourceCells;
 	LatticeFlow lattice;
+
+	// Dewitz mode - see MOTION_DEWITZ.
+	void updateDewitz(float dt);
+	void drawDewitzGui();
+	DewitzFlow dewitz;
+	ofFbo dewitzFbo;
+	ofVboMesh dewitzPoints;
+	// Projector coordinates on a coarse grid of fine cells (every
+	// PROJ_LUT_STEP cells), rebuilt each frame and interpolated per
+	// particle - far cheaper than one kinectCoordToProjCoord() per particle.
+	static const int PROJ_LUT_STEP = 4;
+	std::vector<ofVec2f> projLut;
+	int lutW = 0, lutH = 0;
 
 	std::vector<Particle> particles;
 	ofVboMesh trailMesh;

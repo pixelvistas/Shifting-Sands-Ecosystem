@@ -327,6 +327,8 @@ public:
 	// Grid dimensions, for Critter/HumanAgent's pickX()/pickY() equivalents
 	// and to convert their own grid coordinates back to kinect pixel space.
 	int getCols() const { return cols; }
+	// Real-world size of one grid cell (mm), measured in setKinectROI().
+	float getMmPerCell() const { return mmPerCell; }
 	int getRows() const { return rows; }
 
 	// Average |elevation change| per cell last frame (mm) - what

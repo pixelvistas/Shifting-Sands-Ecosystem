@@ -25,6 +25,9 @@
 		<ClCompile Include="src\Games\LatticeFlow.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
+		<ClCompile Include="src\Games\DewitzFlow.cpp">
+			<Filter>src\Games</Filter>
+		</ClCompile>
 		<ClCompile Include="src\Games\HumanAgent.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
@@ -744,6 +747,9 @@
 			<Filter>src\Games</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Games\LatticeFlow.h">
+			<Filter>src\Games</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Games\DewitzFlow.h">
 			<Filter>src\Games</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Games\HumanAgent.h">
