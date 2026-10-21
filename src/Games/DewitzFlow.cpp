@@ -380,6 +380,7 @@ void DewitzFlow::respawn(int k, bool anywhere)
 			break;
 	}
 	px[k] = x; py[k] = y;
+	prevX[k] = x; prevY[k] = y;
 	age[k] = 0.0f;
 }
 
@@ -392,6 +393,7 @@ void DewitzFlow::advectParticles(float dt)
 	if ((int)px.size() != target) {
 		int old = (int)px.size();
 		px.resize(target); py.resize(target); age.resize(target);
+		prevX.resize(target); prevY.resize(target);
 		for (int k = old; k < target; k++)
 			respawn(k, true);
 	}
@@ -403,6 +405,7 @@ void DewitzFlow::advectParticles(float dt)
 	exitsLastFrame = 0;
 	for (int k = 0; k < (int)px.size(); k++) {
 		float x = px[k], y = py[k];
+		prevX[k] = x; prevY[k] = y;
 		float lx = x / ds - 0.5f, ly = y / ds - 0.5f;
 
 		float dirX = W_FLOW * bilerp(ux, lx, ly) * inv + W_GRAD * bilerp(downX, lx, ly);

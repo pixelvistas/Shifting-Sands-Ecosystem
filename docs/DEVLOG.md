@@ -129,3 +129,24 @@ agree with the prototype's to within ~3 % (max u 0.197 vs 0.194).
 compiled - no openFrameworks SDK in the session; only `DewitzFlow.cpp` is
 compiled and tested. Not hardware-tested. No further visual tuning until
 the user has tested on the sandbox.
+
+## 2026-10-21 - Obstacle overlay, line-segment particles, particle colour
+
+At the user's request, before the first sandbox test; no other behaviour changed.
+
+- `DewitzFlow` now records each particle's position at the start of the
+  advection step (`particlePrevX/Y`). A respawned particle gets
+  prev == current, so its segment has zero length and is skipped, rather
+  than drawing a line across the box to the inlet. Bookkeeping only: the
+  motion rule and RNG sequence are unchanged (harness still builds clean).
+- `WaterFlowField` draws each particle as an `OF_PRIMITIVE_LINES` segment
+  from previous to current position into the same black, faded,
+  additively composited FBO. Line width is the GL default (1 px).
+- "Show obstacle mask" checkbox (off by default) draws the lattice's solid
+  cells as alpha-blended quads (default magenta, 35% alpha, adjustable)
+  over the terrain, beneath the particles, in both windows.
+- The existing point colour/alpha controls are relabelled "Particle colour"
+  and "Particle alpha"; defaults unchanged.
+
+Not compiled against openFrameworks (no SDK in this session); not yet
+tested on hardware.

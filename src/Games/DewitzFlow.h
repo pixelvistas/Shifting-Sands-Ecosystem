@@ -57,6 +57,11 @@ public:
 	int particleCount() const { return (int)px.size(); }
 	const std::vector<float> & particleX() const { return px; }
 	const std::vector<float> & particleY() const { return py; }
+	// Position at the start of the last advection step. A particle that
+	// respawned in that step has prev == current (zero-length segment), so
+	// a line from prev to current never jumps across the box.
+	const std::vector<float> & particlePrevX() const { return prevX; }
+	const std::vector<float> & particlePrevY() const { return prevY; }
 
 	// Lattice inspection (lattice coordinates).
 	int latticeWidth() const { return nx; }
@@ -125,6 +130,7 @@ private:
 	std::vector<unsigned char> solid;
 
 	std::vector<float> px, py, age;
+	std::vector<float> prevX, prevY;
 	std::mt19937 rng{ 12345 };
 
 	long long resets = 0, nonFinite = 0, steps = 0;

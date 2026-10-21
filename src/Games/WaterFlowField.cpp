@@ -10,6 +10,8 @@ int WaterFlowField::MOTION_MODE = WaterFlowField::MOTION_DEWITZ;
 float WaterFlowField::DEWITZ_FADE = 0.08f;
 float WaterFlowField::DEWITZ_POINT_ALPHA = 0.6f;
 float WaterFlowField::DEWITZ_COLOR[3] = { 0.75f, 0.92f, 1.0f };
+bool WaterFlowField::DEWITZ_SHOW_OBSTACLES = false;
+float WaterFlowField::DEWITZ_OBSTACLE_COLOR[4] = { 1.0f, 0.0f, 1.0f, 0.35f };
 bool WaterFlowField::EMIT_AT_SOURCE = true;
 int WaterFlowField::SOURCE_BAND_CELLS = 6;
 float WaterFlowField::STALL_SPEED = 1.0f;
@@ -315,19 +317,40 @@ void WaterFlowField::updateDewitz(float dt)
 		}
 
 	dewitzPoints.clear();
-	dewitzPoints.setMode(OF_PRIMITIVE_POINTS);
+	dewitzPoints.setMode(OF_PRIMITIVE_LINES);
 	const std::vector<float> & X = dewitz.particleX();
 	const std::vector<float> & Y = dewitz.particleY();
+	const std::vector<float> & PX = dewitz.particlePrevX();
+	const std::vector<float> & PY = dewitz.particlePrevY();
 	for (size_t k = 0; k < X.size(); k++) {
-		float fx = X[k] / PROJ_LUT_STEP, fy = Y[k] / PROJ_LUT_STEP;
-		int i0 = std::min((int)fx, lutW - 2), j0 = std::min((int)fy, lutH - 2);
-		float tx = fx - i0, ty = fy - j0;
-		const ofVec2f & a = projLut[(size_t)j0 * lutW + i0];
-		const ofVec2f & b = projLut[(size_t)j0 * lutW + i0 + 1];
-		const ofVec2f & c = projLut[(size_t)(j0 + 1) * lutW + i0];
-		const ofVec2f & d = projLut[(size_t)(j0 + 1) * lutW + i0 + 1];
-		ofVec2f p = (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
-		dewitzPoints.addVertex(ofVec3f(p.x, p.y, 0));
+		// Respawned this frame: prev == current, nothing to draw yet.
+		if (PX[k] == X[k] && PY[k] == Y[k])
+			continue;
+		ofVec2f a = fineToProj(PX[k], PY[k]);
+		ofVec2f b = fineToProj(X[k], Y[k]);
+		dewitzPoints.addVertex(ofVec3f(a.x, a.y, 0));
+		dewitzPoints.addVertex(ofVec3f(b.x, b.y, 0));
+	}
+
+	obstacleMesh.clear();
+	if (DEWITZ_SHOW_OBSTACLES) {
+		obstacleMesh.setMode(OF_PRIMITIVE_TRIANGLES);
+		int ds = std::max(1, DewitzFlow::DOWNSAMPLE);
+		for (int j = 0; j < dewitz.latticeHeight(); j++)
+			for (int i = 0; i < dewitz.latticeWidth(); i++) {
+				if (!dewitz.isObstacle(i, j))
+					continue;
+				ofVec2f p00 = fineToProj((float)(i * ds), (float)(j * ds));
+				ofVec2f p10 = fineToProj((float)((i + 1) * ds), (float)(j * ds));
+				ofVec2f p01 = fineToProj((float)(i * ds), (float)((j + 1) * ds));
+				ofVec2f p11 = fineToProj((float)((i + 1) * ds), (float)((j + 1) * ds));
+				obstacleMesh.addVertex(ofVec3f(p00.x, p00.y, 0));
+				obstacleMesh.addVertex(ofVec3f(p10.x, p10.y, 0));
+				obstacleMesh.addVertex(ofVec3f(p11.x, p11.y, 0));
+				obstacleMesh.addVertex(ofVec3f(p00.x, p00.y, 0));
+				obstacleMesh.addVertex(ofVec3f(p11.x, p11.y, 0));
+				obstacleMesh.addVertex(ofVec3f(p01.x, p01.y, 0));
+			}
 	}
 
 	if (!dewitzFbo.isAllocated())
@@ -344,11 +367,42 @@ void WaterFlowField::updateDewitz(float dt)
 	dewitzFbo.end();
 }
 
+ofVec2f WaterFlowField::fineToProj(float x, float y) const
+{
+	float fx = x / PROJ_LUT_STEP, fy = y / PROJ_LUT_STEP;
+	int i0 = std::max(0, std::min((int)fx, lutW - 2)), j0 = std::max(0, std::min((int)fy, lutH - 2));
+	float tx = fx - i0, ty = fy - j0;
+	const ofVec2f & a = projLut[(size_t)j0 * lutW + i0];
+	const ofVec2f & b = projLut[(size_t)j0 * lutW + i0 + 1];
+	const ofVec2f & c = projLut[(size_t)(j0 + 1) * lutW + i0];
+	const ofVec2f & d = projLut[(size_t)(j0 + 1) * lutW + i0 + 1];
+	return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
+}
+
+void WaterFlowField::drawObstacleOverlay()
+{
+	if (!DEWITZ_SHOW_OBSTACLES || obstacleMesh.getNumVertices() == 0)
+		return;
+	ofPushStyle();
+	ofEnableBlendMode(OF_BLENDMODE_ALPHA);
+	ofSetColor(ofFloatColor(DEWITZ_OBSTACLE_COLOR[0], DEWITZ_OBSTACLE_COLOR[1],
+		DEWITZ_OBSTACLE_COLOR[2], DEWITZ_OBSTACLE_COLOR[3]));
+	obstacleMesh.draw();
+	ofPopStyle();
+}
+
 void WaterFlowField::drawMainWindow(float x, float y, float width, float height)
 {
 	if (MOTION_MODE == MOTION_DEWITZ) {
 		if (!dewitzFbo.isAllocated())
 			return;
+		if (projRes.x > 0 && projRes.y > 0) {
+			ofPushMatrix();
+			ofTranslate(x, y);
+			ofScale(width / projRes.x, height / projRes.y);
+			drawObstacleOverlay();
+			ofPopMatrix();
+		}
 		ofPushStyle();
 		ofEnableBlendMode(OF_BLENDMODE_ADD);
 		ofSetColor(255);
@@ -370,6 +424,7 @@ void WaterFlowField::drawProjectorWindow()
 	if (MOTION_MODE == MOTION_DEWITZ) {
 		if (!dewitzFbo.isAllocated())
 			return;
+		drawObstacleOverlay();
 		ofPushStyle();
 		ofEnableBlendMode(OF_BLENDMODE_ADD); // black adds nothing
 		ofSetColor(255);
@@ -527,10 +582,13 @@ void WaterFlowField::drawDewitzGui()
 	}
 
 	ImGui::Separator();
-	ImGui::Text("Drawing (points into a black FBO, composited additively)");
+	ImGui::Text("Drawing (prev->current line segments into a black FBO, composited additively)");
 	ImGui::SliderFloat("Trail fade per frame", &DEWITZ_FADE, 0.0f, 0.5f);
-	ImGui::SliderFloat("Point alpha", &DEWITZ_POINT_ALPHA, 0.0f, 1.0f);
-	ImGui::ColorEdit3("Point colour", DEWITZ_COLOR);
+	ImGui::SliderFloat("Particle alpha", &DEWITZ_POINT_ALPHA, 0.0f, 1.0f);
+	ImGui::ColorEdit3("Particle colour", DEWITZ_COLOR);
+	ImGui::Checkbox("Show obstacle mask", &DEWITZ_SHOW_OBSTACLES);
+	if (DEWITZ_SHOW_OBSTACLES)
+		ImGui::ColorEdit4("Obstacle mask colour", DEWITZ_OBSTACLE_COLOR);
 
 	ImGui::Separator();
 	ImGui::Text("Lattice %dx%d, steps %lld, obstacle cells %d, wall flips last frame %d",

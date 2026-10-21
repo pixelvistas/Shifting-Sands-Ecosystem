@@ -138,12 +138,17 @@ public:
 
 	static float PARTICLE_COLOR[3];
 
-	// Dewitz-mode drawing: points into an FBO cleared to black, faded each
-	// frame by a black quad at DEWITZ_FADE alpha, composited additively
-	// over the terrain (black adds nothing).
+	// Dewitz-mode drawing: each particle is a line segment from its
+	// previous to its current position, drawn into an FBO cleared to
+	// black, faded each frame by a black quad at DEWITZ_FADE alpha, and
+	// composited additively over the terrain (black adds nothing).
 	static float DEWITZ_FADE;
 	static float DEWITZ_POINT_ALPHA;
 	static float DEWITZ_COLOR[3];
+	// Debug overlay: the lattice's obstacle (solid) cells, drawn
+	// alpha-blended over the terrain beneath the particles.
+	static bool DEWITZ_SHOW_OBSTACLES;
+	static float DEWITZ_OBSTACLE_COLOR[4];
 
 private:
 	static const int MAX_TRAIL = 120;
@@ -191,7 +196,10 @@ private:
 	void drawDewitzGui();
 	DewitzFlow dewitz;
 	ofFbo dewitzFbo;
-	ofVboMesh dewitzPoints;
+	ofVboMesh dewitzPoints;   // particle segments (OF_PRIMITIVE_LINES)
+	ofVboMesh obstacleMesh;   // obstacle overlay quads, projector space
+	void drawObstacleOverlay();
+	ofVec2f fineToProj(float x, float y) const; // via projLut
 	// Projector coordinates on a coarse grid of fine cells (every
 	// PROJ_LUT_STEP cells), rebuilt each frame and interpolated per
 	// particle - far cheaper than one kinectCoordToProjCoord() per particle.
