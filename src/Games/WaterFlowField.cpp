@@ -10,6 +10,7 @@ int WaterFlowField::MOTION_MODE = WaterFlowField::MOTION_DEWITZ;
 float WaterFlowField::DEWITZ_FADE = 0.08f;
 float WaterFlowField::DEWITZ_POINT_ALPHA = 0.6f;
 float WaterFlowField::DEWITZ_COLOR[3] = { 0.75f, 0.92f, 1.0f };
+int WaterFlowField::DEWITZ_SHOWN_ON = WaterFlowField::DEWITZ_SHOW_WATER_ONLY;
 bool WaterFlowField::DEWITZ_SHOW_OBSTACLES = false;
 float WaterFlowField::DEWITZ_OBSTACLE_COLOR[4] = { 1.0f, 0.0f, 1.0f, 0.35f };
 bool WaterFlowField::EMIT_AT_SOURCE = true;
@@ -304,6 +305,15 @@ void WaterFlowField::updateDewitz(float dt)
 {
 	const cv::Mat & elev = vegetationField->getElevationGrid();
 	int cols = vegetationField->getCols(), rows = vegetationField->getRows();
+	if (DEWITZ_SHOWN_ON == DEWITZ_SHOW_WATER_ONLY) {
+		waterMask.resize((size_t)cols * rows);
+		for (int y = 0; y < rows; y++)
+			for (int x = 0; x < cols; x++)
+				waterMask[(size_t)y * cols + x] = vegetationField->isWaterCell(x, y) ? 1 : 0;
+		dewitz.setWaterMask(waterMask.data());
+	} else {
+		dewitz.setWaterMask(nullptr);
+	}
 	dewitz.update(elev.ptr<float>(0), cols, rows, vegetationField->getMmPerCell(), dt);
 
 	// Projector-coordinate lookup on a coarse grid of fine cells.
@@ -322,14 +332,22 @@ void WaterFlowField::updateDewitz(float dt)
 	const std::vector<float> & Y = dewitz.particleY();
 	const std::vector<float> & PX = dewitz.particlePrevX();
 	const std::vector<float> & PY = dewitz.particlePrevY();
+	const std::vector<float> & A = dewitz.particleAlpha();
+	float baseAlpha = ofClamp(DEWITZ_POINT_ALPHA, 0.0f, 1.0f);
 	for (size_t k = 0; k < X.size(); k++) {
 		// Respawned this frame: prev == current, nothing to draw yet.
 		if (PX[k] == X[k] && PY[k] == Y[k])
 			continue;
+		float a1 = baseAlpha * (k < A.size() ? A[k] : 1.0f); // fades on land
+		if (a1 <= 0.0f)
+			continue;
+		ofFloatColor c(DEWITZ_COLOR[0], DEWITZ_COLOR[1], DEWITZ_COLOR[2], a1);
 		ofVec2f a = fineToProj(PX[k], PY[k]);
 		ofVec2f b = fineToProj(X[k], Y[k]);
 		dewitzPoints.addVertex(ofVec3f(a.x, a.y, 0));
+		dewitzPoints.addColor(c);
 		dewitzPoints.addVertex(ofVec3f(b.x, b.y, 0));
+		dewitzPoints.addColor(c);
 	}
 
 	obstacleMesh.clear();
@@ -360,8 +378,7 @@ void WaterFlowField::updateDewitz(float dt)
 	ofEnableBlendMode(OF_BLENDMODE_ALPHA);
 	ofSetColor(0, 0, 0, (int)(ofClamp(DEWITZ_FADE, 0.0f, 1.0f) * 255));
 	ofDrawRectangle(0, 0, dewitzFbo.getWidth(), dewitzFbo.getHeight());
-	ofSetColor(DEWITZ_COLOR[0] * 255, DEWITZ_COLOR[1] * 255, DEWITZ_COLOR[2] * 255,
-		ofClamp(DEWITZ_POINT_ALPHA, 0.0f, 1.0f) * 255);
+	ofSetColor(255); // colour and alpha are per vertex (see above)
 	dewitzPoints.draw();
 	ofPopStyle();
 	dewitzFbo.end();
@@ -588,6 +605,16 @@ void WaterFlowField::drawDewitzGui()
 	ImGui::SliderFloat("Trail fade per frame", &DEWITZ_FADE, 0.0f, 0.5f);
 	ImGui::SliderFloat("Particle alpha", &DEWITZ_POINT_ALPHA, 0.0f, 1.0f);
 	ImGui::ColorEdit3("Particle colour", DEWITZ_COLOR);
+	{
+		static const char * shownOn[] = { "Water only", "Everywhere" };
+		ImGui::Combo("Particles shown on", &DEWITZ_SHOWN_ON, shownOn, 2);
+	}
+	if (DEWITZ_SHOWN_ON == DEWITZ_SHOW_WATER_ONLY) {
+		ImGui::SliderInt("Inlet spawn band (cells)", &DewitzFlow::SPAWN_BAND_CELLS, 1, 60);
+		ImGui::SliderFloat("Fade-out on land (s)", &DewitzFlow::LAND_FADE_SEC, 0.05f, 3.0f);
+		ImGui::Text("Water cells (simulated): %d, parked particles: %d",
+			dewitz.getWaterCellsLastFrame(), dewitz.getParkedLastFrame());
+	}
 	ImGui::Checkbox("Show obstacle mask", &DEWITZ_SHOW_OBSTACLES);
 	if (DEWITZ_SHOW_OBSTACLES)
 		ImGui::ColorEdit4("Obstacle mask colour", DEWITZ_OBSTACLE_COLOR);

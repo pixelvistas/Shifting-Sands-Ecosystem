@@ -147,6 +147,12 @@ public:
 	static float DEWITZ_COLOR[3];
 	// Debug overlay: the lattice's obstacle (solid) cells, drawn
 	// alpha-blended over the terrain beneath the particles.
+	// Where Dewitz particles are drawn: only on VegetationField's simulated
+	// water (isWaterCell, the same water the projection draws blue), or
+	// everywhere (the original behaviour). The solver runs over the whole
+	// box either way.
+	enum { DEWITZ_SHOW_WATER_ONLY = 0, DEWITZ_SHOW_EVERYWHERE = 1 };
+	static int DEWITZ_SHOWN_ON;
 	static bool DEWITZ_SHOW_OBSTACLES;
 	static float DEWITZ_OBSTACLE_COLOR[4];
 
@@ -198,6 +204,7 @@ private:
 	ofFbo dewitzFbo;
 	ofVboMesh dewitzPoints;   // particle segments (OF_PRIMITIVE_LINES)
 	ofVboMesh obstacleMesh;   // obstacle overlay quads, projector space
+	std::vector<unsigned char> waterMask; // isWaterCell per grid cell, for DewitzFlow
 	void drawObstacleOverlay();
 	ofVec2f fineToProj(float x, float y) const; // via projLut
 	// Projector coordinates on a coarse grid of fine cells (every

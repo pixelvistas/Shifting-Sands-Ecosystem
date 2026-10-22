@@ -34,6 +34,9 @@ float DewitzFlow::ATTRACTOR_RADIUS = 20.0f;
 int DewitzFlow::PARTICLE_COUNT = 20000;
 // 600 frames at 40 fps, matching tools/dewitz_proto.py (age > 600 respawns).
 float DewitzFlow::PARTICLE_LIFE_SEC = 15.0f;
+// Water-mask mode only (see setWaterMask): ~3 lattice cells at DOWNSAMPLE 3.
+int DewitzFlow::SPAWN_BAND_CELLS = 9;
+float DewitzFlow::LAND_FADE_SEC = 0.5f;
 
 // D2Q9, Lallemand & Luo (2000) ordering: rest, E, N, W, S, NE, NW, SW, SE.
 // "N" is +y, which here is down the grid (row order); the physics is
@@ -81,6 +84,7 @@ void DewitzFlow::resize(int c, int r, int d)
 		setEquilibrium(&f[c2 * Q], 1.0f, 0.0f, 0.0f);
 	terrainReady = false;
 	px.clear(); py.clear(); age.clear();
+	prevX.clear(); prevY.clear(); alpha.clear(); landTime.clear(); parked.clear();
 }
 
 void DewitzFlow::setEquilibrium(float * fc, float r, float u, float v) const
@@ -407,8 +411,71 @@ bool DewitzFlow::solidAtFine(float x, float y) const
 	return solid[j * nx + i] != 0;
 }
 
+bool DewitzFlow::waterAt(float x, float y) const
+{
+	int xi = (int)x, yi = (int)y;
+	if (xi < 0 || yi < 0 || xi >= cols || yi >= rows)
+		return false;
+	return waterMask[yi * cols + xi] != 0;
+}
+
+void DewitzFlow::buildInletWater()
+{
+	inletWater.clear();
+	int w = nx * ds, h = ny * ds;
+	int band = std::max(1, SPAWN_BAND_CELLS);
+	int x0 = 0, x1 = w, y0 = 0, y1 = h;
+	switch (INLET_EDGE) {
+	case EDGE_LEFT:  x1 = std::min(w, band); break;
+	case EDGE_RIGHT: x0 = std::max(0, w - band); break;
+	case EDGE_TOP:   y1 = std::min(h, band); break;
+	default:         y0 = std::max(0, h - band); break;
+	}
+	for (int y = y0; y < y1; y++)
+		for (int x = x0; x < x1; x++)
+			if (waterMask[y * cols + x] && !solidAtFine(x + 0.5f, y + 0.5f))
+				inletWater.push_back(y * cols + x);
+}
+
+void DewitzFlow::buildAnyWater()
+{
+	anyWater.clear();
+	int w = nx * ds, h = ny * ds;
+	for (int y = 0; y < h; y++)
+		for (int x = 0; x < w; x++)
+			if (waterMask[y * cols + x] && !solidAtFine(x + 0.5f, y + 0.5f))
+				anyWater.push_back(y * cols + x);
+	anyWaterBuilt = true;
+}
+
 void DewitzFlow::respawn(int k, bool anywhere)
 {
+	if (waterMask) {
+		// Water only: on water near the inlet, else on any water, never on
+		// land; parked (invisible) when there is no water at all.
+		const std::vector<int> * from = &inletWater;
+		if (anywhere || from->empty()) {
+			if (!anyWaterBuilt)
+				buildAnyWater();
+			from = &anyWater;
+		}
+		std::uniform_real_distribution<float> U(0.0f, 1.0f);
+		if (from->empty()) {
+			parked[k] = 1;
+			alpha[k] = 0.0f;
+		} else {
+			int c = (*from)[std::min((int)from->size() - 1, (int)(U(rng) * from->size()))];
+			px[k] = (c % cols) + U(rng);
+			py[k] = (c / cols) + U(rng);
+			parked[k] = 0;
+			alpha[k] = 1.0f;
+		}
+		prevX[k] = px[k]; prevY[k] = py[k];
+		landTime[k] = -1.0f;
+		age[k] = 0.0f;
+		return;
+	}
+
 	std::uniform_real_distribution<float> U(0.0f, 1.0f);
 	float w = (float)(nx * ds), h = (float)(ny * ds);
 	float x = 0.0f, y = 0.0f;
@@ -438,10 +505,22 @@ void DewitzFlow::advectParticles(float dt)
 		return;
 	double t0 = nowMs();
 	int target = std::max(0, PARTICLE_COUNT);
+	anyWaterBuilt = false;
+	parkedLastFrame = 0;
+	if (waterMask) {
+		buildInletWater();
+		buildAnyWater();
+		waterCellsLastFrame = (int)anyWater.size();
+	} else {
+		waterCellsLastFrame = -1;
+		std::fill(alpha.begin(), alpha.end(), 1.0f);
+		std::fill(parked.begin(), parked.end(), (unsigned char)0);
+	}
 	if ((int)px.size() != target) {
 		int old = (int)px.size();
 		px.resize(target); py.resize(target); age.resize(target);
 		prevX.resize(target); prevY.resize(target);
+		alpha.resize(target, 1.0f); landTime.resize(target, -1.0f); parked.resize(target, 0);
 		for (int k = old; k < target; k++)
 			respawn(k, true);
 	}
@@ -452,6 +531,10 @@ void DewitzFlow::advectParticles(float dt)
 	respawnsLastFrame = 0;
 	exitsLastFrame = 0;
 	for (int k = 0; k < (int)px.size(); k++) {
+		if (waterMask && parked[k]) {
+			respawn(k, true); // retry: water may have appeared
+			if (parked[k]) { parkedLastFrame++; continue; }
+		}
 		float x = px[k], y = py[k];
 		prevX[k] = x; prevY[k] = y;
 		float lx = x / ds - 0.5f, ly = y / ds - 0.5f;
@@ -487,6 +570,23 @@ void DewitzFlow::advectParticles(float dt)
 			respawn(k, false);
 			respawnsLastFrame++;
 			continue;
+		}
+		if (waterMask) {
+			// Once on land, keep moving with the flow but fade out, then
+			// respawn. Committed: returning to water does not undo it, so
+			// shoreline jitter cannot make a particle flicker.
+			if (landTime[k] < 0.0f && !waterAt(x, y))
+				landTime[k] = 0.0f;
+			if (landTime[k] >= 0.0f) {
+				landTime[k] += dt;
+				float fadeSec = std::max(1e-3f, LAND_FADE_SEC);
+				if (landTime[k] >= fadeSec) {
+					respawn(k, false);
+					respawnsLastFrame++;
+					continue;
+				}
+				alpha[k] = 1.0f - landTime[k] / fadeSec;
+			}
 		}
 		px[k] = x; py[k] = y;
 	}

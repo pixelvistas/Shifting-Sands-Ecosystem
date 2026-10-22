@@ -57,8 +57,20 @@ public:
 	void stepLattice();
 	void advectParticles(float dt);
 
+	// Optional water mask (cols x rows, row-major, nonzero = water), read
+	// during the next update(). nullptr (the default) = particles live
+	// everywhere, exactly as before. With a mask, particles spawn on water
+	// within SPAWN_BAND_CELLS of the inlet edge (or on any water if none
+	// touches it), never on land; one that moves onto land keeps moving
+	// but fades out over LAND_FADE_SEC, then respawns. Only the particles
+	// are affected - the lattice, obstacles and weights are unchanged.
+	void setWaterMask(const unsigned char * mask) { waterMask = mask; }
+
 	// Particles in fine grid coordinates.
 	int particleCount() const { return (int)px.size(); }
+	// Per-particle opacity 0..1 (1 everywhere without a water mask; fades
+	// on land; 0 while parked because there is no water to spawn on).
+	const std::vector<float> & particleAlpha() const { return alpha; }
 	const std::vector<float> & particleX() const { return px; }
 	const std::vector<float> & particleY() const { return py; }
 	// Position at the start of the last advection step. A particle that
@@ -88,6 +100,8 @@ public:
 	float getParticleMs() const { return particleMs; }
 	int getRespawnsLastFrame() const { return respawnsLastFrame; }
 	int getExitsLastFrame() const { return exitsLastFrame; }       // left through the outlet edge
+	int getWaterCellsLastFrame() const { return waterCellsLastFrame; } // -1 = no mask
+	int getParkedLastFrame() const { return parkedLastFrame; }
 
 	std::vector<Attractor> attractors;
 
@@ -112,6 +126,8 @@ public:
 	static float ATTRACTOR_RADIUS;     // fine cells; full pull inside this
 	static int PARTICLE_COUNT;
 	static float PARTICLE_LIFE_SEC;    // 0 = particles live until they exit
+	static int SPAWN_BAND_CELLS;       // water mask only: inlet spawn band, fine cells
+	static float LAND_FADE_SEC;        // water mask only: fade-out after reaching land
 
 private:
 	static const int Q = 9;
@@ -138,9 +154,18 @@ private:
 
 	std::vector<float> px, py, age;
 	std::vector<float> prevX, prevY;
+	std::vector<float> alpha, landTime;  // landTime < 0 = on water
+	std::vector<unsigned char> parked;
+	const unsigned char * waterMask = nullptr;
+	std::vector<int> inletWater, anyWater; // fine-cell indices, rebuilt per frame
+	bool anyWaterBuilt = false;
+	void buildInletWater();
+	void buildAnyWater();
+	bool waterAt(float x, float y) const;
 	std::mt19937 rng{ 12345 };
 
 	long long resets = 0, nonFinite = 0, steps = 0;
 	int obstacleCells = 0, maskFlips = 0, respawnsLastFrame = 0, exitsLastFrame = 0;
+	int waterCellsLastFrame = -1, parkedLastFrame = 0;
 	float maxSpeed = 0.0f, latticeMs = 0.0f, particleMs = 0.0f;
 };

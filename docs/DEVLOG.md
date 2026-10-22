@@ -170,3 +170,33 @@ At the user's request, before hardware testing; nothing else changed.
   obstacle evidence is held at 0, so a wall there opens immediately
   through the existing open-at-equilibrium path.
 - The obstacle overlay is unchanged.
+
+## 2026-10-22 - Particles on simulated water only; dry-earth colour map below 0 mm
+
+Decision (user): the definition of water is the flow simulation
+(`VegetationField::isWaterCell`, the cells the simulated-water overlay
+draws), not the colour map. Previously both painted blue and disagreed:
+the colour map coloured every cell below 0 mm blue whether or not water
+had reached it.
+
+- `WaterFlowField`: new "Particles shown on" setting, Water only (default)
+  / Everywhere. Water only passes a per-cell `isWaterCell` mask to
+  `DewitzFlow::setWaterMask()` each frame; Everywhere passes nullptr and is
+  the previous behaviour (harness numbers reproduced exactly).
+- `DewitzFlow` particle handling with a mask (the lattice, obstacle mask,
+  inlet and weights are untouched): particles spawn on non-obstacle water
+  cells within `SPAWN_BAND_CELLS` (9 fine cells, ~3 lattice cells) of the
+  inlet edge, or on any water cell if none touches the inlet, never on
+  land; with no water anywhere they park invisibly and retry each frame.
+  A particle that moves onto land keeps moving with the flow, fades out
+  over `LAND_FADE_SEC` (0.5 s) and then respawns; the fade is committed,
+  so re-entering water does not restore it (no shoreline flicker).
+  Per-particle alpha is drawn as per-vertex colour.
+- Scratch check (synthetic water band + separate pond, 2000 frames): no
+  full-opacity particle on land, every respawn inside the inlet band on
+  water, and on a dry table all 20000 particles park.
+- `HeightColorMap.xml`: the six keys below 0 mm are now dry earth tones,
+  light sand (226,205,165) at -3 mm to deep brown (104,74,46) at -45 mm.
+  Keys at or above 0 mm unchanged; contour lines unchanged. The
+  simulated-water overlay stays on by default, so blue means simulated
+  water only.
