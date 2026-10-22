@@ -104,6 +104,10 @@ int VegetationField::SOURCE_EDGE = VegetationField::EDGE_LEFT;
 int VegetationField::SINK_EDGE = VegetationField::EDGE_RIGHT;
 float VegetationField::SOURCE_SPAN = 0.4f;
 float VegetationField::INFLOW_MM_PER_SEC = 8.0f;
+// Water table (2026-10-22) - first guesses, see the header note.
+bool VegetationField::ENABLE_WATER_TABLE = true;
+float VegetationField::WATER_TABLE_MM = -15.0f;
+float VegetationField::SEEPAGE_MM_PER_SEC = 4.0f;
 bool VegetationField::USE_FLAT_SEA = false;
 bool VegetationField::DRAW_SIMULATED_WATER = true;
 // First-guess, untested on real hardware - see the header note.
@@ -309,10 +313,11 @@ void VegetationField::stepFlow(float waterLevelFrac)
 	// small flux by a near-zero depth would give meaningless huge speeds.
 	const float VELOCITY_MIN_DEPTH_MM = 0.5f;
 
-	float inflowVolume = 0.0f, outflowVolume = 0.0f;
+	float inflowVolume = 0.0f, outflowVolume = 0.0f, seepageVolume = 0.0f;
 
 	for (int s = 0; s < substeps; s++) {
 		inflowVolume += addSourceInflow(depth, dt);
+		seepageVolume += addSeepage(depth, terr, dt);
 
 		// Flux pass - reads depth, writes only this cell's own pipes.
 		for (int gy = 0; gy < rows; gy++) {
@@ -400,6 +405,11 @@ void VegetationField::stepFlow(float waterLevelFrac)
 	lastMaxDepthMM = maxDepth;
 	lastWetCells = wet;
 	lastInflowRate = inflowVolume / frameDt;
+	lastSeepageRate = seepageVolume / frameDt;
+	int below = 0;
+	for (int i = 0; i < n; i++)
+		if (terr[i] < WATER_TABLE_MM) below++;
+	lastCellsBelowTable = below;
 	lastOutflowRate = outflowVolume / frameDt;
 	lastFlowMs = (ofGetElapsedTimeMicros() - t0) / 1000.0f;
 }
@@ -426,12 +436,37 @@ float VegetationField::addSourceInflow(float * depthMM, float dt)
 	return add * span;
 }
 
+float VegetationField::addSeepage(float * depthMM, const float * terrMM, float dt)
+{
+	if (!ENABLE_WATER_TABLE || SEEPAGE_MM_PER_SEC <= 0.0f)
+		return 0.0f;
+	const int n = rows * cols;
+	const float rate = SEEPAGE_MM_PER_SEC * dt;
+	float added = 0.0f;
+	for (int i = 0; i < n; i++) {
+		float room = WATER_TABLE_MM - (terrMM[i] + depthMM[i]);
+		if (room > 0.0f) {
+			float a = std::min(rate, room);
+			depthMM[i] += a;
+			added += a;
+		}
+	}
+	return added;
+}
+
 // See the header note - read-only queries of stepFlow()'s state.
 float VegetationField::getWaterDepthAt(int gx, int gy) const
 {
 	if (gx < 0 || gx >= cols || gy < 0 || gy >= rows)
 		return 0.0f;
 	return waterDepth.at<float>(gy, gx);
+}
+
+float VegetationField::getDepthBelowWaterTableAt(int gx, int gy) const
+{
+	if (!gridReady || !flowTerrainReady || gx < 0 || gx >= cols || gy < 0 || gy >= rows)
+		return 0.0f;
+	return flowTerrain.at<float>(gy, gx) - WATER_TABLE_MM;
 }
 
 ofVec2f VegetationField::getFlowVelocityAt(int gx, int gy) const
@@ -1031,6 +1066,11 @@ void VegetationField::drawGui()
 	ImGui::Text("If water shimmers or checkerboards, raise substeps or friction,");
 	ImGui::Text("or lower gravity.");
 	ImGui::SliderFloat("Terrain smoothing (s)", &FLOW_TERRAIN_SMOOTHING_SEC, 0.0f, 2.0f);
+	ImGui::Checkbox("Water table (seepage into dug basins)", &ENABLE_WATER_TABLE);
+	ImGui::SliderFloat("Water table (mm)", &WATER_TABLE_MM, -60.0f, 0.0f);
+	ImGui::SliderFloat("Seepage (mm/s)", &SEEPAGE_MM_PER_SEC, 0.0f, 30.0f);
+	ImGui::Text("Seepage in: %.0f/s (mm x cells^2), cells below the table: %d",
+		lastSeepageRate, lastCellsBelowTable);
 	ImGui::Checkbox("Also keep flat ELF sea (legacy)", &USE_FLAT_SEA);
 	ImGui::Checkbox("Draw simulated water over the colour map", &DRAW_SIMULATED_WATER);
 	if (ImGui::Button("Reset water (dry the table)"))

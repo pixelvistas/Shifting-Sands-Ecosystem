@@ -200,3 +200,41 @@ had reached it.
   Keys at or above 0 mm unchanged; contour lines unchanged. The
   simulated-water overlay stays on by default, so blue means simulated
   water only.
+
+## 2026-10-22 - Water table: seepage as a second source in stepFlow()
+
+At the user's request. Pipe model, DewitzFlow, particles and colour map
+unchanged.
+
+- New `VegetationField` settings (Hydrology GUI): `ENABLE_WATER_TABLE`
+  (on), `WATER_TABLE_MM` (-15 mm), `SEEPAGE_MM_PER_SEC` (4).
+- `addSeepage()`, called each substep after the edge inflow: any cell
+  whose surface (smoothed bed `flowTerrain` + depth) is below the table
+  gains min(SEEPAGE x dt, table - surface). It is ordinary depth, so it
+  is drawn, classified by `isWaterCell`, carries particles and flows on.
+  Water above the table is moved only by the pipe model.
+- `getDepthBelowWaterTableAt(gx, gy)`: smoothed bed minus the table, mm
+  (positive above the table). Not drawn.
+- GUI readouts: seepage inflow (mm x cells^2 / s), cells whose bed is
+  below the table.
+
+Synthetic test (the real `stepFlow`/`addSourceInflow`/`addSeepage` source
+extracted and compiled against a stub class; 260x150 grid, 1.5 mm noise
+per frame, 40 fps; scratchpad, not committed):
+1. Basin with a -40 mm floor, inflow off: centre surface reaches the table
+   in ~1.5 s, basin volume ~95% full by 5 s (seepage falls from ~4900/s to
+   ~200/s). Afterwards the surface settles ~1-1.5 mm ABOVE the table and
+   volume creeps up slowly (+6% over 5 min, slowing): Kinect noise in the
+   bed briefly dips some cells' surface below the table, seepage tops them
+   up, the pipe model spreads it, and nothing removes it again.
+2. Shallow basin (floor -8 mm, above the table) on a gentle slope: no
+   seepage and no water with inflow off; with edge inflow on, it becomes
+   water when the surface flow arrives (~60 s on that slope), then holds
+   water.
+3. Basin filled, then the hole refilled with sand over 2 s: 10 s later
+   0 water cells, but ~16,900 mm x cells^2 remains as an invisible film
+   up to 2.9 mm deep (below the ~3-4 mm visibility threshold) on the new
+   surface - the pipe model has no infiltration, so it does not vanish.
+4. Flat sand at 0 mm with 1.5 mm noise, 60 s: never any water, 0 cells
+   below the table. Harsher check, sand at -10 mm with 3 mm noise: never
+   visible water (442 mm x cells^2 of sub-threshold seepage).

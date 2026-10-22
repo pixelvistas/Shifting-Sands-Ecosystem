@@ -314,6 +314,10 @@ public:
 	// isWaterCell() is the same hysteresis-stabilized classification
 	// isWaterAt() returns, indexed by grid cell instead of Kinect pixel.
 	float getWaterDepthAt(int gx, int gy) const;
+	// Height (mm) of the cell's smoothed bed above WATER_TABLE_MM:
+	// positive when the bed is above the table, negative below it. For
+	// the future moisture layer; not drawn.
+	float getDepthBelowWaterTableAt(int gx, int gy) const;
 	ofVec2f getFlowVelocityAt(int gx, int gy) const;
 	bool isWaterCell(int gx, int gy) const;
 	// Empties all simulated water (depth, pipe fluxes, velocity, water
@@ -474,6 +478,15 @@ public:
 	static int SINK_EDGE;
 	static float SOURCE_SPAN;
 	static float INFLOW_MM_PER_SEC;
+	// Water table: a second source alongside the edge inflow. Any cell
+	// whose water surface (smoothed bed + depth) is below WATER_TABLE_MM
+	// gains depth at SEEPAGE_MM_PER_SEC, never past WATER_TABLE_MM, so a
+	// basin dug below the table fills gradually from the bottom up.
+	// Seepage water is ordinary simulated water. WATER_TABLE_MM sits below
+	// where flat sand rests, so sensor noise never floods untouched sand.
+	static bool ENABLE_WATER_TABLE;
+	static float WATER_TABLE_MM;
+	static float SEEPAGE_MM_PER_SEC;
 	// Old behaviour: also keep every cell below the flat ELF water line
 	// topped up to that line every frame (an infinite, motionless sea).
 	// Off by default - it creates water from nothing and holds it still,
@@ -627,6 +640,9 @@ private:
 	// Adds one substep's inflow along SOURCE_EDGE (depth in mm); returns
 	// the volume added (mm x cells^2).
 	float addSourceInflow(float * depthMM, float dt);
+	// Adds one substep's water-table seepage (see ENABLE_WATER_TABLE);
+	// returns the volume added (mm x cells^2).
+	float addSeepage(float * depthMM, const float * terrMM, float dt);
 
 	std::shared_ptr<KinectProjector> kinectProjector;
 	ofRectangle kinectROI;
@@ -670,6 +686,8 @@ private:
 	float lastInflowRate = 0.0f;    // mm x cells^2 / s
 	float lastOutflowRate = 0.0f;   // mm x cells^2 / s
 	int lastWetCells = 0;
+	float lastSeepageRate = 0.0f;   // mm x cells^2 / s
+	int lastCellsBelowTable = 0;    // cells whose bed is below WATER_TABLE_MM
 
 	// Persistent per-cell "is this currently classified as water" state
 	// (0.0/1.0, CV_32F) - see WATER_HYSTERESIS_FRAC's header note. Not
