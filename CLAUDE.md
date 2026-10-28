@@ -41,7 +41,7 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   two variants in sync). Colour comes from
   `bin/data/colorMaps/HeightColorMap.xml` (key height in mm = elevation
   in mm). Keys run -45..85 mm, rescaled to this box's measured dig/mound
-  limits (-41.8/+80 mm); below -6 mm they are six dry earth tones, so
+  limits (-41.8/+80 mm); below -6 mm they are five dry earth tones, so
   blue on the sand means simulated water only; sage #B4BC92 runs -6..14.2 mm
   (flat sand sits inside it), then five even bands to 85 mm (..#B9561A). The map is stepped, not blended: each band is a pair
   of keys with the same colour (start, next start - 0.01 mm). The shader adds the simulated-water

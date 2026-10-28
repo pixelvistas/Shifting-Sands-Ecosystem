@@ -3539,3 +3539,11 @@ cover, hiding the land colours; they asked for map symbols instead.
   range still -45..85 mm.
 
 Not compiled (no GLSL validator in the session); not hardware-tested.
+
+## 2026-10-28 - Earth bands: compression reverted, lightest tone dropped
+
+The user disliked the compressed earth bands. Their choice: earth keys
+back at their original heights (-45, -35, -25, -15, -8 mm) and the
+lightest earth tone #E2CDA5 removed, so #D4BA8F runs -8..-6 mm and sage
+still starts at -6 mm. Land bands above unchanged; range -45..85 mm;
+vegetation symbols unchanged. Not hardware-tested.
