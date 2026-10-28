@@ -137,7 +137,13 @@ bool VegetationField::DEBUG_SHOW_SNOW = false;
 // speckle or agent icons) at all, not just toggleable off. Still a real
 // checkbox in the GUI, not hardcoded - can be turned back on to inspect
 // vegetation state if ever needed.
-bool VegetationField::DEBUG_HIDE_VEGETATION = true;
+// Was true on this branch line (no vegetation drawn); the shader draws
+// vegetation again since the succession model (2026-10-28), so it is off.
+bool VegetationField::DEBUG_HIDE_VEGETATION = false;
+// Succession model (2026-10-28) - see SuccessionModel.h.
+int VegetationField::VEGETATION_MODEL = VegetationField::MODEL_SITE_FEEDBACK;
+float VegetationField::SOIL_TINT_STRENGTH = 0.35f;
+int VegetationField::SITE_DEBUG_VIEW = VegetationField::SITE_VIEW_OFF;
 
 namespace {
 	// One cell per kinect pixel - see the header note on matching ELF's
@@ -638,7 +644,11 @@ void VegetationField::update()
 			float & fruit = fruitDensity.at<float>(gy, gx);
 			float & nut = nutDensity.at<float>(gy, gx);
 
-			if (isWater || isSnow) {
+			if (VEGETATION_MODEL == MODEL_SITE_FEEDBACK) {
+				// Site-feedback model: vegetation is SuccessionModel's,
+				// stepped after this loop; the ELF channels are left as
+				// they are so switching back resumes the ELF state.
+			} else if (isWater || isSnow) {
 				// BDlocation.makeSnow()/makeWater() zero shrubs/fruits/nuts
 				// outright, with no easing - do the same here.
 				shrub = fruit = nut = 0.0f;
@@ -705,6 +715,12 @@ void VegetationField::update()
 		}
 	}
 
+	// Site-feedback model (Eq. 2.2) - see SuccessionModel.h. Uses this
+	// frame's elevation, the water classification just updated above, and
+	// last frame's smoothed bed relative to the water table.
+	if (VEGETATION_MODEL == MODEL_SITE_FEEDBACK)
+		stepSuccession(data);
+
 	combinedTex.loadData(px);
 	// Nearest-neighbor: at GRID_STEP==1 this is a no-op for alignment
 	// (one texel per mesh pixel already), but keeps the shader's texel
@@ -738,6 +754,88 @@ void VegetationField::update()
 	}
 }
 
+void VegetationField::syncSuccessionParams()
+{
+	if (appliedParamsLoad == ecologyParams.getLoadCount())
+		return;
+	appliedParamsLoad = ecologyParams.getLoadCount();
+	SuccessionModel::RoleParams roles[SuccessionModel::ROLE_COUNT];
+	ecologyParams.toRoleParams(roles);
+	std::string error;
+	if (!succession.setParams(roles, error))
+		ofLogWarning("VegetationField") << "succession parameters refused: " << error;
+}
+
+void VegetationField::stepSuccession(unsigned char * texData)
+{
+	syncSuccessionParams();
+	const int n = rows * cols;
+	succWater.resize(n);
+	succAbove.resize(n);
+	const float * water = waterState.ptr<float>(0);
+	const float * terr = flowTerrainReady ? flowTerrain.ptr<float>(0) : previousElevation.ptr<float>(0);
+	for (int i = 0; i < n; i++) {
+		succWater[i] = water[i] > 0.5f ? 1 : 0;
+		succAbove[i] = terr[i] - WATER_TABLE_MM;
+	}
+	float dt = ofGetLastFrameTime();
+	if (dt <= 0.0f || dt > 0.1f)
+		dt = 1.0f / 60.0f; // first frame / debugger pause, as stepFlow()
+
+	SuccessionModel::Inputs in;
+	in.elevationMM = previousElevation.ptr<float>(0); // this frame's samples (set in the loop above)
+	in.water = succWater.data();
+	in.heightAboveTableMM = succAbove.data();
+	in.cols = cols;
+	in.rows = rows;
+	in.mmPerCell = mmPerCell;
+	in.dt = dt;
+	in.temperature = TEMPERATURE;
+	in.restingTemperature = BASE_TEMPERATURE;
+	in.spreadRadiusMM = SPREAD_RADIUS_MM;
+	// The existing spontaneous chances (ELF's per-tick %), by role.
+	in.spontaneousSeed[SuccessionModel::PIONEER] = FRUIT_GROWTH_CHANCE_PCT / 100.0f;
+	in.spontaneousSeed[SuccessionModel::INTERMEDIATE] = NUT_GROWTH_CHANCE_PCT / 100.0f;
+	in.spontaneousSeed[SuccessionModel::CLIMAX] = SHRUB_GROWTH_CHANCE_PCT / 100.0f;
+	succession.step(in);
+	if (succession.getCols() != cols || succession.getRows() != rows) {
+		// No valid preset yet: draw no vegetation rather than the ELF state.
+		for (int i = 0; i < n; i++)
+			texData[i * 4 + 0] = texData[i * 4 + 1] = texData[i * 4 + 2] = 0;
+		return;
+	}
+
+	// Texture: R/G/B = shrub/fruit/nut channels = climax/pioneer/
+	// intermediate (EcologyParams' mapping); alpha (water) already set.
+	const float * pio = succession.cover(SuccessionModel::PIONEER);
+	const float * mid = succession.cover(SuccessionModel::INTERMEDIATE);
+	const float * cli = succession.cover(SuccessionModel::CLIMAX);
+	const float * soil = succession.soil();
+	const float * moist = succession.moisture();
+	if (!sitePixels.isAllocated() || (int)sitePixels.getWidth() != cols || (int)sitePixels.getHeight() != rows)
+		sitePixels.allocate(cols, rows, OF_IMAGE_COLOR_ALPHA);
+	unsigned char * site = sitePixels.getData();
+	for (int i = 0; i < n; i++) {
+		texData[i * 4 + 0] = (unsigned char)(cli[i] * 255.0f);
+		texData[i * 4 + 1] = (unsigned char)(pio[i] * 255.0f);
+		texData[i * 4 + 2] = (unsigned char)(mid[i] * 255.0f);
+		site[i * 4 + 0] = (unsigned char)(soil[i] * 255.0f);
+		site[i * 4 + 1] = (unsigned char)(moist[i] * 255.0f);
+		site[i * 4 + 2] = 0;
+		site[i * 4 + 3] = 255;
+	}
+	siteTex.loadData(sitePixels);
+	siteTex.setTextureMinMagFilter(GL_NEAREST, GL_NEAREST);
+}
+
+int VegetationField::successionIndex(float kx, float ky) const
+{
+	int gx, gy;
+	if (!cellIndexAt(kx, ky, gx, gy) || succession.getCols() != cols || succession.getRows() != rows)
+		return -1;
+	return gy * cols + gx;
+}
+
 bool VegetationField::cellIndexAt(float kx, float ky, int & gx, int & gy) const
 {
 	if (!gridReady)
@@ -749,6 +847,15 @@ bool VegetationField::cellIndexAt(float kx, float ky, int & gx, int & gy) const
 
 float VegetationField::eatShrubOrFruit(float kx, float ky)
 {
+	if (VEGETATION_MODEL == MODEL_SITE_FEEDBACK) {
+		// Same preference order, on the model's cover: shrub (climax),
+		// then fruit (pioneer).
+		int i = successionIndex(kx, ky);
+		if (i < 0) return 0.0f;
+		float got = succession.eat(i, SuccessionModel::CLIMAX);
+		if (got <= 0.0f) got = succession.eat(i, SuccessionModel::PIONEER);
+		return got * FOOD_PER_FULL_CELL;
+	}
 	int gx, gy;
 	if (!cellIndexAt(kx, ky, gx, gy))
 		return 0.0f;
@@ -770,6 +877,18 @@ float VegetationField::eatShrubOrFruit(float kx, float ky)
 
 float VegetationField::eatFruitOrNut(float kx, float ky, bool preferNut, bool & ateNut)
 {
+	if (VEGETATION_MODEL == MODEL_SITE_FEEDBACK) {
+		// Same preference order, on the model's cover: nut =
+		// intermediate, fruit = pioneer.
+		int i = successionIndex(kx, ky);
+		if (i < 0) return 0.0f;
+		int first = preferNut ? SuccessionModel::INTERMEDIATE : SuccessionModel::PIONEER;
+		int second = preferNut ? SuccessionModel::PIONEER : SuccessionModel::INTERMEDIATE;
+		float got = succession.eat(i, first);
+		ateNut = preferNut;
+		if (got <= 0.0f) { got = succession.eat(i, second); ateNut = !preferNut; }
+		return got * FOOD_PER_FULL_CELL;
+	}
 	int gx, gy;
 	if (!cellIndexAt(kx, ky, gx, gy))
 		return 0.0f;
@@ -1111,6 +1230,71 @@ void VegetationField::drawGui()
 	ImGui::Text("and not a contour line. Below this density, nut stays negative");
 	ImGui::Text("space (like a real tie) instead of committing to that color.");
 	ImGui::SliderFloat("Nut visibility threshold", &NUT_VISIBILITY_THRESHOLD, 0.0f, 0.3f);
+	drawSuccessionGui();
 	ecologyParams.drawGui();
 	ImGui::End();
+}
+
+void VegetationField::drawSuccessionGui()
+{
+	ImGui::Separator();
+	ImGui::Text("Succession");
+	{
+		static const char * models[] = { "ELF bands (Eq. 2.1)", "Site feedback (Eq. 2.2)" };
+		ImGui::Combo("Vegetation model", &VEGETATION_MODEL, models, 2);
+	}
+	ImGui::SliderFloat("Soil tint strength", &SOIL_TINT_STRENGTH, 0.0f, 1.0f);
+	{
+		static const char * views[] = { "Off", "Moisture M (false colour)", "Soil S (false colour)" };
+		ImGui::Combo("Debug overlay", &SITE_DEBUG_VIEW, views, 3);
+	}
+	if (VEGETATION_MODEL != MODEL_SITE_FEEDBACK)
+		return;
+
+	const SuccessionModel & m = succession;
+	if (!m.hasParams())
+		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f), "No valid ecology preset loaded: the site model is not running.");
+	ImGui::Text("Cover: pioneer %.2f, intermediate %.2f, climax %.2f; mean M %.2f, mean S %.2f",
+		m.getMeanCover(SuccessionModel::PIONEER), m.getMeanCover(SuccessionModel::INTERMEDIATE),
+		m.getMeanCover(SuccessionModel::CLIMAX), m.getMeanMoisture(), m.getMeanSoil());
+	ImGui::Text("Disturbance events: %lld (last step %d); step cost %.2f ms",
+		m.getDisturbanceEvents(), m.getDisturbedLastStep(), m.getLastStepMs());
+	if (ImGui::Button("Reset vegetation and soil (bare ground, S = 0)"))
+		succession.reset();
+
+	if (ImGui::TreeNode("Succession rates")) {
+		ImGui::Text("Vegetation (per second)");
+		ImGui::SliderFloat("Growth rate, pioneer", &SuccessionModel::GROWTH_RATE[SuccessionModel::PIONEER], 0.0f, 3.0f);
+		ImGui::SliderFloat("Growth rate, intermediate", &SuccessionModel::GROWTH_RATE[SuccessionModel::INTERMEDIATE], 0.0f, 3.0f);
+		ImGui::SliderFloat("Growth rate, climax", &SuccessionModel::GROWTH_RATE[SuccessionModel::CLIMAX], 0.0f, 3.0f);
+		ImGui::SliderFloat("Mortality rate", &SuccessionModel::MORTALITY_RATE, 0.0f, 3.0f);
+		ImGui::SliderFloat("Suitability margin (x range width)", &SuccessionModel::SUITABILITY_MARGIN, 0.0f, 1.0f);
+		ImGui::SliderFloat("Established cover (seed source)", &SuccessionModel::ESTABLISHED_COVER, 0.0f, 1.0f);
+		ImGui::SliderFloat("Neighbour re-check chance", &SuccessionModel::SPREAD_CHECK_CHANCE, 0.0f, 1.0f);
+		ImGui::Text("Spread radius and spontaneous chances: the ELF spread/growth sliders above.");
+		ImGui::Text("Soil");
+		ImGui::SliderFloat("Soil build rate", &SuccessionModel::SOIL_BUILD_RATE, 0.0f, 0.1f, "%.4f");
+		ImGui::SliderFloat("Soil build weight, pioneer", &SuccessionModel::SOIL_BUILD_WEIGHT[SuccessionModel::PIONEER], 0.0f, 2.0f);
+		ImGui::SliderFloat("Soil build weight, intermediate", &SuccessionModel::SOIL_BUILD_WEIGHT[SuccessionModel::INTERMEDIATE], 0.0f, 2.0f);
+		ImGui::SliderFloat("Soil build weight, climax", &SuccessionModel::SOIL_BUILD_WEIGHT[SuccessionModel::CLIMAX], 0.0f, 2.0f);
+		ImGui::SliderFloat("Soil loss rate (bare ground)", &SuccessionModel::SOIL_LOSS_RATE, 0.0f, 0.1f, "%.4f");
+		ImGui::SliderFloat("Bare-ground cover threshold", &SuccessionModel::BARE_COVER, 0.0f, 0.5f);
+		ImGui::SliderFloat("Max soil depth (cm, for cm/mm units)", &SuccessionModel::SOIL_MAX_DEPTH_CM, 1.0f, 200.0f);
+		ImGui::Text("Moisture");
+		ImGui::SliderFloat("Water-table falloff (mm)", &SuccessionModel::MOISTURE_TABLE_FALLOFF_MM, 1.0f, 100.0f);
+		ImGui::SliderFloat("Soil retention", &SuccessionModel::SOIL_RETENTION, 0.0f, 1.0f);
+		ImGui::SliderFloat("Wetting time (s)", &SuccessionModel::MOISTURE_WET_SEC, 0.1f, 30.0f);
+		ImGui::SliderFloat("Drying time (s)", &SuccessionModel::MOISTURE_DRY_SEC, 1.0f, 600.0f);
+		ImGui::SliderFloat("Temperature drying factor", &SuccessionModel::TEMPERATURE_DRYING, 0.0f, 50.0f);
+		ImGui::Text("Disturbance");
+		ImGui::SliderFloat("Disturbance threshold (mm)", &SuccessionModel::DISTURBANCE_MM, 2.0f, 40.0f);
+		ImGui::SliderFloat("Soil retained after disturbance", &SuccessionModel::SOIL_RETAINED_FRACTION, 0.0f, 1.0f);
+		ImGui::SliderFloat("Reference elevation time (s)", &SuccessionModel::DISTURBANCE_REFERENCE_SEC, 1.0f, 300.0f);
+		ImGui::SliderFloat("Settle time after an event (s)", &SuccessionModel::DISTURBANCE_SETTLE_SEC, 0.0f, 10.0f);
+		ImGui::Text("Terrain and cost");
+		ImGui::SliderFloat("Elevation smoothing (s)", &SuccessionModel::ELEVATION_SMOOTH_SEC, 0.05f, 5.0f);
+		ImGui::SliderInt("Slope blur radius (cells)", &SuccessionModel::SLOPE_BLUR_CELLS, 0, 10);
+		ImGui::SliderInt("Rows per step (1 in N)", &SuccessionModel::UPDATE_INTERLEAVE, 1, 8);
+		ImGui::TreePop();
+	}
 }

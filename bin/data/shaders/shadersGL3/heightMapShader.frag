@@ -56,11 +56,63 @@ uniform vec2 vegetationGridOrigin;
 uniform float vegetationGridStep;
 uniform int hasVegetation;
 uniform int drawSimWater;
+// Vegetation (ported 2026-10-28 from ss/ecosim-model-visuals-kiqw12, with
+// opacity = total cover) and the succession model's site layer - see main().
+uniform float heightMapNumEntries;
+uniform int debugHideVegetation;
+uniform float nutVisibilityThreshold;
+uniform sampler2DRect siteSampler; // R = soil S, G = moisture M
+uniform int hasSite;
+uniform float soilTintStrength;
+uniform int siteDebugView;          // 0 off, 1 moisture, 2 soil
+
+// Operator debug false colour (dark purple - teal - yellow).
+vec3 falseColour(float v)
+{
+    v = clamp(v, 0.0, 1.0);
+    vec3 a = vec3(0.267, 0.005, 0.329), b = vec3(0.128, 0.567, 0.551), c = vec3(0.993, 0.906, 0.144);
+    return v < 0.5 ? mix(a, b, v * 2.0) : mix(b, c, v * 2.0 - 1.0);
+}
 
 void main()
 {
     vec2 depthPos = vec2(depthfrag, 0.5);
     vec4 color = texture2DRect(heightColorMapSampler, depthPos); // colormap converted depth
+
+    vec2 vegUV = (texcoordfrag - vegetationGridOrigin) / vegetationGridStep;
+    vec4 veg = (hasVegetation == 1) ? texture(vegetationSampler, vegUV) : vec4(0.0);
+    float waterCode = veg.a * 255.0;
+    bool simWater = waterCode > 0.5 && waterCode < 249.5;
+
+    // Soil tint (succession model, 2026-10-28): a subtle brown in
+    // proportion to soil S, wherever there is no simulated water.
+    if (hasSite == 1 && !simWater)
+    {
+        float soilS = texture(siteSampler, vegUV).r;
+        color.rgb = mix(color.rgb, vec3(0.42, 0.27, 0.13), soilTintStrength * soilS);
+    }
+
+    // Vegetation: the fallback branch's winner-take-all species colours
+    // (R = shrub/climax emerald, G = fruit/pioneer orange-red, B =
+    // nut/intermediate teal, each mixed toward white with height), blended
+    // over the terrain with opacity = total cover. Height here is the
+    // colour map's own normalised elevation, whose keys span the box's
+    // reachable range (-45..85 mm).
+    if (hasVegetation == 1 && debugHideVegetation == 0 && !simWater)
+    {
+        float elevationNorm = clamp(depthfrag / heightMapNumEntries, 0.0, 1.0);
+        float cover = clamp(veg.r + veg.g + veg.b, 0.0, 1.0);
+        vec3 vegColour = color.rgb;
+        if (veg.r > veg.g && veg.r > veg.b)
+            vegColour = mix(vec3(0.0, 0.659, 0.349), vec3(1.0), elevationNorm);
+        else if (veg.g > veg.r && veg.g > veg.b)
+            vegColour = mix(vec3(0.902, 0.353, 0.078), vec3(1.0), elevationNorm);
+        else if (veg.b > veg.g && veg.b > veg.r && veg.b > nutVisibilityThreshold)
+            vegColour = mix(vec3(0.0, 0.675, 0.675), vec3(1.0), elevationNorm);
+        else
+            cover = 0.0;
+        color.rgb = mix(color.rgb, vegColour, cover);
+    }
 
     // Simulated water overlay (ss/terrain-reference-visuals, 2026-10-20).
     // The colour map above only shows elevation; this draws where
@@ -68,16 +120,18 @@ void main()
     // alpha packs water depth into 1..249 (0 = dry, 255 = snow, ignored
     // here), scaled by MAX_WATER_DEPTH_FRAC. Colours are the Deep/Shallow
     // Water stops from HeightColorMap.xml; deeper water is more opaque.
-    if (drawSimWater == 1 && hasVegetation == 1)
+    if (drawSimWater == 1 && simWater)
     {
-        vec2 vegUV = (texcoordfrag - vegetationGridOrigin) / vegetationGridStep;
-        float a = texture(vegetationSampler, vegUV).a * 255.0;
-        if (a > 0.5 && a < 249.5)
-        {
-            float t = clamp((a - 1.0) / 248.0, 0.0, 1.0);
-            vec3 water = mix(vec3(0.255, 0.714, 0.769), vec3(0.031, 0.188, 0.420), t);
-            color.rgb = mix(color.rgb, water, mix(0.6, 0.95, t));
-        }
+        float t = clamp((waterCode - 1.0) / 248.0, 0.0, 1.0);
+        vec3 water = mix(vec3(0.255, 0.714, 0.769), vec3(0.031, 0.188, 0.420), t);
+        color.rgb = mix(color.rgb, water, mix(0.6, 0.95, t));
+    }
+
+    // Operator debug overlay: moisture M or soil S in false colour.
+    if (hasSite == 1 && siteDebugView > 0)
+    {
+        vec4 site = texture(siteSampler, vegUV);
+        color.rgb = falseColour(siteDebugView == 1 ? site.g : site.r);
     }
 
     if (drawContourLines == 1)

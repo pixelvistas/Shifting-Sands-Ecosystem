@@ -52,6 +52,7 @@ Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 
 #pragma once
 #include "ofMain.h"
+#include "SuccessionModel.h"
 #include <array>
 #include <string>
 
@@ -92,9 +93,20 @@ public:
 	// whatever was previously loaded untouched) if the file is missing
 	// or malformed, so a bad/incomplete file can't silently blank out a
 	// working parameter set mid-session.
+	// Since 2026-10-28 a preset is also refused (previous one kept, reason
+	// in getLastError() and the GUI) when SuccessionModel::validateParams()
+	// rejects it: an unrecognised unit, or a min == max == 0 placeholder
+	// (the published preset's TODO values).
 	bool load(Preset preset);
 
 	Preset getActivePreset() const { return activePreset; }
+	std::string const & getLastError() const { return lastError; }
+	// Increments on every successful load, so a consumer can tell when to
+	// re-read the ranges.
+	int getLoadCount() const { return loadCount; }
+	// The active ranges in SuccessionModel's form (pioneer, intermediate,
+	// climax).
+	void toRoleParams(SuccessionModel::RoleParams out[ROLE_COUNT]) const;
 	bool isLoaded() const { return loaded; }
 	std::array<SpeciesEntry, ROLE_COUNT> const& getSpecies() const { return species; }
 
@@ -115,7 +127,11 @@ private:
 	// document, so it can be called once per fixed role tag.
 	bool loadRole(ofXml & root, char const * tagName, SpeciesEntry & outEntry) const;
 
+	static void toRoleParams(std::array<SpeciesEntry, ROLE_COUNT> const & in, SuccessionModel::RoleParams out[ROLE_COUNT]);
+
 	Preset activePreset = Preset::Designer;
 	bool loaded = false;
+	int loadCount = 0;
+	std::string lastError;
 	std::array<SpeciesEntry, ROLE_COUNT> species;
 };

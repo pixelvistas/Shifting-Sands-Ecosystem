@@ -263,3 +263,4 @@ paket-files/
 .idea/
 *.sln.iml
 tools/dewitz_harness/dewitz_harness
+tools/succession_harness/succession_harness

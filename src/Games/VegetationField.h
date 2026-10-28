@@ -237,6 +237,7 @@ Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 
 #include "../KinectProjector/KinectProjector.h"
 #include "EcologyParams.h"
+#include "SuccessionModel.h"
 
 class VegetationField {
 public:
@@ -605,10 +606,40 @@ public:
 	// directly, same wiring pattern as DEBUG_SHOW_SNOW above.
 	static bool DEBUG_HIDE_VEGETATION;
 
+	// Vegetation model (2026-10-28). MODEL_ELF: ELF's elevation bands plus
+	// same-species spread (thesis Eq. 2.1), unchanged. MODEL_SITE_FEEDBACK:
+	// SuccessionModel (Eq. 2.2) - vegetation, moisture and soil with
+	// feedback, ranges from EcologyParams. The ELF densities are kept
+	// untouched while the site model runs, so the two can be compared on
+	// the same sand.
+	enum { MODEL_ELF = 0, MODEL_SITE_FEEDBACK = 1 };
+	static int VEGETATION_MODEL;
+	// Participant-facing brown tint proportional to soil S (no water), and
+	// an operator debug view of moisture M or soil S in false colour.
+	static float SOIL_TINT_STRENGTH;
+	enum { SITE_VIEW_OFF = 0, SITE_VIEW_MOISTURE = 1, SITE_VIEW_SOIL = 2 };
+	static int SITE_DEBUG_VIEW;
+	// R = soil S, G = moisture M (0..255), same grid/UV as getTexture().
+	// Only meaningful while hasSiteData() is true.
+	ofTexture & getSiteTexture() { return siteTex; }
+	bool hasSiteData() const { return VEGETATION_MODEL == MODEL_SITE_FEEDBACK && siteTex.isAllocated(); }
+	SuccessionModel const & getSuccession() const { return succession; }
+
 private:
 	// Shared by the eat*() helpers above - converts a kinect pixel
 	// coordinate into grid indices, false if outside the grid.
 	bool cellIndexAt(float kx, float ky, int & gx, int & gy) const;
+	// Site-feedback model plumbing - see VEGETATION_MODEL.
+	void syncSuccessionParams();
+	void stepSuccession(unsigned char * texData);
+	int successionIndex(float kx, float ky) const; // -1 outside the grid
+	void drawSuccessionGui();
+	SuccessionModel succession;
+	int appliedParamsLoad = -1;
+	std::vector<unsigned char> succWater;
+	std::vector<float> succAbove;
+	ofPixels sitePixels;
+	ofTexture siteTex;
 
 	// elevation (mm) -> fraction of [elevationMin, elevationMax], clamped
 	// 0..1 - the shared normalization every classification decision in

@@ -20,7 +20,8 @@ Sand, ported to openFrameworks 0.12.1 with an ofxImGui GUI (`README.md`,
 - `ss/terrain-reference-visuals`: parent of `ss/dewitz-flow`; stock height
   colour map plus simulated water.
 - `ss/ecosim-model-visuals-kiqw12`: fallback; full ELF species rendering
-  in the shader (no further work there).
+  in the shader (no further work there); its species colours were ported to
+  `ss/succession-feedback`.
 - Commit `1bbad8a`: last hardware-confirmed ELF port before the
   succession-model work.
 
@@ -42,8 +43,8 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   in mm). Keys run -45..85 mm, rescaled to this box's measured dig/mound
   limits (-41.8/+80 mm); below 0 mm they are dry earth tones, so blue on
   the sand means simulated water only. The shader adds the simulated-water
-  overlay (vegetation texture alpha 1..249 = depth) and contour lines. It
-  does NOT draw vegetation on this branch line.
+  overlay (vegetation texture alpha 1..249 = depth) and contour lines. On
+  `ss/succession-feedback` it also draws vegetation and the soil tint.
 - `src/Games/VegetationField.*`: one grid cell per Kinect pixel in the ROI
   (~519 x 295). Owns:
   - ELF vegetation: shrub/fruit/nut densities (0..1), ELF's literal
@@ -77,6 +78,16 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   hysteresis, downhill pull, attractors; purely visual.
 - `src/Games/LatticeFlow.*`: earlier LBM-inside-the-water mode; kept, not
   default.
+- `src/Games/SuccessionModel.*` (plain C++; branch `ss/succession-feedback`):
+  vegetation with site feedback (thesis Eq. 2.2). Per-cell fields: cover of
+  pioneer/intermediate/climax (0..1, total <= 1), moisture M and soil S
+  (0..1). Ranges come from `EcologyParams` (refuses unknown units and 0/0
+  placeholders); rates are statics at the top of `SuccessionModel.cpp`,
+  live under Vegetation panel -> Succession. `VegetationField` owns it;
+  "Vegetation model" switches ELF bands (Eq. 2.1) / Site feedback (default).
+  Updates every 3rd row per frame (`UPDATE_INTERLEAVE`). Shader: role colours
+  at opacity = cover, soil tint, M/S debug overlay. Headless tests:
+  `tools/succession_harness/` (T1-T7, `plot.py`).
 
 ## Hydrology (`VegetationField::stepFlow()`)
 

@@ -46,13 +46,18 @@ bool EcologyParams::loadRole(ofXml & root, char const * tagName, SpeciesEntry & 
 bool EcologyParams::load(Preset preset)
 {
 	std::string path = filePathForPreset(preset);
+	std::string label = (preset == Preset::Designer) ? "designer" : "published";
 
 	ofXml xml;
-	if (!xml.load(path))
+	if (!xml.load(path)) {
+		lastError = "Could not load the " + label + " preset (" + path + ").";
 		return false;
+	}
 	auto root = xml.getChild("ECOLOGYPARAMS");
-	if (!root)
+	if (!root) {
+		lastError = "The " + label + " preset has no ECOLOGYPARAMS element.";
 		return false;
+	}
 
 	// Parsed into a temporary first, committed only on full success -
 	// see the header note's "malformed file changes nothing" contract.
@@ -60,24 +65,58 @@ bool EcologyParams::load(Preset preset)
 	// `species[2]` holding stale data from whatever preset was loaded
 	// before, silently mixing two presets together.
 	std::array<SpeciesEntry, ROLE_COUNT> parsed;
-	if (!loadRole(root, "ROLE_PIONEER", parsed[0])) return false;
-	if (!loadRole(root, "ROLE_INTERMEDIATE", parsed[1])) return false;
-	if (!loadRole(root, "ROLE_CLIMAX", parsed[2])) return false;
+	if (!loadRole(root, "ROLE_PIONEER", parsed[0]) || !loadRole(root, "ROLE_INTERMEDIATE", parsed[1])
+		|| !loadRole(root, "ROLE_CLIMAX", parsed[2])) {
+		lastError = "The " + label + " preset is missing a ROLE_ element.";
+		return false;
+	}
+
+	// Refuse ranges the succession model cannot use (see load()'s note).
+	SuccessionModel::RoleParams roles[ROLE_COUNT];
+	toRoleParams(parsed, roles);
+	std::string why;
+	if (!SuccessionModel::validateParams(roles, why)) {
+		lastError = "Refused the " + label + " preset: " + why + ". The previous preset is still active.";
+		return false;
+	}
 
 	species = parsed;
 	activePreset = preset;
 	loaded = true;
+	loadCount++;
+	lastError.clear();
 	return true;
+}
+
+void EcologyParams::toRoleParams(std::array<SpeciesEntry, ROLE_COUNT> const & in, SuccessionModel::RoleParams out[ROLE_COUNT])
+{
+	auto copy = [](Range const & r) {
+		SuccessionModel::Range o;
+		o.min = r.min;
+		o.max = r.max;
+		o.unit = r.unit;
+		return o;
+	};
+	for (int i = 0; i < ROLE_COUNT; i++) {
+		out[i].name = in[i].roleName;
+		out[i].moisture = copy(in[i].moisture);
+		out[i].slope = copy(in[i].slope);
+		out[i].soilDepth = copy(in[i].soilDepth);
+	}
+}
+
+void EcologyParams::toRoleParams(SuccessionModel::RoleParams out[ROLE_COUNT]) const
+{
+	toRoleParams(species, out);
 }
 
 void EcologyParams::drawGui()
 {
 	ImGui::Separator();
-	ImGui::Text("Ecological data source (succession-model phase, Phase 1 of the");
-	ImGui::Text("2026-10-14 contribution alignment - see CLAUDE.md). This section");
-	ImGui::Text("is NOT YET READ BY ANY GROWTH LOGIC - it only proves the sourced-");
-	ImGui::Text("parameter/preset-switch mechanism works; Phase 3 wires moisture/");
-	ImGui::Text("slope/soil-depth fields and a real suitability test into it.");
+	ImGui::Text("Ecological data source: the moisture/slope/soil ranges the");
+	ImGui::Text("site-feedback vegetation model uses (not read by the ELF model).");
+	if (!lastError.empty())
+		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f), "%s", lastError.c_str());
 
 	if (!loaded) {
 		ImGui::Text("No ecology parameter file loaded yet.");

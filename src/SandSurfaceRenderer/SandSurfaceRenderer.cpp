@@ -259,6 +259,14 @@ void SandSurfaceRenderer::drawSandbox() {
         heightMapShader.setUniform2f("vegetationGridOrigin", vegetationField->getGridOrigin());
         heightMapShader.setUniform1f("vegetationGridStep", vegetationField->getGridStep());
     }
+    // Succession model's site layer (soil tint, M/S debug overlay) - see
+    // VegetationField::SOIL_TINT_STRENGTH / SITE_DEBUG_VIEW.
+    bool hasSite = vegetationField && vegetationField->hasSiteData();
+    heightMapShader.setUniform1i("hasSite", hasSite ? 1 : 0);
+    if (hasSite)
+        heightMapShader.setUniformTexture("siteSampler", vegetationField->getSiteTexture(), 6);
+    heightMapShader.setUniform1f("soilTintStrength", VegetationField::SOIL_TINT_STRENGTH);
+    heightMapShader.setUniform1i("siteDebugView", VegetationField::SITE_DEBUG_VIEW);
     // Debug aid - see VegetationField::DEBUG_SHOW_SNOW's header note.
     heightMapShader.setUniform1i("debugShowSnow", VegetationField::DEBUG_SHOW_SNOW ? 1 : 0);
     // Debug aid - see VegetationField::DEBUG_HIDE_VEGETATION's header note.

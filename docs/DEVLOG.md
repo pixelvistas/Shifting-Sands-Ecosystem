@@ -3394,3 +3394,100 @@ per frame, 40 fps; scratchpad, not committed):
 4. Flat sand at 0 mm with 1.5 mm noise, 60 s: never any water, 0 cells
    below the table. Harsher check, sand at -10 mm with 3 mm noise: never
    visible water (442 mm x cells^2 of sub-threshold seepage).
+
+## 2026-10-28 - Succession model with site feedback (branch `ss/succession-feedback`)
+
+**Task.** Replace V_t = f(h_t, T_t) (ELF bands, thesis Eq. 2.1) with
+V_{t+1} = f(h_t, T_t, S_t), S_{t+1} = g(S_t, V_t) (Eq. 2.2), and connect
+`EcologyParams` to it. Build freeze 2026-11-02. Step 0 (CLAUDE.md condensed,
+history moved here) committed separately first.
+
+**Decisions put to the user before coding.**
+- "Keep the existing vegetation rendering" could not be done as written:
+  this branch line draws no vegetation. User chose to port the species
+  rendering from `ss/ecosim-model-visuals-kiqw12` (winner-take-all, emerald/
+  orange-red/teal mixed toward white with height) with **opacity = total
+  cover**. Height for the white mix is the colour map's normalised
+  elevation (its keys span the reachable -45..85 mm), replacing that
+  branch's `landT`, whose water/snow fractions use a different scale here.
+  `DEBUG_HIDE_VEGETATION` default changed true -> false so it is visible.
+- Disturbance: the user kept it as written (any change over
+  `DISTURBANCE_MM` multiplies S by `SOIL_RETAINED_FRACTION`, digging or
+  filling). Consequence: on the sandbox nothing produces new ground with
+  S = 0 except the initial state or "Reset vegetation and soil"; T3's new
+  fill gets S = 0 set directly in the harness.
+
+**Built.**
+- `SuccessionModel.h/.cpp` (plain C++): fields V (3 roles), M, S; inputs:
+  elevation, `isWaterCell` mask, `getDepthBelowWaterTableAt`, mmPerCell, dt,
+  temperature and its resting value, the spread radius and ELF's spontaneous
+  chances. Model as specified (see the header note). Implementation choices:
+  - Neighbour seeding re-implements `hasEstablishedNeighbor` inside the
+    model (the original uses `ofRandom`/`cv::Mat`): same random disk
+    samples within `SPREAD_RADIUS_MM`, from a fixed table of 512 offsets;
+    a neighbour counts as established above `ESTABLISHED_COVER` = 0.1 (the
+    ELF version used > 0, which in a continuous model is almost everywhere);
+    re-checked on 10% of cells per step, the flag persisting in between.
+  - Elevation: EMA (0.5 s) then a 7x7 box blur before the slope (degrees,
+    via a lookup on the squared gradient).
+  - Disturbance: after an event the cell's reference follows the sand for
+    `DISTURBANCE_SETTLE_SEC` (1 s) and stays bare, so one dig is one event;
+    reference time constant otherwise 30 s.
+  - `UPDATE_INTERLEAVE` = 3: each step updates every 3rd row with 3 x dt
+    (each cell at ~13 Hz). A full-grid step measured 4.5-4.9 ms median on
+    the development container; interleaved, 2.2 ms.
+  - Units: moisture fraction|percent; slope degrees|percent (slope);
+    soil fraction|percent|cm|mm (cm/mm via `SOIL_MAX_DEPTH_CM` = 30), matched
+    on the start of the unit string. Refused: unknown unit, min == max == 0,
+    min > max.
+- `EcologyParams::load()` refuses presets `SuccessionModel::validateParams`
+  rejects, keeps the previous one, and shows the reason in the GUI.
+- `VegetationField`: "Vegetation model" combo (ELF bands / Site feedback,
+  default site feedback); the ELF block is skipped (densities kept) in
+  site mode; model cover written to the texture's R/G/B (climax/pioneer/
+  intermediate); new site texture (R = S, G = M); `eat*` remove the model's
+  cover in the same preference order; GUI section "Succession" with all
+  rates and readouts; "Reset vegetation and soil".
+- Shaders (GL2/GL3, in sync): soil tint (brown x `SOIL_TINT_STRENGTH` x S,
+  default 0.35, not on water), vegetation, water overlay, M/S false-colour
+  debug overlay (off by default), contours.
+
+**Designer defaults** (first guesses; met the timing targets without
+retuning): growth 0.5/0.5/0.4 per s, mortality 0.3, soil build 0.01 with
+weights 1.0/0.5/0.3, soil loss 0.005, margin 0.25, moisture falloff 16 mm,
+soil retention 0.2, wet 2 s, dry 60 s.
+
+**Harness** `tools/succession_harness/` (compiles the real
+`SuccessionModel.cpp`; reads the real preset XML with a flat-tag reader;
+160x100 grid at 1.9 mm/cell for T1-T5, 519x295 for T6-T7; 40 fps; flat
+ground at 0 mm = 15 mm above the table; +/-1 mm noise unless stated).
+Results:
+- T1 PASS. Pioneers > 0.3 mean cover at 9 s, dominant 5-66 s, peak 43 s;
+  intermediate dominant 66-227 s, peak 113 s; climax dominant from 227 s,
+  peak 279 s. Final S 0.78, M 0.55.
+- T2 PASS. With `SOIL_BUILD_RATE` = 0: pioneer 1.00, others 0 after 600 s.
+- T3: patches raised 10 mm at 360 s (one disturbance event per cell, 3200
+  cells). A keeps S 0.47; B set to S 0. Literal criterion (intermediate
+  cover >= 0.5, A faster) FAILS: A never reaches 0.5 intermediate (max
+  0.46) because at S 0.47 climax is also partly suitable and its
+  neighbours seed it, so A goes straight to an intermediate/climax mix.
+  Intermediate-or-later cover >= 0.5: A 7 s, B 71 s (B: pioneers, then
+  intermediates at 71 s, climax ~210 s). Patch rims (the 10 mm step)
+  stay bare: their slope is outside the ranges.
+- T4: water on a dry strip (55 mm above the table) 10-40 s. M = 1 under
+  water, halves 45 s after it stops. Nothing grows under water (M = 1 is
+  outside every moisture range); cover > 0.1 from 57 s, pioneers then
+  intermediates (soil passes 0.3), last >= 0.5 at 153 s, bare from 175 s.
+- T5 PASS. Designer accepted; published refused ("pioneer moisture: min
+  and max are both 0"); unknown_unit.xml refused ("intermediate slope: unit
+  \"gradians\" is not recognised"); afterwards the model is identical to a
+  fresh designer run; alt_soil.xml (intermediate soil 0.2-0.95, climax
+  0.9-1.0) ends intermediate-dominant where designer ends climax.
+- T6 PASS. 519x295, +/-2 mm uniform noise per frame, 600 s: 0 events.
+- T7 PASS (interleaved). Median 2.21 ms, mean 2.28, 90th pct 2.55 (full
+  grid: median 4.87 ms).
+
+**Not done / not verified.** Not compiled with openFrameworks; shaders not
+compiled (no GLSL validator in the session); nothing hardware-tested. The
+projected role colours (emerald vs teal) are only dE 11.5 apart for normal
+vision (dataviz validator) - noted, not changed (no palette iterations).
