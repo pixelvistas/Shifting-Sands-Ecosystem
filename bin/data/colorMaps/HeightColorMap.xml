@@ -6,7 +6,19 @@
         <color-b>46</color-b>
     </key>
     <key>
+        <height>-35.010000000</height>
+        <color-r>104</color-r>
+        <color-g>74</color-g>
+        <color-b>46</color-b>
+    </key>
+    <key>
         <height>-35.000000000</height>
+        <color-r>136</color-r>
+        <color-g>102</color-g>
+        <color-b>66</color-b>
+    </key>
+    <key>
+        <height>-25.010000000</height>
         <color-r>136</color-r>
         <color-g>102</color-g>
         <color-b>66</color-b>
@@ -18,7 +30,19 @@
         <color-b>90</color-b>
     </key>
     <key>
+        <height>-15.010000000</height>
+        <color-r>166</color-r>
+        <color-g>132</color-g>
+        <color-b>90</color-b>
+    </key>
+    <key>
         <height>-15.000000000</height>
+        <color-r>192</color-r>
+        <color-g>162</color-g>
+        <color-b>118</color-b>
+    </key>
+    <key>
+        <height>-8.010000000</height>
         <color-r>192</color-r>
         <color-g>162</color-g>
         <color-b>118</color-b>
@@ -30,69 +54,93 @@
         <color-b>143</color-b>
     </key>
     <key>
+        <height>-3.010000000</height>
+        <color-r>212</color-r>
+        <color-g>186</color-g>
+        <color-b>143</color-b>
+    </key>
+    <key>
         <height>-3.000000000</height>
         <color-r>226</color-r>
         <color-g>205</color-g>
         <color-b>165</color-b>
     </key>
     <key>
+        <height>-0.010000000</height>
+        <color-r>226</color-r>
+        <color-g>205</color-g>
+        <color-b>165</color-b>
+    </key>
+    <key>
         <height>0.000000000</height>
-        <color-r>35</color-r>
-        <color-g>139</color-g>
+        <color-r>180</color-r>
+        <color-g>188</color-g>
+        <color-b>146</color-b>
+    </key>
+    <key>
+        <height>14.156666667</height>
+        <color-r>180</color-r>
+        <color-g>188</color-g>
+        <color-b>146</color-b>
+    </key>
+    <key>
+        <height>14.166666667</height>
+        <color-r>214</color-r>
+        <color-g>210</color-g>
+        <color-b>122</color-b>
+    </key>
+    <key>
+        <height>28.323333333</height>
+        <color-r>214</color-r>
+        <color-g>210</color-g>
+        <color-b>122</color-b>
+    </key>
+    <key>
+        <height>28.333333333</height>
+        <color-r>242</color-r>
+        <color-g>212</color-g>
+        <color-b>92</color-b>
+    </key>
+    <key>
+        <height>42.490000000</height>
+        <color-r>242</color-r>
+        <color-g>212</color-g>
+        <color-b>92</color-b>
+    </key>
+    <key>
+        <height>42.500000000</height>
+        <color-r>245</color-r>
+        <color-g>174</color-g>
         <color-b>69</color-b>
     </key>
     <key>
-        <height>4.000000000</height>
-        <color-r>48</color-r>
-        <color-g>148</color-g>
-        <color-b>77</color-b>
+        <height>56.656666667</height>
+        <color-r>245</color-r>
+        <color-g>174</color-g>
+        <color-b>69</color-b>
     </key>
     <key>
-        <height>10.000000000</height>
-        <color-r>67</color-r>
-        <color-g>162</color-g>
-        <color-b>89</color-b>
+        <height>56.666666667</height>
+        <color-r>224</color-r>
+        <color-g>127</color-g>
+        <color-b>31</color-b>
     </key>
     <key>
-        <height>18.000000000</height>
-        <color-r>93</color-r>
-        <color-g>180</color-g>
-        <color-b>104</color-b>
+        <height>70.823333333</height>
+        <color-r>224</color-r>
+        <color-g>127</color-g>
+        <color-b>31</color-b>
     </key>
     <key>
-        <height>25.000000000</height>
-        <color-r>116</color-r>
-        <color-g>196</color-g>
-        <color-b>118</color-b>
-    </key>
-    <key>
-        <height>40.000000000</height>
-        <color-r>167</color-r>
-        <color-g>146</color-g>
-        <color-b>60</color-b>
-    </key>
-    <key>
-        <height>55.000000000</height>
-        <color-r>217</color-r>
-        <color-g>95</color-g>
-        <color-b>2</color-b>
-    </key>
-    <key>
-        <height>68.000000000</height>
-        <color-r>237</color-r>
-        <color-g>149</color-g>
-        <color-b>76</color-b>
-    </key>
-    <key>
-        <height>78.000000000</height>
-        <color-r>253</color-r>
-        <color-g>190</color-g>
-        <color-b>133</color-b>
+        <height>70.833333333</height>
+        <color-r>185</color-r>
+        <color-g>86</color-g>
+        <color-b>26</color-b>
     </key>
     <key>
         <height>85.000000000</height>
-        <color-r>247</color-r>
-        <color-g>247</color-g>
-        <color-b>247</color-b>
+        <color-r>185</color-r>
+        <color-g>86</color-g>
+        <color-b>26</color-b>
     </key>
 </keys>

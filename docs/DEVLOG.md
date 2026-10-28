@@ -3491,3 +3491,24 @@ Results:
 compiled (no GLSL validator in the session); nothing hardware-tested. The
 projected role colours (emerald vs teal) are only dE 11.5 apart for normal
 vision (dataviz validator) - noted, not changed (no palette iterations).
+
+## 2026-10-28 - Colour map: new land colours, stepped bands
+
+At the user's request (branch `ss/succession-feedback`). Water overlay,
+DewitzFlow particles and contour lines unchanged; no code changed.
+
+- `HeightColorMap.xml`: the 10 keys at or above 0 mm replaced by six
+  colours in equal bands from 0 mm to the highest key (85 mm, 14.17 mm
+  each): #B4BC92 0-14.17, #D6D27A -28.33, #F2D45C -42.5, #F5AE45 -56.67,
+  #E07F1F -70.83, #B9561A -85. Earth-tone keys below 0 mm keep their
+  heights and colours.
+- Stepped, not blended: `ColorMap::updateColormap()` always interpolates
+  linearly between keys, so each band is written as two keys with the same
+  colour (its start, and 0.01 mm below the next band's start). This makes
+  the whole map stepped, including the six earth-tone bands below 0 mm
+  (each band now holds its key's colour up to the next key).
+  Range is still -45..85 mm, so the shader's colour-map transform and the
+  vegetation's height-to-white mix are unchanged.
+- Check: the same interpolation re-run in Python over the 512-entry table
+  gives exactly 12 runs of identical colour, one per band, with no
+  intermediate colours (transitions within one 0.25 mm texel).

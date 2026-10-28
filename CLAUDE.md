@@ -42,7 +42,9 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   `bin/data/colorMaps/HeightColorMap.xml` (key height in mm = elevation
   in mm). Keys run -45..85 mm, rescaled to this box's measured dig/mound
   limits (-41.8/+80 mm); below 0 mm they are dry earth tones, so blue on
-  the sand means simulated water only. The shader adds the simulated-water
+  the sand means simulated water only; 0..85 mm is six even bands
+  (#B4BC92..#B9561A). The map is stepped, not blended: each band is a pair
+  of keys with the same colour (start, next start - 0.01 mm). The shader adds the simulated-water
   overlay (vegetation texture alpha 1..249 = depth) and contour lines. On
   `ss/succession-feedback` it also draws vegetation and the soil tint.
 - `src/Games/VegetationField.*`: one grid cell per Kinect pixel in the ROI
