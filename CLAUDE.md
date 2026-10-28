@@ -41,12 +41,13 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   two variants in sync). Colour comes from
   `bin/data/colorMaps/HeightColorMap.xml` (key height in mm = elevation
   in mm). Keys run -45..85 mm, rescaled to this box's measured dig/mound
-  limits (-41.8/+80 mm); below 0 mm they are dry earth tones, so blue on
-  the sand means simulated water only; 0..85 mm is six even bands
-  (#B4BC92..#B9561A). The map is stepped, not blended: each band is a pair
+  limits (-41.8/+80 mm); below -6 mm they are six dry earth tones, so
+  blue on the sand means simulated water only; sage #B4BC92 runs -6..14.2 mm
+  (flat sand sits inside it), then five even bands to 85 mm (..#B9561A). The map is stepped, not blended: each band is a pair
   of keys with the same colour (start, next start - 0.01 mm). The shader adds the simulated-water
   overlay (vegetation texture alpha 1..249 = depth) and contour lines. On
-  `ss/succession-feedback` it also draws vegetation and the soil tint.
+  `ss/succession-feedback` it also draws vegetation (dark #3B3A22 map
+  symbols, see `roleSymbol()`) and the soil tint.
 - `src/Games/VegetationField.*`: one grid cell per Kinect pixel in the ROI
   (~519 x 295). Owns:
   - ELF vegetation: shrub/fruit/nut densities (0..1), ELF's literal
@@ -88,7 +89,8 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   live under Vegetation panel -> Succession. `VegetationField` owns it;
   "Vegetation model" switches ELF bands (Eq. 2.1) / Site feedback (default).
   Updates every 3rd row per frame (`UPDATE_INTERLEAVE`). Shader: role colours
-  at opacity = cover, soil tint, M/S debug overlay. Headless tests:
+  as dark map symbols (pioneer small dots, intermediate crosses, climax
+  larger dots; density follows cover), soil tint, M/S debug overlay. Headless tests:
   `tools/succession_harness/` (T1-T7, `plot.py`).
 
 ## Hydrology (`VegetationField::stepFlow()`)

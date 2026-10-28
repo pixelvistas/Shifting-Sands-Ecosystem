@@ -62,6 +62,68 @@ vec3 falseColour(float v)
     return v < 0.5 ? mix(a, b, v * 2.0) : mix(b, c, v * 2.0 - 1.0);
 }
 
+// Vegetation map symbols (2026-10-28): each role is drawn as a dark
+// symbol over the land colours, no fill. Symbols sit on a jittered grid
+// in projector pixels (gl_FragCoord), so their size on the sand is fixed.
+// Each grid site samples the vegetation texture at its own centre (via
+// the screen-space derivatives of texcoordfrag), shows a symbol only if
+// the role is that cell's dominant one with cover >= SYMBOL_MIN_COVER,
+// and is kept with probability proportional to that cover, so denser
+// cover gives denser symbols.
+const vec3 SYMBOL_COLOUR = vec3(0.231, 0.227, 0.133); // #3B3A22
+const float SYMBOL_ALPHA = 0.7;
+const float SYMBOL_MIN_COVER = 0.15;
+// Per role: grid spacing (px), size (px), keep probability at cover 1.
+const float PIONEER_SPACING = 14.0;      // sparse small dots
+const float PIONEER_RADIUS = 1.5;
+const float PIONEER_MAX_KEEP = 0.5;
+const float INTERMEDIATE_SPACING = 12.0; // small crosses
+const float INTERMEDIATE_ARM = 3.0;
+const float INTERMEDIATE_HALF_WIDTH = 0.6;
+const float CLIMAX_SPACING = 16.0;       // larger dots
+const float CLIMAX_RADIUS = 3.0;
+
+float hash12(vec2 p)
+{
+    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
+// Coverage (0..1) of role's symbol at this fragment. role: 0 pioneer,
+// 1 intermediate, 2 climax. Texture channels: R climax, G pioneer,
+// B intermediate; alpha 1..249 = water.
+float roleSymbol(int role, float spacing, vec2 frag, vec2 uv, vec2 uvDx, vec2 uvDy)
+{
+    vec2 cell = floor(frag / spacing);
+    vec2 jitter = vec2(hash12(cell), hash12(cell + 31.7)) - 0.5;
+    vec2 centre = (cell + 0.5 + jitter * 0.4) * spacing;
+    vec2 d = centre - frag;
+    vec4 v = texture2DRect(vegetationSampler, uv + uvDx * d.x + uvDy * d.y);
+    float code = v.a * 255.0;
+    if (code > 0.5 && code < 249.5)
+        return 0.0; // water at the site
+    float pioneer = v.g, intermediate = v.b, climax = v.r;
+    int dominant = (pioneer >= intermediate && pioneer >= climax) ? 0 : (intermediate >= climax ? 1 : 2);
+    if (dominant != role)
+        return 0.0;
+    float cover = role == 0 ? pioneer : (role == 1 ? intermediate : climax);
+    if (cover < SYMBOL_MIN_COVER)
+        return 0.0;
+    float keep = cover * (role == 0 ? PIONEER_MAX_KEEP : 1.0);
+    if (hash12(cell + 71.3) > keep)
+        return 0.0;
+    float r = length(d);
+    if (role == 0)
+        return 1.0 - smoothstep(PIONEER_RADIUS - 0.5, PIONEER_RADIUS + 0.5, r);
+    if (role == 2)
+        return 1.0 - smoothstep(CLIMAX_RADIUS - 0.5, CLIMAX_RADIUS + 0.5, r);
+    vec2 a = abs(d);
+    float bar1 = (1.0 - smoothstep(INTERMEDIATE_HALF_WIDTH - 0.5, INTERMEDIATE_HALF_WIDTH + 0.5, a.x))
+               * (1.0 - smoothstep(INTERMEDIATE_ARM - 0.5, INTERMEDIATE_ARM + 0.5, a.y));
+    float bar2 = (1.0 - smoothstep(INTERMEDIATE_HALF_WIDTH - 0.5, INTERMEDIATE_HALF_WIDTH + 0.5, a.y))
+               * (1.0 - smoothstep(INTERMEDIATE_ARM - 0.5, INTERMEDIATE_ARM + 0.5, a.x));
+    return max(bar1, bar2);
+}
+
 void main()
 {
     vec2 depthPos = vec2(depthfrag, 0.5);
@@ -80,26 +142,16 @@ void main()
         color.rgb = mix(color.rgb, vec3(0.42, 0.27, 0.13), soilTintStrength * soilS);
     }
 
-    // Vegetation: the fallback branch's winner-take-all species colours
-    // (R = shrub/climax emerald, G = fruit/pioneer orange-red, B =
-    // nut/intermediate teal, each mixed toward white with height), blended
-    // over the terrain with opacity = total cover. Height here is the
-    // colour map's own normalised elevation, whose keys span the box's
-    // reachable range (-45..85 mm).
+    // Vegetation as map symbols - see roleSymbol(). The derivatives are
+    // taken here, outside any branch, so they are defined.
+    vec2 uvDx = dFdx(vegUV), uvDy = dFdy(vegUV);
     if (hasVegetation == 1 && debugHideVegetation == 0 && !simWater)
     {
-        float elevationNorm = clamp(depthfrag / heightMapNumEntries, 0.0, 1.0);
-        float cover = clamp(veg.r + veg.g + veg.b, 0.0, 1.0);
-        vec3 vegColour = color.rgb;
-        if (veg.r > veg.g && veg.r > veg.b)
-            vegColour = mix(vec3(0.0, 0.659, 0.349), vec3(1.0), elevationNorm);
-        else if (veg.g > veg.r && veg.g > veg.b)
-            vegColour = mix(vec3(0.902, 0.353, 0.078), vec3(1.0), elevationNorm);
-        else if (veg.b > veg.g && veg.b > veg.r && veg.b > nutVisibilityThreshold)
-            vegColour = mix(vec3(0.0, 0.675, 0.675), vec3(1.0), elevationNorm);
-        else
-            cover = 0.0;
-        color.rgb = mix(color.rgb, vegColour, cover);
+        vec2 frag = gl_FragCoord.xy;
+        float mark = max(roleSymbol(0, PIONEER_SPACING, frag, vegUV, uvDx, uvDy),
+                     max(roleSymbol(1, INTERMEDIATE_SPACING, frag, vegUV, uvDx, uvDy),
+                         roleSymbol(2, CLIMAX_SPACING, frag, vegUV, uvDx, uvDy)));
+        color.rgb = mix(color.rgb, SYMBOL_COLOUR, SYMBOL_ALPHA * mark);
     }
 
     // Simulated water overlay (ss/terrain-reference-visuals, 2026-10-20).

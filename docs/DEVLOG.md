@@ -3512,3 +3512,30 @@ DewitzFlow particles and contour lines unchanged; no code changed.
 - Check: the same interpolation re-run in Python over the 512-entry table
   gives exactly 12 runs of identical colour, one per band, with no
   intermediate colours (transitions within one 0.25 mm texel).
+
+## 2026-10-28 - Vegetation drawn as map symbols; sage band from -6 mm
+
+User's hardware screenshot showed the ported species colours (teal/orange-
+red/emerald mixed toward white) covering almost the whole box at full
+cover, hiding the land colours; they asked for map symbols instead.
+
+- `heightMapShader.frag` (GL2/GL3 in sync): the winner-take-all colour
+  fill is removed. `roleSymbol()` draws each role as a dark #3B3A22 symbol
+  at 70% over the land colours, no fill: pioneer small dots (r 1.5 px,
+  14 px grid, kept with probability 0.5 x cover - sparse), intermediate
+  crosses (arm 3 px, 12 px grid), climax larger dots (r 3 px, 16 px grid),
+  kept with probability = cover. Sites are a jittered grid in projector
+  pixels (`gl_FragCoord`), so symbols have a fixed size on the sand; each
+  site samples the vegetation texture at its own centre (via dFdx/dFdy of
+  the texture coordinate) and shows a symbol only for that cell's
+  dominant role with cover >= 0.15, never on water. Soil tint, water
+  overlay, debug overlay, colour map and contours unchanged. Sizes and
+  spacings are shader constants (first guesses).
+- `HeightColorMap.xml`: sage (#B4BC92) now starts at -6 mm instead of 0,
+  so flat sand (~0 mm) sits inside it. Moving that boundary alone was
+  impossible (#E2CDA5's band ran -3..0 mm); user chose to compress all six
+  earth bands, order and relative widths kept, into -45..-6 mm (x 39/45):
+  starts -45, -36.33, -27.67, -19, -12.93, -8.6. Keys above 0 unchanged;
+  range still -45..85 mm.
+
+Not compiled (no GLSL validator in the session); not hardware-tested.
