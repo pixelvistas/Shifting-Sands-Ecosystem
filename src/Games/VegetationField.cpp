@@ -961,11 +961,11 @@ void VegetationField::drawGui()
 			{ -25.0f, -15.0f, IM_COL32(0xA6, 0x84, 0x5A, 255) },
 			{ -15.0f,  -8.0f, IM_COL32(0xC0, 0xA2, 0x76, 255) },
 			{  -8.0f,  -6.0f, IM_COL32(0xD4, 0xBA, 0x8F, 255) },
-			{  -6.0f,  12.2f, IM_COL32(0xFD, 0xF3, 0xAB, 255) },
-			{  12.2f,  30.4f, IM_COL32(0xF1, 0xC2, 0x5A, 255) },
-			{  30.4f,  48.6f, IM_COL32(0xE8, 0x96, 0x52, 255) },
-			{  48.6f,  66.8f, IM_COL32(0xD1, 0x75, 0x53, 255) },
-			{  66.8f,  85.0f, IM_COL32(0x9F, 0x58, 0x48, 255) },
+			{  -6.0f,  12.2f, IM_COL32(0x94, 0xBF, 0x8B, 255) },
+			{  12.2f,  30.4f, IM_COL32(0xE1, 0xE4, 0xB5, 255) },
+			{  30.4f,  48.6f, IM_COL32(0xCA, 0xB9, 0x82, 255) },
+			{  48.6f,  66.8f, IM_COL32(0xAA, 0x87, 0x53, 255) },
+			{  66.8f,  85.0f, IM_COL32(0xF5, 0xF4, 0xF2, 255) },
 		};
 		const float lo = -45.0f, hi = 85.0f;
 		ImDrawList* drawList = ImGui::GetWindowDrawList();

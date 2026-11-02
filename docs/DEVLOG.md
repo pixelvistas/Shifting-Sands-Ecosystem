@@ -3576,3 +3576,17 @@ vegetation" checkbox and the nut visibility threshold slider (the
 Unchanged: the succession model and its readouts, soil tint, M/S debug
 overlays, colour map, water overlay, DewitzFlow particles, contours.
 Not compiled with openFrameworks; not hardware-tested.
+
+## 2026-11-02 - Land palette: conventional hypsometric scheme; palette locked
+
+The land bands (-6 to 85 mm, five equal 18.2 mm stepped bands) are now the
+conventional hypsometric scheme - green, yellow, tan, brown, white - chosen
+for recognisability: #94BF8B -6..12.2, #E1E4B5 12.2..30.4, #CAB982
+30.4..48.6, #AA8753 48.6..66.8, #F5F4F2 66.8..85 mm. Earth-tone keys below
+-6 mm unchanged (verified byte-identical); the Vegetation panel swatch
+updated to match. Nothing else changed.
+
+**The palette is locked until after the November 27 (2026-11-27) committee
+submission.** No further colour-map or palette changes before then.
+
+Not hardware-tested; the swatch change is not compiled with openFrameworks.
