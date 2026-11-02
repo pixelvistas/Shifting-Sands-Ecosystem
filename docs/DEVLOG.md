@@ -3590,3 +3590,15 @@ updated to match. Nothing else changed.
 submission.** No further colour-map or palette changes before then.
 
 Not hardware-tested; the swatch change is not compiled with openFrameworks.
+
+## 2026-11-02 - Water drawn over a plain lakebed
+
+At the user's request (`heightMapShader.frag`, GL2/GL3 in sync): on cells
+where the simulated-water overlay is drawn, the colour-map colour is first
+replaced by a single neutral lakebed colour #B8B0A0, so water is now drawn
+over a plain lakebed rather than over the land colours; contour lines are
+not drawn on those cells. The overlay's colours (#41B6C4 -> #08306B) and
+opacity (60-95% by depth) are unchanged. Both apply only while "Draw
+simulated water" is on; with it off, water cells show the colour map and
+contours as before. Colour map, soil tint, debug overlays and particles
+unchanged. Not compiled (no GLSL validator); not hardware-tested.

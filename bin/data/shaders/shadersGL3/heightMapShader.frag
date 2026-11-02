@@ -96,8 +96,12 @@ void main()
     // alpha packs water depth into 1..249 (0 = dry, 255 = snow, ignored
     // here), scaled by MAX_WATER_DEPTH_FRAC. Colours are the Deep/Shallow
     // Water stops from HeightColorMap.xml; deeper water is more opaque.
-    if (drawSimWater == 1 && simWater)
+    // Water is drawn over a plain neutral lakebed (#B8B0A0, 2026-11-02),
+    // not over the land colours, and these cells get no contour lines.
+    bool drawWater = drawSimWater == 1 && simWater;
+    if (drawWater)
     {
+        color.rgb = vec3(0.722, 0.690, 0.627); // lakebed #B8B0A0
         float t = clamp((waterCode - 1.0) / 248.0, 0.0, 1.0);
         vec3 water = mix(vec3(0.255, 0.714, 0.769), vec3(0.031, 0.188, 0.420), t);
         color.rgb = mix(color.rgb, water, mix(0.6, 0.95, t));
@@ -110,7 +114,7 @@ void main()
         color.rgb = falseColour(siteDebugView == 1 ? site.g : site.r);
     }
 
-    if (drawContourLines == 1)
+    if (drawContourLines == 1 && !drawWater)
     {
         // Contour line computation
         /* Calculate the contour line interval containing each pixel corner by evaluating the half-pixel offset elevation texture: */

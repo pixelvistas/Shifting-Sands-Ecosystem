@@ -48,7 +48,9 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   committee submission: do not change it. The Vegetation panel's
   palette swatch hard-codes these colours: keep it in sync. The map is stepped, not blended: each band is a pair
   of keys with the same colour (start, next start - 0.01 mm). The shader adds the simulated-water
-  overlay (vegetation texture alpha 1..249 = depth) and contour lines. On
+  overlay (vegetation texture alpha 1..249 = depth), drawn over a plain
+  lakebed #B8B0A0 (no land colour, no contours under water), and contour
+  lines elsewhere. On
   `ss/succession-feedback` it also draws the soil tint and the M/S debug
   overlay; vegetation itself is not drawn on the sand.
 - `src/Games/VegetationField.*`: one grid cell per Kinect pixel in the ROI
