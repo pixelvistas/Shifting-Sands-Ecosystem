@@ -988,8 +988,6 @@ void VegetationField::drawGui()
 		ImGui::Dummy(ImVec2(barWidth, barHeight));
 		ImGui::Text("Simulated water overlay: shallow -> deep");
 	}
-	ImGui::Text("Hide the vegetation symbols to compare the bare colour map with the swatch:");
-	ImGui::Checkbox("Debug: hide vegetation (bare colour map only)", &DEBUG_HIDE_VEGETATION);
 	ImGui::Separator();
 	// Ground truth, independent of any threshold/classification below -
 	// put a hand at the ROI center and read the real mm value directly,
@@ -1202,14 +1200,6 @@ void VegetationField::drawGui()
 	ImGui::Text("renders at the darkest 'deep water' shade. First-guess, untested.");
 	ImGui::SliderFloat("Max water depth (fraction)", &MAX_WATER_DEPTH_FRAC, 0.001f, 0.2f);
 	ImGui::Separator();
-	ImGui::Text("Nut visibility threshold (NOT in ELF): nut's color, (0,h,h),");
-	ImGui::Text("has no channel pinned bright like shrub/fruit do, so a single");
-	ImGui::Text("lucky growth tick at low elevation renders solid near-black -");
-	ImGui::Text("confirmed on real hardware as random black speckle scattered");
-	ImGui::Text("through otherwise-unrelated land, not a tie/negative-space cell");
-	ImGui::Text("and not a contour line. Below this density, nut stays negative");
-	ImGui::Text("space (like a real tie) instead of committing to that color.");
-	ImGui::SliderFloat("Nut visibility threshold", &NUT_VISIBILITY_THRESHOLD, 0.0f, 0.3f);
 	drawSuccessionGui();
 	ecologyParams.drawGui();
 	ImGui::End();

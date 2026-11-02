@@ -3562,3 +3562,17 @@ bands at their true share of -45..85 mm, plus the water overlay's two
 colours (#41B6C4 -> #08306B). Its outdated explanatory text (winner-take-all
 speckle) was replaced by one line. Not compiled with openFrameworks; not
 hardware-tested.
+
+## 2026-11-02 - Vegetation no longer drawn on the sand
+
+At the user's request: the map symbols (`roleSymbol()`, dots/crosses) are
+removed from both `heightMapShader.frag` variants (still in sync), along
+with their now-unused uniforms (`heightMapNumEntries`,
+`debugHideVegetation`, `nutVisibilityThreshold`) and the renderer calls
+that set the latter two. Vegetation is not drawn in any other form. GUI
+controls that only affected the drawing were removed: the "hide
+vegetation" checkbox and the nut visibility threshold slider (the
+`DEBUG_HIDE_VEGETATION`/`NUT_VISIBILITY_THRESHOLD` statics remain, unused).
+Unchanged: the succession model and its readouts, soil tint, M/S debug
+overlays, colour map, water overlay, DewitzFlow particles, contours.
+Not compiled with openFrameworks; not hardware-tested.
