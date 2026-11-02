@@ -311,8 +311,20 @@ void WaterFlowField::updateDewitz(float dt)
 			for (int x = 0; x < cols; x++)
 				waterMask[(size_t)y * cols + x] = vegetationField->isWaterCell(x, y) ? 1 : 0;
 		dewitz.setWaterMask(waterMask.data());
+		// Particles on water move with the pipe model's own velocity
+		// (DewitzFlow::setPipeVelocity).
+		pipeVx.resize((size_t)cols * rows);
+		pipeVy.resize((size_t)cols * rows);
+		for (int y = 0; y < rows; y++)
+			for (int x = 0; x < cols; x++) {
+				ofVec2f v = vegetationField->getFlowVelocityAt(x, y);
+				pipeVx[(size_t)y * cols + x] = v.x;
+				pipeVy[(size_t)y * cols + x] = v.y;
+			}
+		dewitz.setPipeVelocity(pipeVx.data(), pipeVy.data());
 	} else {
 		dewitz.setWaterMask(nullptr);
+		dewitz.setPipeVelocity(nullptr, nullptr);
 	}
 	dewitz.update(elev.ptr<float>(0), cols, rows, vegetationField->getMmPerCell(), dt);
 
@@ -571,7 +583,17 @@ void WaterFlowField::drawDewitzGui()
 	ImGui::SliderFloat("Downhill saturation slope", &DewitzFlow::GRADIENT_SATURATION, 0.05f, 3.0f);
 
 	ImGui::Separator();
-	ImGui::Text("Particles: dir = W_FLOW*u/|u|max + W_GRAD*downhill + W_ATTR*attractors");
+	ImGui::Text("Particles on water (\"Water only\"): pipe-model velocity, smoothed, x visual speed,");
+	ImGui::Text("+ W_LBM_TEXTURE x local speed x lattice direction (+ W_GRAD, W_ATTR terms).");
+	ImGui::SliderFloat("Visual speed (x pipe velocity)", &DewitzFlow::VISUAL_SPEED, 0.0f, 5.0f);
+	ImGui::SliderFloat("Velocity smoothing (s)", &DewitzFlow::FLOW_SMOOTH_SEC, 0.05f, 3.0f);
+	ImGui::SliderFloat("W_LBM_TEXTURE (0 = off)", &DewitzFlow::W_LBM_TEXTURE, 0.0f, 1.0f);
+	ImGui::SliderFloat("Spawn weight of still water", &DewitzFlow::SPAWN_STILL_FRACTION, 0.0f, 1.0f);
+	ImGui::SliderFloat("Full-spawn speed (cells/s)", &DewitzFlow::SPAWN_FULL_SPEED, 0.1f, 30.0f);
+	ImGui::SliderFloat("Still speed (cells/s)", &DewitzFlow::STILL_SPEED, 0.0f, 10.0f);
+	ImGui::SliderFloat("Still for (s) before fading", &DewitzFlow::STILL_SEC, 0.0f, 5.0f);
+	ImGui::SliderFloat("Still / end-of-life fade (s)", &DewitzFlow::STILL_FADE_SEC, 0.05f, 5.0f);
+	ImGui::Text("\"Everywhere\" mode: dir = W_FLOW*u/|u|max + W_GRAD*downhill + W_ATTR*attractors, x Speed");
 	ImGui::SliderFloat("W_FLOW", &DewitzFlow::W_FLOW, 0.0f, 3.0f);
 	ImGui::SliderFloat("W_GRAD", &DewitzFlow::W_GRAD, 0.0f, 3.0f);
 	ImGui::SliderFloat("W_ATTR", &DewitzFlow::W_ATTR, 0.0f, 3.0f);
@@ -610,7 +632,6 @@ void WaterFlowField::drawDewitzGui()
 		ImGui::Combo("Particles shown on", &DEWITZ_SHOWN_ON, shownOn, 2);
 	}
 	if (DEWITZ_SHOWN_ON == DEWITZ_SHOW_WATER_ONLY) {
-		ImGui::SliderInt("Inlet spawn band (cells)", &DewitzFlow::SPAWN_BAND_CELLS, 1, 60);
 		ImGui::SliderFloat("Fade-out on land (s)", &DewitzFlow::LAND_FADE_SEC, 0.05f, 3.0f);
 		ImGui::Text("Water cells (simulated): %d, parked particles: %d",
 			dewitz.getWaterCellsLastFrame(), dewitz.getParkedLastFrame());

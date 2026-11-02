@@ -79,13 +79,17 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
 - `src/Games/WaterFlowField.*`: visible flow particles. Default mode
   "Dewitz (2018)" uses `DewitzFlow`; older modes (bed slope, pipe-model
   velocity, `LatticeFlow`) stay selectable. Particles default to "Water
-  only" (spawn near the inlet on `isWaterCell` cells, fade out over 0.5 s
-  on land). Optional obstacle-mask overlay.
+  only": they move with the pipe model's velocity (`getFlowVelocityAt`,
+  smoothed; `DewitzFlow::setPipeVelocity`), spawn on `isWaterCell` cells
+  weighted by local speed, fade out on land (0.5 s) and in still water
+  (after 1 s, over 1 s). "Everywhere" keeps the original Dewitz rule.
+  Optional obstacle-mask overlay.
 - `src/Games/DewitzFlow.*` (plain C++, no openFrameworks): whole-box D2Q9
   MRT lattice-Boltzmann (tau 1.98), obstacles from height/slope with
-  hysteresis, downhill pull, attractors; purely visual.
-- `src/Games/LatticeFlow.*`: earlier LBM-inside-the-water mode; kept, not
-  default.
+  hysteresis, downhill pull (default 0), attractors; purely visual. In
+  "Water only" the lattice is only a small texture term (`W_LBM_TEXTURE`).
+  Headless test with the real `stepFlow()`: `tools/pipe_particles_harness/`.
+- `src/Games/LatticeFlow.*`: earlier LBM-in-the-water mode; kept, not default.
 - `src/Games/SuccessionModel.*` (plain C++; branch `ss/succession-feedback`):
   vegetation with site feedback (thesis Eq. 2.2). Per-cell fields: cover of
   pioneer/intermediate/climax (0..1, total <= 1), moisture M and soil S

@@ -59,12 +59,25 @@ public:
 
 	// Optional water mask (cols x rows, row-major, nonzero = water), read
 	// during the next update(). nullptr (the default) = particles live
-	// everywhere, exactly as before. With a mask, particles spawn on water
-	// within SPAWN_BAND_CELLS of the inlet edge (or on any water if none
-	// touches it), never on land; one that moves onto land keeps moving
-	// but fades out over LAND_FADE_SEC, then respawns. Only the particles
-	// are affected - the lattice, obstacles and weights are unchanged.
+	// everywhere, exactly as before. With a mask, particles spawn only on
+	// water, never on land; one that moves onto land keeps moving but
+	// fades out over LAND_FADE_SEC, then respawns. Only the particles are
+	// affected - the lattice and obstacles are unchanged.
 	void setWaterMask(const unsigned char * mask) { waterMask = mask; }
+
+	// Optional pipe-model velocity (cols x rows, fine cells per second;
+	// VegetationField::getFlowVelocityAt), used together with a water
+	// mask (2026-11-02). Then each particle moves by that velocity,
+	// smoothed in time over FLOW_SMOOTH_SEC, times VISUAL_SPEED, plus a
+	// small lattice texture term (W_LBM_TEXTURE x local pipe speed x
+	// u/|u|max) and the W_GRAD/W_ATTR terms. Particles spawn anywhere on
+	// water with probability proportional to min(1, speed /
+	// SPAWN_FULL_SPEED) + SPAWN_STILL_FRACTION, and only as many are active
+	// as that weight's mean over the water allows, so still water carries
+	// few in absolute terms; one slower than STILL_SPEED for STILL_SEC
+	// fades out over STILL_FADE_SEC and respawns, as does one reaching
+	// the end of its life. nullptr = the original Dewitz motion rule.
+	void setPipeVelocity(const float * vx, const float * vy) { pipeVx = vx; pipeVy = vy; }
 
 	// Particles in fine grid coordinates.
 	int particleCount() const { return (int)px.size(); }
@@ -126,8 +139,16 @@ public:
 	static float ATTRACTOR_RADIUS;     // fine cells; full pull inside this
 	static int PARTICLE_COUNT;
 	static float PARTICLE_LIFE_SEC;    // 0 = particles live until they exit
-	static int SPAWN_BAND_CELLS;       // water mask only: inlet spawn band, fine cells
 	static float LAND_FADE_SEC;        // water mask only: fade-out after reaching land
+	// Pipe-velocity mode only (see setPipeVelocity):
+	static float FLOW_SMOOTH_SEC;      // time constant of the velocity smoothing
+	static float VISUAL_SPEED;         // multiplier on the pipe velocity (1 = true speed)
+	static float W_LBM_TEXTURE;        // lattice texture term, x local pipe speed (0 = off)
+	static float SPAWN_STILL_FRACTION; // spawn weight of still water (fast water = 1)
+	static float SPAWN_FULL_SPEED;     // speed (cells/s) at which the spawn weight reaches 1
+	static float STILL_SPEED;          // fine cells per second
+	static float STILL_SEC;            // slower than STILL_SPEED this long -> fade out
+	static float STILL_FADE_SEC;       // fade-out length (still water, end of life)
 
 private:
 	static const int Q = 9;
@@ -155,12 +176,24 @@ private:
 	std::vector<float> px, py, age;
 	std::vector<float> prevX, prevY;
 	std::vector<float> alpha, landTime;  // landTime < 0 = on water
+	std::vector<float> stillTime;        // seconds below STILL_SPEED (pipe mode)
+	std::vector<float> fadeTime, fadeLen; // fadeTime < 0 = not fading (pipe mode)
 	std::vector<unsigned char> parked;
 	const unsigned char * waterMask = nullptr;
-	std::vector<int> inletWater, anyWater; // fine-cell indices, rebuilt per frame
+	const float * pipeVx = nullptr;
+	const float * pipeVy = nullptr;
+	std::vector<float> smVx, smVy;       // smoothed pipe velocity, cols x rows
+	bool smReady = false;
+	std::vector<int> anyWater;           // fine-cell indices, rebuilt per frame
+	std::vector<float> spawnCdf;         // pipe mode: running sum of spawn weights over anyWater
+	int activeTarget = 0;                // pipe mode: how many particles are active
 	bool anyWaterBuilt = false;
-	void buildInletWater();
 	void buildAnyWater();
+	bool pipeMode() const { return waterMask && pipeVx && pipeVy; }
+	void smoothPipeVelocity(float dt);
+	void buildSpawnWeights();
+	float sampleFine(const std::vector<float> & m, float x, float y) const; // bilinear, fine grid
+	void advectPipe(float dt);
 	bool waterAt(float x, float y) const;
 	std::mt19937 rng{ 12345 };
 

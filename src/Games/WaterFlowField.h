@@ -205,6 +205,7 @@ private:
 	ofVboMesh dewitzPoints;   // particle segments (OF_PRIMITIVE_LINES)
 	ofVboMesh obstacleMesh;   // obstacle overlay quads, projector space
 	std::vector<unsigned char> waterMask; // isWaterCell per grid cell, for DewitzFlow
+	std::vector<float> pipeVx, pipeVy;     // getFlowVelocityAt per grid cell, for DewitzFlow
 	void drawObstacleOverlay();
 	ofVec2f fineToProj(float x, float y) const; // via projLut
 	// Projector coordinates on a coarse grid of fine cells (every

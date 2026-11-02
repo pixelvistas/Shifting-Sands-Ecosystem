@@ -25,7 +25,8 @@ float DewitzFlow::TERRAIN_SMOOTH_SEC = 0.3f;
 // rise/run, so the box equivalent is ~0.5.
 float DewitzFlow::GRADIENT_SATURATION = 0.5f;
 float DewitzFlow::W_FLOW = 1.0f;
-float DewitzFlow::W_GRAD = 0.5f;
+// 0 since 2026-11-02 (pipe-velocity particles); the Dewitz prototype used 0.5.
+float DewitzFlow::W_GRAD = 0.0f;
 float DewitzFlow::W_ATTR = 0.5f;
 // tools/dewitz_proto.py moves 1.2 cells/frame on a 240-cell-wide grid (~0.5% of
 // the width per frame); on the 519-cell box grid at 40 fps that is ~100 cells/s.
@@ -35,8 +36,16 @@ int DewitzFlow::PARTICLE_COUNT = 20000;
 // 600 frames at 40 fps, matching tools/dewitz_proto.py (age > 600 respawns).
 float DewitzFlow::PARTICLE_LIFE_SEC = 15.0f;
 // Water-mask mode only (see setWaterMask): ~3 lattice cells at DOWNSAMPLE 3.
-int DewitzFlow::SPAWN_BAND_CELLS = 9;
 float DewitzFlow::LAND_FADE_SEC = 0.5f;
+// Pipe-velocity mode (2026-11-02) - first guesses, see setPipeVelocity().
+float DewitzFlow::FLOW_SMOOTH_SEC = 0.5f;
+float DewitzFlow::VISUAL_SPEED = 1.0f;
+float DewitzFlow::W_LBM_TEXTURE = 0.15f;
+float DewitzFlow::SPAWN_STILL_FRACTION = 0.05f;
+float DewitzFlow::SPAWN_FULL_SPEED = 4.0f;
+float DewitzFlow::STILL_SPEED = 1.0f;
+float DewitzFlow::STILL_SEC = 1.0f;
+float DewitzFlow::STILL_FADE_SEC = 1.0f;
 
 // D2Q9, Lallemand & Luo (2000) ordering: rest, E, N, W, S, NE, NW, SW, SE.
 // "N" is +y, which here is down the grid (row order); the physics is
@@ -85,6 +94,8 @@ void DewitzFlow::resize(int c, int r, int d)
 	terrainReady = false;
 	px.clear(); py.clear(); age.clear();
 	prevX.clear(); prevY.clear(); alpha.clear(); landTime.clear(); parked.clear();
+	stillTime.clear(); fadeTime.clear(); fadeLen.clear();
+	smVx.clear(); smVy.clear(); smReady = false;
 }
 
 void DewitzFlow::setEquilibrium(float * fc, float r, float u, float v) const
@@ -419,31 +430,13 @@ bool DewitzFlow::waterAt(float x, float y) const
 	return waterMask[yi * cols + xi] != 0;
 }
 
-void DewitzFlow::buildInletWater()
-{
-	inletWater.clear();
-	int w = nx * ds, h = ny * ds;
-	int band = std::max(1, SPAWN_BAND_CELLS);
-	int x0 = 0, x1 = w, y0 = 0, y1 = h;
-	switch (INLET_EDGE) {
-	case EDGE_LEFT:  x1 = std::min(w, band); break;
-	case EDGE_RIGHT: x0 = std::max(0, w - band); break;
-	case EDGE_TOP:   y1 = std::min(h, band); break;
-	default:         y0 = std::max(0, h - band); break;
-	}
-	for (int y = y0; y < y1; y++)
-		for (int x = x0; x < x1; x++)
-			if (waterMask[y * cols + x] && !solidAtFine(x + 0.5f, y + 0.5f))
-				inletWater.push_back(y * cols + x);
-}
-
 void DewitzFlow::buildAnyWater()
 {
 	anyWater.clear();
 	int w = nx * ds, h = ny * ds;
 	for (int y = 0; y < h; y++)
 		for (int x = 0; x < w; x++)
-			if (waterMask[y * cols + x] && !solidAtFine(x + 0.5f, y + 0.5f))
+			if (waterMask[y * cols + x] && (pipeMode() || !solidAtFine(x + 0.5f, y + 0.5f)))
 				anyWater.push_back(y * cols + x);
 	anyWaterBuilt = true;
 }
@@ -451,27 +444,36 @@ void DewitzFlow::buildAnyWater()
 void DewitzFlow::respawn(int k, bool anywhere)
 {
 	if (waterMask) {
-		// Water only: on water near the inlet, else on any water, never on
-		// land; parked (invisible) when there is no water at all.
-		const std::vector<int> * from = &inletWater;
-		if (anywhere || from->empty()) {
-			if (!anyWaterBuilt)
-				buildAnyWater();
-			from = &anyWater;
-		}
+		// Water only: anywhere on water (pipe mode: weighted by local
+		// speed - see buildSpawnWeights()), never on land; parked
+		// (invisible) when there is no water at all.
+		(void)anywhere;
+		if (!anyWaterBuilt)
+			buildAnyWater();
 		std::uniform_real_distribution<float> U(0.0f, 1.0f);
-		if (from->empty()) {
+		if (anyWater.empty()) {
 			parked[k] = 1;
 			alpha[k] = 0.0f;
 		} else {
-			int c = (*from)[std::min((int)from->size() - 1, (int)(U(rng) * from->size()))];
-			px[k] = (c % cols) + U(rng);
-			py[k] = (c / cols) + U(rng);
+			size_t pick;
+			if (pipeMode() && spawnCdf.size() == anyWater.size() && spawnCdf.back() > 0.0f) {
+				// Weighted by local speed - see buildSpawnWeights().
+				float r = U(rng) * spawnCdf.back();
+				pick = (size_t)(std::upper_bound(spawnCdf.begin(), spawnCdf.end(), r) - spawnCdf.begin());
+				pick = std::min(pick, anyWater.size() - 1);
+			} else {
+				pick = std::min(anyWater.size() - 1, (size_t)(U(rng) * anyWater.size()));
+			}
+			int cell = anyWater[pick];
+			px[k] = (cell % cols) + U(rng);
+			py[k] = (cell / cols) + U(rng);
 			parked[k] = 0;
 			alpha[k] = 1.0f;
 		}
 		prevX[k] = px[k]; prevY[k] = py[k];
 		landTime[k] = -1.0f;
+		stillTime[k] = 0.0f;
+		fadeTime[k] = -1.0f;
 		age[k] = 0.0f;
 		return;
 	}
@@ -507,8 +509,12 @@ void DewitzFlow::advectParticles(float dt)
 	int target = std::max(0, PARTICLE_COUNT);
 	anyWaterBuilt = false;
 	parkedLastFrame = 0;
-	if (waterMask) {
-		buildInletWater();
+	if (pipeMode()) {
+		smoothPipeVelocity(dt);
+		buildAnyWater();
+		buildSpawnWeights();
+		waterCellsLastFrame = (int)anyWater.size();
+	} else if (waterMask) {
 		buildAnyWater();
 		waterCellsLastFrame = (int)anyWater.size();
 	} else {
@@ -521,8 +527,14 @@ void DewitzFlow::advectParticles(float dt)
 		px.resize(target); py.resize(target); age.resize(target);
 		prevX.resize(target); prevY.resize(target);
 		alpha.resize(target, 1.0f); landTime.resize(target, -1.0f); parked.resize(target, 0);
+		stillTime.resize(target, 0.0f); fadeTime.resize(target, -1.0f); fadeLen.resize(target, 1.0f);
 		for (int k = old; k < target; k++)
 			respawn(k, true);
+	}
+	if (pipeMode()) {
+		advectPipe(dt);
+		particleMs = (float)(nowMs() - t0);
+		return;
 	}
 
 	float inv = maxSpeed > 1e-6f ? 1.0f / maxSpeed : 0.0f;
@@ -591,6 +603,152 @@ void DewitzFlow::advectParticles(float dt)
 		px[k] = x; py[k] = y;
 	}
 	particleMs = (float)(nowMs() - t0);
+}
+
+float DewitzFlow::sampleFine(const std::vector<float> & m, float x, float y) const
+{
+	x -= 0.5f; y -= 0.5f; // cell centres
+	x = std::min(std::max(x, 0.0f), (float)(cols - 1));
+	y = std::min(std::max(y, 0.0f), (float)(rows - 1));
+	int x0 = std::min((int)x, cols - 2), y0 = std::min((int)y, rows - 2);
+	float tx = x - x0, ty = y - y0;
+	const float * r0 = &m[(size_t)y0 * cols], * r1 = r0 + cols;
+	return (r0[x0] * (1 - tx) + r0[x0 + 1] * tx) * (1 - ty) + (r1[x0] * (1 - tx) + r1[x0 + 1] * tx) * ty;
+}
+
+// Exponential smoothing of the pipe velocity in time, per fine cell, so
+// Kinect noise in the pipe model does not jitter the particles.
+void DewitzFlow::smoothPipeVelocity(float dt)
+{
+	const size_t n = (size_t)cols * rows;
+	if (smVx.size() != n || !smReady) {
+		smVx.assign(pipeVx, pipeVx + n);
+		smVy.assign(pipeVy, pipeVy + n);
+		smReady = true;
+		return;
+	}
+	float a = 1.0f - std::exp(-dt / std::max(0.01f, FLOW_SMOOTH_SEC));
+	for (size_t i = 0; i < n; i++) {
+		float vx = std::isfinite(pipeVx[i]) ? pipeVx[i] : 0.0f;
+		float vy = std::isfinite(pipeVy[i]) ? pipeVy[i] : 0.0f;
+		smVx[i] += (vx - smVx[i]) * a;
+		smVy[i] += (vy - smVy[i]) * a;
+	}
+}
+
+// Spawn weight per water cell: min(1, smoothed speed / SPAWN_FULL_SPEED)
+// + SPAWN_STILL_FRACTION, stored as a running sum for sampling. Their mean
+// over the water sets how many particles are active at all (activeTarget),
+// so still water carries few particles in absolute terms, not just
+// relative to the fastest water.
+void DewitzFlow::buildSpawnWeights()
+{
+	spawnCdf.resize(anyWater.size());
+	const float invFull = 1.0f / std::max(0.01f, SPAWN_FULL_SPEED);
+	const float base = std::max(0.0f, SPAWN_STILL_FRACTION);
+	float sum = 0.0f;
+	for (size_t k = 0; k < anyWater.size(); k++) {
+		int c = anyWater[k];
+		float sp = std::sqrt(smVx[c] * smVx[c] + smVy[c] * smVy[c]);
+		sum += std::min(1.0f, sp * invFull) + base;
+		spawnCdf[k] = sum;
+	}
+	float meanW = anyWater.empty() ? 0.0f : std::min(1.0f, sum / anyWater.size());
+	activeTarget = (int)(meanW * px.size() + 0.5f);
+}
+
+void DewitzFlow::advectPipe(float dt)
+{
+	const float w = (float)cols, h = (float)rows;
+	const float inv = maxSpeed > 1e-6f ? 1.0f / maxSpeed : 0.0f;
+	const float r2 = ATTRACTOR_RADIUS * ATTRACTOR_RADIUS;
+	respawnsLastFrame = 0;
+	exitsLastFrame = 0;
+	int active = 0;
+	for (unsigned char p : parked) active += p ? 0 : 1;
+	// Ends a particle's run: respawn if the active count is under budget,
+	// otherwise park it (invisible) until it is.
+	auto recycle = [&](int k) {
+		if (active > activeTarget) {
+			parked[k] = 1; alpha[k] = 0.0f; prevX[k] = px[k]; prevY[k] = py[k];
+			active--;
+		} else {
+			respawn(k, false);
+		}
+		respawnsLastFrame++;
+	};
+	for (int k = 0; k < (int)px.size(); k++) {
+		if (parked[k]) {
+			if (active < activeTarget) {
+				respawn(k, true);
+				if (!parked[k]) active++;
+			}
+			if (parked[k]) { parkedLastFrame++; continue; }
+		}
+		float x = px[k], y = py[k];
+		prevX[k] = x; prevY[k] = y;
+
+		// Pipe velocity (smoothed), plus a small lattice texture term
+		// proportional to the local pipe speed, plus the optional
+		// downhill/attractor directions at the Dewitz SPEED scale.
+		float vx = sampleFine(smVx, x, y), vy = sampleFine(smVy, x, y);
+		float pipeSpeed = std::sqrt(vx * vx + vy * vy);
+		if (W_LBM_TEXTURE != 0.0f && nx > 0) {
+			float lx = x / ds - 0.5f, ly = y / ds - 0.5f;
+			vx += W_LBM_TEXTURE * pipeSpeed * bilerp(ux, lx, ly) * inv;
+			vy += W_LBM_TEXTURE * pipeSpeed * bilerp(uy, lx, ly) * inv;
+		}
+		vx *= VISUAL_SPEED;
+		vy *= VISUAL_SPEED;
+		if (W_GRAD != 0.0f && nx > 0) {
+			float lx = x / ds - 0.5f, ly = y / ds - 0.5f;
+			vx += SPEED * W_GRAD * bilerp(downX, lx, ly);
+			vy += SPEED * W_GRAD * bilerp(downY, lx, ly);
+		}
+		if (W_ATTR != 0.0f) {
+			for (const Attractor & at : attractors) {
+				float dx = at.x - x, dy = at.y - y;
+				float d2 = dx * dx + dy * dy;
+				if (d2 < 1e-6f)
+					continue;
+				float d = std::sqrt(d2);
+				float pull = std::min(1.0f, r2 / d2);
+				vx += SPEED * W_ATTR * dx / d * pull;
+				vy += SPEED * W_ATTR * dy / d * pull;
+			}
+		}
+		x += vx * dt;
+		y += vy * dt;
+		age[k] += dt;
+
+		if (x < 0 || y < 0 || x >= w || y >= h) {
+			exitsLastFrame++;
+			recycle(k);
+			continue;
+		}
+
+		// Fades (committed once started, so nothing flickers): onto land
+		// over LAND_FADE_SEC; still water or end of life over STILL_FADE_SEC.
+		stillTime[k] = pipeSpeed < STILL_SPEED ? stillTime[k] + dt : 0.0f;
+		if (fadeTime[k] < 0.0f) {
+			if (!waterAt(x, y)) {
+				fadeTime[k] = 0.0f; fadeLen[k] = std::max(1e-3f, LAND_FADE_SEC);
+			} else if (stillTime[k] > STILL_SEC || (PARTICLE_LIFE_SEC > 0.0f && age[k] > PARTICLE_LIFE_SEC)) {
+				fadeTime[k] = 0.0f; fadeLen[k] = std::max(1e-3f, STILL_FADE_SEC);
+			}
+		}
+		if (fadeTime[k] >= 0.0f) {
+			fadeTime[k] += dt;
+			if (fadeTime[k] >= fadeLen[k]) {
+				recycle(k);
+				continue;
+			}
+			alpha[k] = 1.0f - fadeTime[k] / fadeLen[k];
+		} else {
+			alpha[k] = 1.0f;
+		}
+		px[k] = x; py[k] = y;
+	}
 }
 
 void DewitzFlow::sampleTerms(float x, float y, float & flowX, float & flowY, float & downhillX, float & downhillY) const
