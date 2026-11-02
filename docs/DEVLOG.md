@@ -3547,3 +3547,18 @@ back at their original heights (-45, -35, -25, -15, -8 mm) and the
 lightest earth tone #E2CDA5 removed, so #D4BA8F runs -8..-6 mm and sage
 still starts at -6 mm. Land bands above unchanged; range -45..85 mm;
 vegetation symbols unchanged. Not hardware-tested.
+
+## 2026-11-02 - Land palette: five stepped bands from -6 to 85 mm
+
+At the user's request: the six land bands (sage .. #B9561A) replaced by five
+equal 18.2 mm stepped bands: #FDF3AB -6..12.2, #F1C25A 12.2..30.4,
+#E89652 30.4..48.6, #D17553 48.6..66.8, #9F5848 66.8..85 mm. The ten
+earth-tone keys below -6 mm are byte-identical. Shader, water overlay,
+symbols and contours unchanged.
+
+The Vegetation panel's palette swatch was still the stale 6-stop Figure 5
+rainbow ramp from 2026-10-16; it now draws the colour map's actual stepped
+bands at their true share of -45..85 mm, plus the water overlay's two
+colours (#41B6C4 -> #08306B). Its outdated explanatory text (winner-take-all
+speckle) was replaced by one line. Not compiled with openFrameworks; not
+hardware-tested.

@@ -947,69 +947,49 @@ void VegetationField::drawGui()
 	ImGui::Text("ELF-style flora: three plant types growing within elevation");
 	ImGui::Text("bands relative to the water line - reshape the sand to see it shift.");
 	ImGui::Separator();
-	// Reference-only swatch, added 2026-10-16, REDRAWN same day once
-	// terrainRamp() itself was rebuilt as a literal 6-stop match to
-	// Barthele et al. Figure 5 (sampled directly from the reference
-	// image, not paraphrased - see CLAUDE.md's "Literal Figure 5
-	// colormap match" entry and heightMapShader.frag's header note).
-	// This swatch answers "are these the right colors" completely
-	// separately from "did I sculpt the right shape to reveal them," so
-	// the two questions can't be conflated from a screenshot again.
-	// Colors are hardcoded here and MUST stay in sync with
-	// heightMapShader.frag's terrainRamp()/waterRamp() (both GL2/GL3
-	// variants, per that file's own convention) - there is no shared
-	// source of truth between GLSL and this ImGui draw call.
-	ImGui::Text("Palette reference (NOT live sand data) - the exact terrainRamp()/");
-	ImGui::Text("waterRamp() stops, so you can confirm this IS the Figure 5 look");
-	ImGui::Text("regardless of what your current sand shape happens to be showing");
-	ImGui::Text("right now. NOTE: this ramp is a literal match to Figure 5's own");
-	ImGui::Text("rainbow/hypsometric colormap (teal->green->yellow->orange->maroon->");
-	ImGui::Text("white) - a deliberate, explicit departure from the colorblind-safe");
-	ImGui::Text("single-hue ramp this project used before, per direct user choice.");
+	// Reference-only swatch of bin/data/colorMaps/HeightColorMap.xml's
+	// stepped bands (2026-11-02), each drawn at its true share of the
+	// -45..85 mm range, plus the simulated-water overlay's two colours
+	// (heightMapShader.frag). Hard-coded: keep in sync with both files by
+	// hand - there is no shared source between the XML/GLSL and ImGui.
+	ImGui::Text("Palette reference (NOT live sand data): HeightColorMap.xml bands");
 	{
+		struct Band { float lo, hi; ImU32 col; };
+		const Band bands[] = {
+			{ -45.0f, -35.0f, IM_COL32(0x68, 0x4A, 0x2E, 255) },
+			{ -35.0f, -25.0f, IM_COL32(0x88, 0x66, 0x42, 255) },
+			{ -25.0f, -15.0f, IM_COL32(0xA6, 0x84, 0x5A, 255) },
+			{ -15.0f,  -8.0f, IM_COL32(0xC0, 0xA2, 0x76, 255) },
+			{  -8.0f,  -6.0f, IM_COL32(0xD4, 0xBA, 0x8F, 255) },
+			{  -6.0f,  12.2f, IM_COL32(0xFD, 0xF3, 0xAB, 255) },
+			{  12.2f,  30.4f, IM_COL32(0xF1, 0xC2, 0x5A, 255) },
+			{  30.4f,  48.6f, IM_COL32(0xE8, 0x96, 0x52, 255) },
+			{  48.6f,  66.8f, IM_COL32(0xD1, 0x75, 0x53, 255) },
+			{  66.8f,  85.0f, IM_COL32(0x9F, 0x58, 0x48, 255) },
+		};
+		const float lo = -45.0f, hi = 85.0f;
 		ImDrawList* drawList = ImGui::GetWindowDrawList();
 		float barWidth = ImGui::GetContentRegionAvail().x;
 		float barHeight = 24.0f;
-
-		// terrainRamp(): teal -> green -> yellow/olive -> orange-brown ->
-		// dark maroon -> pale near-white, sampled from Figure 5 directly.
-		ImU32 stops[6] = {
-			IM_COL32(0, 141, 167, 255),   // teal
-			IM_COL32(64, 179, 89, 255),   // green
-			IM_COL32(204, 199, 77, 255),  // yellow/olive
-			IM_COL32(191, 115, 38, 255),  // orange-brown
-			IM_COL32(115, 51, 40, 255),   // dark maroon
-			IM_COL32(230, 230, 230, 255), // pale near-white (peak)
-		};
-		float segWidth = barWidth / 5.0f;
 		ImVec2 p1 = ImGui::GetCursorScreenPos();
-		for (int i = 0; i < 5; ++i) {
-			ImVec2 segMin(p1.x + segWidth * i, p1.y);
-			ImVec2 segMax(p1.x + segWidth * (i + 1), p1.y + barHeight);
-			drawList->AddRectFilledMultiColor(segMin, segMax, stops[i], stops[i + 1], stops[i + 1], stops[i]);
+		for (const Band & b : bands) {
+			float x0 = p1.x + barWidth * (b.lo - lo) / (hi - lo);
+			float x1 = p1.x + barWidth * (b.hi - lo) / (hi - lo);
+			drawList->AddRectFilled(ImVec2(x0, p1.y), ImVec2(x1, p1.y + barHeight), b.col);
 		}
 		ImGui::Dummy(ImVec2(barWidth, barHeight));
-		ImGui::Text("terrainRamp() - bare land, low elevation (water's edge) -> high (snow line)");
+		ImGui::Text("-45 mm (deepest dig) .. -6 earth | -6 .. 85 mm land (flat sand ~0 mm)");
 
-		// waterRamp(): #00429d -> #4b73a2 (shown on its own; real water
-		// also blends this with an underwater terrainRamp() "lakebed" at
-		// 30-100%% opacity by depth - see the shader's water branch).
-		ImU32 deep = IM_COL32(0, 66, 157, 255);
-		ImU32 shallow = IM_COL32(75, 115, 162, 255);
+		// Simulated-water overlay: shallow #41B6C4 -> deep #08306B.
+		ImU32 shallow = IM_COL32(0x41, 0xB6, 0xC4, 255);
+		ImU32 deep = IM_COL32(0x08, 0x30, 0x6B, 255);
 		ImVec2 p2 = ImGui::GetCursorScreenPos();
-		drawList->AddRectFilledMultiColor(p2, ImVec2(p2.x + barWidth, p2.y + barHeight), deep, shallow, shallow, deep);
+		drawList->AddRectFilledMultiColor(p2, ImVec2(p2.x + barWidth, p2.y + barHeight), shallow, deep, deep, shallow);
 		ImGui::Dummy(ImVec2(barWidth, barHeight));
-		ImGui::Text("waterRamp() - deep -> shallow water (blends with the lakebed below it)");
+		ImGui::Text("Simulated water overlay: shallow -> deep");
 	}
-	ImGui::Text("If the swatch above looks right but the live sandbox still doesn't");
-	ImGui::Text("match the Figure 5 reference, it's very likely vegetation speckle");
-	ImGui::Text("covering the terrain ramp, not a color problem - Figure 5's images");
-	ImGui::Text("are a bare DEM with no vegetation layer at all, but this project");
-	ImGui::Text("always draws established vegetation on top, winner-take-all (no");
-	ImGui::Text("fade), so land with any growth on it shows species speckle instead");
-	ImGui::Text("of the ramp. Toggle this to see bare elevation only, for a real");
-	ImGui::Text("apples-to-apples comparison against the reference image:");
-	ImGui::Checkbox("Debug: hide vegetation (bare terrain ramp only)", &DEBUG_HIDE_VEGETATION);
+	ImGui::Text("Hide the vegetation symbols to compare the bare colour map with the swatch:");
+	ImGui::Checkbox("Debug: hide vegetation (bare colour map only)", &DEBUG_HIDE_VEGETATION);
 	ImGui::Separator();
 	// Ground truth, independent of any threshold/classification below -
 	// put a hand at the ROI center and read the real mm value directly,
