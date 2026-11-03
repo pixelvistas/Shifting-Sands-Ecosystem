@@ -3602,3 +3602,48 @@ opacity (60-95% by depth) are unchanged. Both apply only while "Draw
 simulated water" is on; with it off, water cells show the colour map and
 contours as before. Colour map, soil tint, debug overlays and particles
 unchanged. Not compiled (no GLSL validator); not hardware-tested.
+
+## 2026-11-03 - Flow particles move with the pipe model's velocity
+
+At the user's request; `stepFlow()`, colour map and shader unchanged.
+
+- `DewitzFlow::setPipeVelocity()` (passed by `WaterFlowField` in "Water
+  only" mode from `getFlowVelocityAt`): particle velocity = pipe velocity
+  smoothed in time (`FLOW_SMOOTH_SEC` 0.5 s) x `VISUAL_SPEED` (1), plus a
+  lattice texture term `W_LBM_TEXTURE` (0.15) x local pipe speed x
+  u/|u|max. `W_GRAD` default 0 (was 0.5); attractors kept. "Everywhere"
+  mode keeps the original Dewitz rule. LBM obstacles no longer kill
+  particles in pipe mode.
+- Spawning: anywhere on water, sampled by weight min(1, speed /
+  `SPAWN_FULL_SPEED` (4 cells/s)) + `SPAWN_STILL_FRACTION` (0.05); the
+  number of active particles = particle count x the mean weight over the
+  water, the rest parked. A first version weighted relative to the
+  fastest water; with only still water that is uniform, so a still basin
+  filled with ~14,000 static particles - hence the absolute weight and the
+  budget (added parameter `SPAWN_FULL_SPEED`). Inlet spawn band removed.
+- Still water: slower than `STILL_SPEED` (1 cell/s) for `STILL_SEC` (1 s)
+  -> fade over `STILL_FADE_SEC` (1 s), respawn. The end of a particle's
+  life now also fades (it used to pop). Land fade unchanged (0.5 s).
+- GUI: new sliders for all of the above; inlet-band slider removed.
+
+Headless test `tools/pipe_particles_harness/` (real `stepFlow()` copied by
+`extract.py`, real `DewitzFlow.cpp`; 519x295, 1.5 mm noise, 40 fps; app
+defaults except `SOURCE_SPAN` 0.12 in cases 1 and 3 so the inflow enters
+only the channel; 900 s warm-up, 20 s measured):
+1. Channel inlet -> sink (bed -6 to -13 mm): water first drains at the
+   sink after 116 s. 99% of particles on water, 95% moving, particle
+   speed / pipe speed 0.99 (mean pipe speed 3.6 cells/s). Particles are
+   densest in the fast downstream half; the deep, slow upstream section
+   has few (spawn follows speed). The last ~10% before the sink carries
+   none: the open sink drains that stretch below the visible-water
+   threshold, so it is not `isWaterCell` and particles fade there; none
+   leave the box.
+2. Closed basin (floor -35 mm), water table only: 898 visible particles
+   (4.5% of 20,000), 0% moving.
+3. Channel through a basin (floor -14 mm): in the basin particles slow
+   (0.8 cells/s vs 2.8 in the channel) and spread (sd 22.8 vs 7.1 cells
+   from the centreline); long exposure shows no converging lines. Basin
+   speed is below `STILL_SPEED`, so many particles fade inside the basin
+   instead of carrying through to the outlet; the outlet channel's
+   particles are mostly spawned there.
+Not compiled with openFrameworks; not hardware-tested.
