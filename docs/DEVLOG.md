@@ -3663,3 +3663,20 @@ theirs). Two changes to `HeightColorMap.xml`, stepped bands as before:
 Range still -45..85 mm. The Vegetation panel swatch is updated to match.
 Nothing else changed. Not hardware-tested; the swatch is not compiled with
 openFrameworks.
+
+## 2026-11-03 - Reverted: auto-start from the saved calibration
+
+Commit d56093b ("Start from the saved calibration at launch...") was
+reverted completely with `git revert` (commit 63b7ef1): the launch-time
+`tryAutoStart()`, the Status-panel line, the load-failure reasons in
+`loadCalibration()`/`loadSettings()`, the one-time elevation-range apply in
+`ofApp::update()`, its CLAUDE.md line and its DEVLOG entry. Reason: the user
+prefers the manual RUN! and recalibration steps over automatic loading.
+Source and data now match 6ce9c54 (the colour-map change, kept). The only
+conflict was CLAUDE.md, where e35021b had shortened d56093b's line;
+resolved by removing that line only (e35021b's other edit stays).
+
+Still true, for reference: with a manual RUN!, `ofApp::update()`'s
+once-only elevation-range apply fires when the Kinect first opens, before
+calibration loads, so the range starts at the default 300 mm ceiling; use
+"Reset range to +-calibrated ceiling" after RUN!.
