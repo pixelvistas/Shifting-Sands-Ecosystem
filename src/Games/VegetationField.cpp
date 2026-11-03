@@ -956,16 +956,16 @@ void VegetationField::drawGui()
 	{
 		struct Band { float lo, hi; ImU32 col; };
 		const Band bands[] = {
-			{ -45.0f, -35.0f, IM_COL32(0x68, 0x4A, 0x2E, 255) },
-			{ -35.0f, -25.0f, IM_COL32(0x88, 0x66, 0x42, 255) },
-			{ -25.0f, -15.0f, IM_COL32(0xA6, 0x84, 0x5A, 255) },
-			{ -15.0f,  -8.0f, IM_COL32(0xC0, 0xA2, 0x76, 255) },
-			{  -8.0f,  -6.0f, IM_COL32(0xD4, 0xBA, 0x8F, 255) },
-			{  -6.0f,  12.2f, IM_COL32(0x94, 0xBF, 0x8B, 255) },
-			{  12.2f,  30.4f, IM_COL32(0xE1, 0xE4, 0xB5, 255) },
-			{  30.4f,  48.6f, IM_COL32(0xCA, 0xB9, 0x82, 255) },
-			{  48.6f,  66.8f, IM_COL32(0xAA, 0x87, 0x53, 255) },
-			{  66.8f,  85.0f, IM_COL32(0xF5, 0xF4, 0xF2, 255) },
+			{  -45.0f,  -35.0f, IM_COL32(0x37, 0x62, 0x35, 255) },
+			{  -35.0f,  -25.0f, IM_COL32(0x47, 0x75, 0x44, 255) },
+			{  -25.0f,  -15.0f, IM_COL32(0x58, 0x89, 0x54, 255) },
+			{  -15.0f,   -8.0f, IM_COL32(0x6A, 0x9C, 0x64, 255) },
+			{   -8.0f,   -6.0f, IM_COL32(0x7D, 0xAF, 0x76, 255) },
+			{   -6.0f,   20.0f, IM_COL32(0x94, 0xBF, 0x8B, 255) },
+			{   20.0f,   36.0f, IM_COL32(0xE1, 0xE4, 0xB5, 255) },
+			{   36.0f,   52.0f, IM_COL32(0xCA, 0xB9, 0x82, 255) },
+			{   52.0f,   68.0f, IM_COL32(0xAA, 0x87, 0x53, 255) },
+			{   68.0f,   85.0f, IM_COL32(0xF5, 0xF4, 0xF2, 255) },
 		};
 		const float lo = -45.0f, hi = 85.0f;
 		ImDrawList* drawList = ImGui::GetWindowDrawList();
@@ -978,7 +978,7 @@ void VegetationField::drawGui()
 			drawList->AddRectFilled(ImVec2(x0, p1.y), ImVec2(x1, p1.y + barHeight), b.col);
 		}
 		ImGui::Dummy(ImVec2(barWidth, barHeight));
-		ImGui::Text("-45 mm (deepest dig) .. -6 earth | -6 .. 85 mm land (flat sand ~0 mm)");
+		ImGui::Text("-45 mm (deepest dig) .. -6 dark greens | -6 .. 85 mm land (flat sand ~9 mm)");
 
 		// Simulated-water overlay: shallow #41B6C4 -> deep #08306B.
 		ImU32 shallow = IM_COL32(0x41, 0xB6, 0xC4, 255);

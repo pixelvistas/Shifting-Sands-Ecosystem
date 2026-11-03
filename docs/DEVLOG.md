@@ -3647,3 +3647,19 @@ only the channel; 900 s warm-up, 20 s measured):
    instead of carrying through to the outlet; the outlet channel's
    particles are mostly spawned there.
 Not compiled with openFrameworks; not hardware-tested.
+
+## 2026-11-03 - Colour map: dark greens below -6 mm; land bands re-spaced
+
+At the user's request (they set the palette lock themselves; this change is
+theirs). Two changes to `HeightColorMap.xml`, stepped bands as before:
+
+1. The five earth tones below -6 mm are replaced by darker greens, each
+   band keeping its height range: -8..-6 #7DAF76, -15..-8 #6A9C64,
+   -25..-15 #588954, -35..-25 #477544, below -35 mm (from -45) #376235.
+2. Land bands re-spaced so flat resting sand (~9 mm) sits mid-green:
+   -6..20 #94BF8B, 20..36 #E1E4B5, 36..52 #CAB982, 52..68 #AA8753,
+   68..85 #F5F4F2 (land colours unchanged).
+
+Range still -45..85 mm. The Vegetation panel swatch is updated to match.
+Nothing else changed. Not hardware-tested; the swatch is not compiled with
+openFrameworks.

@@ -41,10 +41,10 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   two variants in sync). Colour comes from
   `bin/data/colorMaps/HeightColorMap.xml` (key height in mm = elevation
   in mm). Keys run -45..85 mm, rescaled to this box's measured dig/mound
-  limits (-41.8/+80 mm); below -6 mm they are five dry earth tones, so
-  blue on the sand means simulated water only; land is five equal bands
-  from -6 to 85 mm, conventional hypsometric green #94BF8B (flat sand),
-  yellow, tan, brown, white #F5F4F2. LOCKED until after the 2026-11-27
+  limits (-41.8/+80 mm); below -6 mm five darker greens (#7DAF76 ..
+  #376235 at the deepest), so blue on the sand means simulated water only;
+  land: green #94BF8B -6..20 mm (flat sand ~9 mm), then yellow, tan, brown
+  in 16 mm bands, white #F5F4F2 68..85 mm. LOCKED until after the 2026-11-27
   committee submission: do not change it. The Vegetation panel's
   palette swatch hard-codes these colours: keep it in sync. The map is stepped, not blended: each band is a pair
   of keys with the same colour (start, next start - 0.01 mm). The shader adds the simulated-water
