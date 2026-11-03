@@ -3663,31 +3663,3 @@ theirs). Two changes to `HeightColorMap.xml`, stepped bands as before:
 Range still -45..85 mm. The Vegetation panel swatch is updated to match.
 Nothing else changed. Not hardware-tested; the swatch is not compiled with
 openFrameworks.
-
-## 2026-11-03 - Auto-start from the saved calibration at launch
-
-At the user's request. `KinectProjector::tryAutoStart()` runs once, in
-`update()`, as soon as the Kinect is open:
-- If `bin/data/settings/calibration.xml` and `kinectProjectorSettings.xml`
-  both exist, it calls `startApplication()` (the same code RUN! runs). On
-  success the Status panel shows "Saved calibration loaded (calibration.xml
-  <date>, kinectProjectorSettings.xml <date>)" (file modification times),
-  and `ofApp` applies the Vegetation panel's elevation range from the
-  calibrated ceiling once (`consumeAutoStarted()`).
-- If either file is missing: "No saved calibration: <file name(s)>", setup
-  mode as before.
-- If loading fails, it stays in setup mode and names the file and reason.
-  To report the reason, `ofxKinectProjectorToolkit::loadCalibration()` and
-  `KinectProjector::loadSettings()` now record why they returned false
-  (unreadable/invalid XML, missing element, or - for calibration.xml - the
-  saved projector/Kinect resolution not matching the current one).
-- Before the Kinect opens the line reads "Saved calibration: waiting for
-  the Kinect". RUN! and the calibration buttons are unchanged.
-
-Observed, not changed: `ofApp::update()`'s once-only elevation-range apply
-fires on the first ROI change, which happens when the Kinect opens - before
-any calibration is loaded - so with a manual RUN! the range comes from the
-default ceiling (300 mm). This is the likely cause of the recurring +-300 mm
-range. The auto-start path overrides it; the manual-RUN! path still has it.
-
-Not compiled with openFrameworks; not hardware-tested.

@@ -35,7 +35,6 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
 
 - `src/KinectProjector/*`: Kinect capture, temporal filtering, projector
   calibration; `elevationAtKinectCoord()`, `kinectCoordToProjCoord()`.
-  Auto-starts from the saved calibration files at launch (`tryAutoStart()`).
 - `src/SandSurfaceRenderer/*`: draws the sand with
   `bin/data/shaders/shadersGL{2,3}/heightMapShader.{vert,frag}` (keep the
   two variants in sync). Colour comes from
