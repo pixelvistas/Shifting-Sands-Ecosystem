@@ -50,8 +50,8 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   overlay (vegetation texture alpha 1..249 = depth), drawn over a plain
   lakebed #B8B0A0 (no land colour, no contours under water), and contour
   lines elsewhere. On
-  `ss/succession-feedback` it also draws the soil tint and the M/S debug
-  overlay; vegetation itself is not drawn on the sand.
+  `ss/succession-feedback` it also draws the soil tint, plants (below) and
+  the M/S debug overlay.
 - `src/Games/VegetationField.*`: one grid cell per Kinect pixel in the ROI
   (~519 x 295). Owns:
   - ELF vegetation: shrub/fruit/nut densities (0..1), ELF's literal
@@ -96,10 +96,11 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   placeholders); rates are statics at the top of `SuccessionModel.cpp`,
   live under Vegetation panel -> Succession. `VegetationField` owns it;
   "Vegetation model" switches ELF bands (Eq. 2.1) / Site feedback (default).
-  Updates every 3rd row per frame (`UPDATE_INTERLEAVE`). Vegetation is not
-  drawn on the sand (cover only in the GUI readouts); the shader shows its
-  soil tint and an M/S debug overlay. Headless tests:
+  Updates every 3rd row per frame (`UPDATE_INTERLEAVE`). Headless tests:
   `tools/succession_harness/` (T1-T7, `plot.py`).
+- `src/Games/PlantLayer.*` (plain C++): draws the model's dominant role per
+  jittered site (15 mm) as a top-down disc with a rim, eased; state texel per
+  site, drawn by the shader in mm. Test: `tools/plant_harness/`.
 
 ## Hydrology (`VegetationField::stepFlow()`)
 

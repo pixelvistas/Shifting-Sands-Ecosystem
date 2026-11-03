@@ -238,6 +238,7 @@ Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 #include "../KinectProjector/KinectProjector.h"
 #include "EcologyParams.h"
 #include "SuccessionModel.h"
+#include "PlantLayer.h"
 
 class VegetationField {
 public:
@@ -624,6 +625,12 @@ public:
 	ofTexture & getSiteTexture() { return siteTex; }
 	bool hasSiteData() const { return VEGETATION_MODEL == MODEL_SITE_FEEDBACK && siteTex.isAllocated(); }
 	SuccessionModel const & getSuccession() const { return succession; }
+	// Individual plants drawn from the site model's cover (PlantLayer):
+	// one RGBA8 texel of state per plant site, see PlantLayer::packState().
+	ofTexture & getPlantTexture() { return plantTex; }
+	bool hasPlantData() const { return VEGETATION_MODEL == MODEL_SITE_FEEDBACK && PlantLayer::DRAW_PLANTS && plantTex.isAllocated(); }
+	PlantLayer const & getPlants() const { return plants; }
+	float getMmPerCellValue() const { return mmPerCell; }
 
 private:
 	// Shared by the eat*() helpers above - converts a kinect pixel
@@ -640,6 +647,9 @@ private:
 	std::vector<float> succAbove;
 	ofPixels sitePixels;
 	ofTexture siteTex;
+	PlantLayer plants;
+	std::vector<unsigned char> plantState;
+	ofTexture plantTex;
 
 	// elevation (mm) -> fraction of [elevationMin, elevationMax], clamped
 	// 0..1 - the shared normalization every classification decision in

@@ -826,6 +826,18 @@ void VegetationField::stepSuccession(unsigned char * texData)
 	}
 	siteTex.loadData(sitePixels);
 	siteTex.setTextureMinMagFilter(GL_NEAREST, GL_NEAREST);
+
+	// Plants (display only) - see PlantLayer.
+	if (PlantLayer::DRAW_PLANTS) {
+		const float * covers[3] = { pio, mid, cli };
+		plants.update(covers, succWater.data(), cols, rows, mmPerCell, dt);
+		plants.packState(plantState);
+		int w = plants.sitesX(), h = plants.sitesY();
+		if (!plantTex.isAllocated() || (int)plantTex.getWidth() != w || (int)plantTex.getHeight() != h)
+			plantTex.allocate(w, h, GL_RGBA);
+		plantTex.loadData(plantState.data(), w, h, GL_RGBA);
+		plantTex.setTextureMinMagFilter(GL_NEAREST, GL_NEAREST);
+	}
 }
 
 int VegetationField::successionIndex(float kx, float ky) const
@@ -1231,6 +1243,16 @@ void VegetationField::drawSuccessionGui()
 		m.getDisturbanceEvents(), m.getDisturbedLastStep(), m.getLastStepMs());
 	if (ImGui::Button("Reset vegetation and soil (bare ground, S = 0)"))
 		succession.reset();
+
+	ImGui::Text("Plants (display only)");
+	ImGui::Checkbox("Draw plants", &PlantLayer::DRAW_PLANTS);
+	ImGui::SliderFloat("Plant spacing (mm)", &PlantLayer::PLANT_SPACING_MM, 5.0f, 40.0f);
+	ImGui::SliderFloat("Pioneer max radius (mm)", &PlantLayer::MAX_RADIUS_MM[PlantLayer::PIONEER], 0.5f, 20.0f);
+	ImGui::SliderFloat("Intermediate max radius (mm)", &PlantLayer::MAX_RADIUS_MM[PlantLayer::INTERMEDIATE], 0.5f, 20.0f);
+	ImGui::SliderFloat("Climax max radius (mm)", &PlantLayer::MAX_RADIUS_MM[PlantLayer::CLIMAX], 0.5f, 20.0f);
+	ImGui::Text("(radii are capped at 1.1 x spacing)");
+	ImGui::SliderFloat("Plant minimum cover", &PlantLayer::PLANT_MIN_COVER, 0.0f, 1.0f);
+	ImGui::SliderFloat("Plant easing (s)", &PlantLayer::PLANT_EASE_SEC, 0.1f, 10.0f);
 
 	if (ImGui::TreeNode("Succession rates")) {
 		ImGui::Text("Vegetation (per second)");

@@ -3680,3 +3680,36 @@ Still true, for reference: with a manual RUN!, `ofApp::update()`'s
 once-only elevation-range apply fires when the Kinect first opens, before
 calibration loads, so the range starts at the default 300 mm ceiling; use
 "Reset range to +-calibrated ceiling" after RUN!.
+
+## 2026-11-03 - Plant display (PlantLayer)
+
+Display only; `SuccessionModel` and its tests are unchanged.
+`src/Games/PlantLayer.*` (plain C++) places a fixed jittered grid of plant
+sites (`PLANT_SPACING_MM` 15, offsets +-0.35 spacing, fixed seed, rebuilt
+only when the ROI or spacing changes). Each site reads the model cell under
+it; the dominant role, if its cover exceeds `PLANT_MIN_COVER` (0.15) and the
+cell is not water, is drawn as a top-down disc of radius max radius x cover
+(pioneer 3 mm #C9DB6E, intermediate 6 mm #5E9B4C, climax 10 mm #2F5E34;
+rim = fill at 60% HSL lightness: #8B9E27, #385D2E, #1C381F). Radii ease
+exponentially (`PLANT_EASE_SEC` 2 s); on a role change the old plant shrinks
+to nothing before the new one grows. Radii are capped at 1.1 x spacing so
+the shader's 3x3 site search finds every disc.
+
+State is one RGBA8 texel per site (role, radius, jitter), uploaded from
+`VegetationField::stepSuccession()`; `heightMapShader.frag` (GL2 and GL3)
+draws the discs in mm (`vegUV * mmPerCell`) after the soil tint, before the
+water overlay, never on simulated water, with contour lines on top. GUI:
+Vegetation panel -> Succession: "Draw plants", spacing, the three radii,
+minimum cover, easing.
+
+Headless test `tools/plant_harness/` (real SuccessionModel.cpp and
+PlantLayer.cpp; `renderOver()` is the CPU copy of the shader drawing):
+contact sheets of T1 (0-360 s) and T3 (360-780 s), one frame per 10 s.
+T1: pioneers from ~20 s, intermediates 70-180 s, climax from ~240 s. Brief
+near-empty frames at ~60 s and ~230 s are role handovers (old plant shrinks
+first, or cover dips below the minimum). T3: patch A (old soil) regrows as
+intermediate then climax by ~490 s; patch B (new fill) pioneers 380-420 s,
+nearly empty at 430 s, intermediates 440-540 s, climax from ~560 s; patch
+rims stay bare (too steep). Climax discs (10 mm) overlap heavily at 15 mm
+spacing. Not compiled with openFrameworks, shaders not compiled, not
+hardware-tested.

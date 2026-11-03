@@ -267,6 +267,17 @@ void SandSurfaceRenderer::drawSandbox() {
         heightMapShader.setUniformTexture("siteSampler", vegetationField->getSiteTexture(), 6);
     heightMapShader.setUniform1f("soilTintStrength", VegetationField::SOIL_TINT_STRENGTH);
     heightMapShader.setUniform1i("siteDebugView", VegetationField::SITE_DEBUG_VIEW);
+    // Individual plants (PlantLayer) - one state texel per plant site.
+    bool hasPlants = vegetationField && vegetationField->hasPlantData();
+    heightMapShader.setUniform1i("hasPlants", hasPlants ? 1 : 0);
+    if (hasPlants) {
+        const PlantLayer & plants = vegetationField->getPlants();
+        heightMapShader.setUniformTexture("plantSampler", vegetationField->getPlantTexture(), 7);
+        heightMapShader.setUniform2f("plantSites", (float)plants.sitesX(), (float)plants.sitesY());
+        heightMapShader.setUniform1f("plantSpacingMM", plants.builtSpacingMM());
+        heightMapShader.setUniform1f("plantMmPerCell", vegetationField->getMmPerCellValue());
+        heightMapShader.setUniform1f("plantRadiusScale", plants.radiusScale());
+    }
     // Debug aid - see VegetationField::DEBUG_SHOW_SNOW's header note.
     heightMapShader.setUniform1i("debugShowSnow", VegetationField::DEBUG_SHOW_SNOW ? 1 : 0);
     // waterLevelFrac is still needed here (land vegetation's landT below

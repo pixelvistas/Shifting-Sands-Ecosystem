@@ -50,6 +50,15 @@ uniform sampler2DRect siteSampler; // R = soil S, G = moisture M
 uniform int hasSite;
 uniform float soilTintStrength;
 uniform int siteDebugView;          // 0 off, 1 moisture, 2 soil
+// Individual plants (PlantLayer, 2026-11-03): one RGBA8 state texel per
+// plant site - R = role + 1 (0 none), G = radius / plantRadiusScale,
+// B/A = the site's position within its grid cell. Drawn in mm on the sand.
+uniform sampler2DRect plantSampler;
+uniform int hasPlants;
+uniform vec2 plantSites;          // sites in x and y
+uniform float plantSpacingMM;
+uniform float plantMmPerCell;
+uniform float plantRadiusScale;   // mm
 
 // Operator debug false colour (dark purple - teal - yellow).
 vec3 falseColour(float v)
@@ -76,6 +85,45 @@ void main()
     {
         float soilS = texture2DRect(siteSampler, vegUV).r;
         color.rgb = mix(color.rgb, vec3(0.42, 0.27, 0.13), soilTintStrength * soilS);
+    }
+
+    // Plants: a filled disc with a darker rim per site, over the land
+    // colours and soil tint, never on simulated water; contours stay on
+    // top. Must match PlantLayer::renderOver() (the headless reference).
+    if (hasPlants == 1 && !simWater)
+    {
+        vec2 mm = vegUV * plantMmPerCell;
+        vec2 cell = floor(mm / plantSpacingMM);
+        for (int oy = -1; oy <= 1; oy++)
+        {
+            for (int ox = -1; ox <= 1; ox++)
+            {
+                vec2 sc = cell + vec2(float(ox), float(oy));
+                if (sc.x < 0.0 || sc.y < 0.0 || sc.x >= plantSites.x || sc.y >= plantSites.y)
+                    continue;
+                vec4 st = texture2DRect(plantSampler, sc + 0.5);
+                float role = floor(st.r * 255.0 + 0.5);
+                if (role < 0.5)
+                    continue;
+                float r = st.g * plantRadiusScale;
+                float d = length(mm - (sc + st.ba) * plantSpacingMM);
+                float plantCover = 1.0 - smoothstep(r - 0.25, r + 0.25, d);
+                if (plantCover <= 0.0)
+                    continue;
+                float rimW = max(0.6, 0.25 * r);
+                float rim = smoothstep(r - rimW - 0.25, r - rimW + 0.25, d);
+                vec3 fill = vec3(0.788, 0.859, 0.431);               // pioneer #C9DB6E
+                vec3 rimColour = vec3(0.545, 0.620, 0.153);          //   rim  #8B9E27
+                if (role > 1.5 && role < 2.5) {
+                    fill = vec3(0.369, 0.608, 0.298);                // intermediate #5E9B4C
+                    rimColour = vec3(0.220, 0.365, 0.180);           //   rim  #385D2E
+                } else if (role > 2.5) {
+                    fill = vec3(0.184, 0.369, 0.204);                // climax #2F5E34
+                    rimColour = vec3(0.110, 0.220, 0.122);           //   rim  #1C381F
+                }
+                color.rgb = mix(color.rgb, mix(fill, rimColour, rim), plantCover);
+            }
+        }
     }
 
     // Simulated water overlay (ss/terrain-reference-visuals, 2026-10-20).
