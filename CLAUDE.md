@@ -17,8 +17,7 @@ Sand, ported to openFrameworks 0.12.1 with an ofxImGui GUI (`README.md`,
 - `ss/succession-feedback` (current work): vegetation-to-site feedback
   succession model on top of `ss/dewitz-flow`.
 - `ss/dewitz-flow`: Dewitz-style flow particles, water table.
-- `ss/terrain-reference-visuals`: parent of `ss/dewitz-flow`; stock height
-  colour map plus simulated water.
+- `ss/terrain-reference-visuals`: parent of `ss/dewitz-flow`.
 - `ss/ecosim-model-visuals-kiqw12`: fallback; full ELF species rendering
   in the shader (no further work there); its species colours were ported to
   `ss/succession-feedback`.
@@ -36,8 +35,7 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
 
 - `src/KinectProjector/*`: Kinect capture, temporal filtering, projector
   calibration; `elevationAtKinectCoord()`, `kinectCoordToProjCoord()`.
-  At launch it starts from the saved calibration files if both load
-  (`tryAutoStart()`; status line in the Status panel), no RUN! needed.
+  Auto-starts from the saved calibration files at launch (`tryAutoStart()`).
 - `src/SandSurfaceRenderer/*`: draws the sand with
   `bin/data/shaders/shadersGL{2,3}/heightMapShader.{vert,frag}` (keep the
   two variants in sync). Colour comes from
