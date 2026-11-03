@@ -141,6 +141,7 @@ struct Metrics {
 	double visible = 0, onWater = 0, moving = 0, frames = 0;
 	double speedRatioSum = 0, speedRatioN = 0, pipeSpeedSum = 0;
 	long long exitsRight = 0;
+	double firstOutflowSec = -1;
 	std::vector<double> xBins = std::vector<double>(10, 0.0);
 };
 
@@ -150,6 +151,7 @@ static Metrics run(Sim & s, Picture & pic, float warmSec, float measureSec)
 	const int warm = (int)(warmSec / DT), meas = (int)(measureSec / DT);
 	for (int f = 0; f < warm + meas; f++) {
 		s.frame();
+		if (m.firstOutflowSec < 0 && s.v.lastOutflowRate > 0.0f) m.firstOutflowSec = f * DT;
 		pic.fade(0.08f); // the app's DEWITZ_FADE default
 		const auto & X = s.d.particleX(), & Y = s.d.particleY(), & PX = s.d.particlePrevX(), & PY = s.d.particlePrevY();
 		const auto & A = s.d.particleAlpha();
@@ -186,7 +188,8 @@ static void report(const char * name, const Metrics & m)
 	if (m.speedRatioN > 0)
 		printf("   particle speed / raw pipe speed at its cell (where pipe > 3 cells/s): mean %.2f; mean pipe speed there %.1f cells/s\n",
 			m.speedRatioSum / m.speedRatioN, m.pipeSpeedSum / m.speedRatioN);
-	printf("   particles leaving the box: %.1f per s\n", m.exitsRight / (m.frames * DT));
+	printf("   particles leaving the box: %.1f per s; water first drains at the sink after %.0f s (-1 = never)\n",
+		m.exitsRight / (m.frames * DT), m.firstOutflowSec);
 }
 
 int main(int argc, char ** argv)
@@ -198,7 +201,7 @@ int main(int argc, char ** argv)
 		Sim s; Picture pic;
 		carveChannel(s, 18.0f, -6.0f, -13.0f); // bed stays above the water table (-15 mm)
 		VegetationField::SOURCE_SPAN = 0.12f;  // inflow only into the channel's mouth (36 cells)
-		Metrics m = run(s, pic, 300.0f, 20.0f);
+		Metrics m = run(s, pic, 900.0f, 20.0f);
 		pic.save("1_channel", s);
 		report("1. Channel, inlet to sink (bed -6 to -13 mm, above the water table):", m);
 		printf("   particle positions along the channel, by tenths of the box (left to right):");
@@ -221,7 +224,7 @@ int main(int argc, char ** argv)
 		carveChannel(s, 18.0f, -6.0f, -13.0f);
 		carveBowl(s, W * 0.5f, centreY(W * 0.5f), 60.0f, 14.0f); // floor -14 mm, just above the table
 		VegetationField::SOURCE_SPAN = 0.12f;
-		Metrics m = run(s, pic, 300.0f, 20.0f);
+		Metrics m = run(s, pic, 900.0f, 20.0f);
 		pic.save("3_channel_through_basin", s);
 		report("3. Channel through a basin (basin floor -14 mm):", m);
 		// Spread inside the basin vs in the channel: particles' distance from the centreline.
