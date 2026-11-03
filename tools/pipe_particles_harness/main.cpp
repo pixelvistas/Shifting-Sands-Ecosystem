@@ -197,7 +197,8 @@ int main(int argc, char ** argv)
 	{ // 1. Channel from the inlet (left) to the sink (right).
 		Sim s; Picture pic;
 		carveChannel(s, 18.0f, -6.0f, -13.0f); // bed stays above the water table (-15 mm)
-		Metrics m = run(s, pic, 450.0f, 20.0f);
+		VegetationField::SOURCE_SPAN = 0.12f;  // inflow only into the channel's mouth (36 cells)
+		Metrics m = run(s, pic, 300.0f, 20.0f);
 		pic.save("1_channel", s);
 		report("1. Channel, inlet to sink (bed -6 to -13 mm, above the water table):", m);
 		printf("   particle positions along the channel, by tenths of the box (left to right):");
@@ -219,7 +220,8 @@ int main(int argc, char ** argv)
 		Sim s; Picture pic;
 		carveChannel(s, 18.0f, -6.0f, -13.0f);
 		carveBowl(s, W * 0.5f, centreY(W * 0.5f), 60.0f, 14.0f); // floor -14 mm, just above the table
-		Metrics m = run(s, pic, 450.0f, 20.0f);
+		VegetationField::SOURCE_SPAN = 0.12f;
+		Metrics m = run(s, pic, 300.0f, 20.0f);
 		pic.save("3_channel_through_basin", s);
 		report("3. Channel through a basin (basin floor -14 mm):", m);
 		// Spread inside the basin vs in the channel: particles' distance from the centreline.
