@@ -100,23 +100,30 @@ vector<double> ofxKinectProjectorToolkit::getCalibration()
 
 bool ofxKinectProjectorToolkit::loadCalibration(string path) {
 	ofXml xml;
-	if (!xml.load(path))
+	if (!xml.load(path)) {
+		lastLoadError = "the file could not be read or is not valid XML";
 		return false;
+	}
 
 	auto calib = xml.getChild("CALIBRATION");
-	if (!calib) return false;
+	if (!calib) { lastLoadError = "no CALIBRATION element"; return false; }
 
 	auto res = calib.getChild("RESOLUTIONS");
-	if (!res) return false;
+	if (!res) { lastLoadError = "no RESOLUTIONS element"; return false; }
 	auto pr = res.getChild("PROJECTOR");
 	auto kr = res.getChild("KINECT");
 	ofVec2f sprojRes(pr.getChild("x").getFloatValue(), pr.getChild("y").getFloatValue());
 	ofVec2f skinectRes(kr.getChild("x").getFloatValue(), kr.getChild("y").getFloatValue());
-	if (sprojRes != projRes || skinectRes != kinectRes)
+	if (sprojRes != projRes || skinectRes != kinectRes) {
+		lastLoadError = "saved for projector " + ofToString(sprojRes.x) + "x" + ofToString(sprojRes.y)
+			+ " / Kinect " + ofToString(skinectRes.x) + "x" + ofToString(skinectRes.y)
+			+ ", but this setup is projector " + ofToString(projRes.x) + "x" + ofToString(projRes.y)
+			+ " / Kinect " + ofToString(kinectRes.x) + "x" + ofToString(kinectRes.y);
 		return false;
+	}
 
 	auto coeffs = calib.getChild("COEFFICIENTS");
-	if (!coeffs) return false;
+	if (!coeffs) { lastLoadError = "no COEFFICIENTS element"; return false; }
 	for (int i = 0; i < 11; i++) {
 		x(i, 0) = coeffs.getChild("COEFF" + ofToString(i)).getFloatValue();
 	}
@@ -126,6 +133,7 @@ bool ofxKinectProjectorToolkit::loadCalibration(string path) {
 		x(8, 0), x(9, 0), x(10, 0), 1,
 		0, 0, 0, 0);
 	calibrated = true;
+	lastLoadError.clear();
 	return true;
 }
 

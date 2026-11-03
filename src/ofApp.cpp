@@ -90,6 +90,16 @@ void ofApp::update() {
 	kinectProjector->update();
    	sandSurfaceRenderer->update();
 
+	// Started from the saved calibration at launch: apply the elevation
+	// range from the now-loaded calibrated ceiling, once (the block below
+	// may already have applied it from the default ceiling when the
+	// Kinect first opened).
+	if (kinectProjector->consumeAutoStarted()) {
+		float ceilingElevation = kinectProjector->getCalibratedCeilingElevation();
+		vegetationField.setElevationRange(-ceilingElevation, ceilingElevation);
+		elevationRangeAutoApplied = true;
+	}
+
 	if (kinectProjector->getKinectROI() != lastKinectROI)
 	{
 		ofRectangle kinectROI = kinectProjector->getKinectROI();

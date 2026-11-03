@@ -25,6 +25,9 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include <algorithm>
 #include <vector>
 #include "KinectProjector.h"
+#include <chrono>
+#include <ctime>
+#include <filesystem>
 #include <sstream>
 
 using namespace ofxCSG;
@@ -312,6 +315,13 @@ void KinectProjector::drawGui() {
 		AppStatus = "Running";
 	ImGui::TextColored(ImVec4(1, 1, 0, 1), "Application state: %s", AppStatus.c_str());
 
+	switch (savedCalibState) {
+	case SAVED_CALIB_LOADED:  ImGui::TextColored(ImVec4(0, 1, 0, 1), "%s", savedCalibStatus.c_str()); break;
+	case SAVED_CALIB_MISSING: ImGui::TextColored(ImVec4(1, 1, 0, 1), "%s", savedCalibStatus.c_str()); break;
+	case SAVED_CALIB_FAILED:  ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", savedCalibStatus.c_str()); break;
+	default:                  ImGui::Text("Saved calibration: waiting for the Kinect"); break;
+	}
+
 	if (kinectOpened)
 		ImGui::TextColored(ImVec4(0, 1, 0, 1), "Kinect running");
 	else
@@ -415,6 +425,11 @@ void KinectProjector::update()
 		}
 	}
 
+
+	// Once the Kinect is open, start from the saved calibration if there
+	// is one (no RUN! needed) - see tryAutoStart().
+	if (kinectOpened && !autoStartChecked)
+		tryAutoStart();
 
     // Get images from kinect grabber
     ofFloatPixels filteredframe;
@@ -1630,6 +1645,73 @@ void KinectProjector::setupGui(){
 }
 
 
+// Modification time of a data-folder file as "YYYY-MM-DD HH:MM".
+static std::string dataFileDate(const std::string & relativePath)
+{
+	std::error_code ec;
+	auto ft = std::filesystem::last_write_time(std::filesystem::path(ofToDataPath(relativePath, true)), ec);
+	if (ec)
+		return "date unknown";
+	auto st = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+		ft - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
+	std::time_t t = std::chrono::system_clock::to_time_t(st);
+	std::tm tm {};
+#ifdef _WIN32
+	localtime_s(&tm, &t);
+#else
+	localtime_r(&t, &tm);
+#endif
+	char buf[32];
+	std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M", &tm);
+	return buf;
+}
+
+// At launch, once the Kinect is open (2026-11-03): if both saved files
+// exist, start the application from them, as RUN! would; otherwise, or if
+// loading fails, stay in setup mode. The outcome is shown in the Status
+// panel (savedCalibStatus). Runs once.
+void KinectProjector::tryAutoStart()
+{
+	autoStartChecked = true;
+	if (applicationState != APPLICATION_STATE_SETUP)
+		return;
+	const std::string calibFile = "settings/calibration.xml";
+	const std::string settingsFile = "settings/kinectProjectorSettings.xml";
+	std::string missing;
+	if (!ofFile::doesFileExist(calibFile))
+		missing = "calibration.xml";
+	if (!ofFile::doesFileExist(settingsFile))
+		missing += (missing.empty() ? "" : ", ") + std::string("kinectProjectorSettings.xml");
+	if (!missing.empty()) {
+		savedCalibState = SAVED_CALIB_MISSING;
+		savedCalibStatus = "No saved calibration: " + missing;
+		return;
+	}
+
+	startApplication();
+	if (applicationState == APPLICATION_STATE_RUNNING) {
+		savedCalibState = SAVED_CALIB_LOADED;
+		savedCalibStatus = "Saved calibration loaded (calibration.xml " + dataFileDate(calibFile)
+			+ ", kinectProjectorSettings.xml " + dataFileDate(settingsFile) + ")";
+		autoStartedPending = true;
+	} else {
+		savedCalibState = SAVED_CALIB_FAILED;
+		if (!projKinectCalibrated)
+			savedCalibStatus = "Saved calibration not loaded: calibration.xml failed (" + kpt->getLastLoadError() + "). Still in setup mode.";
+		else if (!ROIcalibrated)
+			savedCalibStatus = "Saved calibration not loaded: kinectProjectorSettings.xml failed (" + settingsLoadError + "). Still in setup mode.";
+		else
+			savedCalibStatus = "Saved calibration loaded, but the application did not start. Still in setup mode.";
+	}
+}
+
+bool KinectProjector::consumeAutoStarted()
+{
+	bool started = autoStartedPending;
+	autoStartedPending = false;
+	return started;
+}
+
 void KinectProjector::startApplication()
 {
 	if (applicationState == APPLICATION_STATE_RUNNING)
@@ -2030,10 +2112,13 @@ bool KinectProjector::loadSettings() {
 	string settingsFile = "settings/kinectProjectorSettings.xml";
 
 	ofXml xml;
-	if (!xml.load(settingsFile))
+	if (!xml.load(settingsFile)) {
+		settingsLoadError = "the file could not be read or is not valid XML";
 		return false;
+	}
 	auto ks = xml.getChild("KINECTSETTINGS");
-	if (!ks) return false;
+	if (!ks) { settingsLoadError = "no KINECTSETTINGS element"; return false; }
+	settingsLoadError.clear();
 
 	auto r = ks.getChild("kinectROI");
 	kinectROI = ofRectangle(r.getChild("x").getFloatValue(), r.getChild("y").getFloatValue(),

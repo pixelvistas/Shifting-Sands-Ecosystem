@@ -131,6 +131,10 @@ public:
 
 	// Try to start the application - assumes calibration has been done before
 	void startApplication();
+	// True once, the frame after the saved calibration started the
+	// application automatically (see tryAutoStart()); ofApp then applies
+	// the Vegetation panel's elevation range from the calibrated ceiling.
+	bool consumeAutoStarted();
 
 	// Setup & calibration functions
     void startFullCalibration();
@@ -321,6 +325,14 @@ private:
 
     void saveCalibrationAndSettings();
     bool loadSettings();
+	std::string settingsLoadError;   // why the last loadSettings() failed
+	// Auto-start from the saved calibration at launch (2026-11-03).
+	void tryAutoStart();
+	bool autoStartChecked = false;
+	bool autoStartedPending = false;
+	enum SavedCalibState { SAVED_CALIB_PENDING, SAVED_CALIB_LOADED, SAVED_CALIB_MISSING, SAVED_CALIB_FAILED };
+	SavedCalibState savedCalibState = SAVED_CALIB_PENDING;
+	std::string savedCalibStatus;
     bool saveSettings();
     
 	void ProcessChessBoardInput(ofxCvGrayscaleImage& image);

@@ -67,6 +67,8 @@ public:
     
     bool loadCalibration(string path);
     bool saveCalibration(string path);
+    // Why the last loadCalibration() failed (empty after a success).
+    string getLastLoadError() const { return lastLoadError; }
     
     bool isCalibrated() {return calibrated;}
     
@@ -81,6 +83,7 @@ private:
     bool calibrated;
 	ofVec2f projRes;
 	ofVec2f kinectRes;
+	string lastLoadError;
 };
 
 #endif /* defined(__Magic_Sand__Calibration__) */
