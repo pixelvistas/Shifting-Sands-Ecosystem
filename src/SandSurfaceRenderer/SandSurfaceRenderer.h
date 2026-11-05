@@ -173,6 +173,14 @@ private:
     // Contourlines
     float contourLineDistance, contourLineFactor;
     bool drawContourLines; // Flag if topographic contour lines are enabled
+    // Water lines (2026-11-05): glowing bathymetric contours drawn only on
+    // simulated water, from the shader's per-pixel elevation (depthfrag).
+    // Display only; saved with the renderer settings.
+    bool drawWaterLines = true;
+    float waterLineDistance = 10.0f;   // mm between lines
+    float waterLineGlowPx = 2.0f;      // halo falloff, projector pixels
+    float waterLineBrightness = 0.8f;  // 0..1
+    bool drawShorelineGlow = false;    // the same glow along the water's edge
     
     // GUI Main interface and Modal
     bool displayGui;

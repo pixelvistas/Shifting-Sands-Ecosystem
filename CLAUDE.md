@@ -14,15 +14,13 @@ Sand, ported to openFrameworks 0.12.1 with an ofxImGui GUI (`README.md`,
 
 ## Branches
 
-- `ss/succession-feedback` (current work): vegetation-to-site feedback
-  succession model on top of `ss/dewitz-flow`.
+- `ss/water-lines` (current work): glowing bathymetric lines on the
+  simulated water (display only), branched from `ss/succession-feedback`.
+- `ss/succession-feedback`: succession model with site feedback, on `ss/dewitz-flow`.
 - `ss/dewitz-flow`: Dewitz-style flow particles, water table.
 - `ss/terrain-reference-visuals`: parent of `ss/dewitz-flow`.
-- `ss/ecosim-model-visuals-kiqw12`: fallback; full ELF species rendering
-  in the shader (no further work there); its species colours were ported to
-  `ss/succession-feedback`.
-- Commit `1bbad8a`: last hardware-confirmed ELF port before the
-  succession-model work.
+- `ss/ecosim-model-visuals-kiqw12`: fallback, full ELF species rendering
+  (no further work). Commit `1bbad8a`: last hardware-confirmed ELF port.
 
 ## Frame order (`src/ofApp.cpp`)
 
@@ -45,13 +43,15 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   land: green #94BF8B -6..20 mm (flat sand ~9 mm), then yellow, tan, brown
   in 16 mm bands, white #F5F4F2 68..85 mm. LOCKED until after the 2026-11-27
   committee submission: do not change it. The Vegetation panel's
-  palette swatch hard-codes these colours: keep it in sync. The map is stepped, not blended: each band is a pair
-  of keys with the same colour (start, next start - 0.01 mm). The shader adds the simulated-water
+  palette swatch hard-codes these colours: keep it in sync. Stepped map:
+  each band is a key pair (start, next start - 0.01 mm). The shader adds the simulated-water
   overlay (vegetation texture alpha 1..249 = depth), drawn over a plain
   lakebed #B8B0A0 (no land colour, no contours under water), and contour
-  lines elsewhere. On
-  `ss/succession-feedback` it also draws the soil tint, plants (below) and
-  the M/S debug overlay.
+  lines elsewhere. It also draws the soil tint, plants (below), the M/S
+  debug overlay and, on `ss/water-lines`, water lines: glowing #6FD3FF
+  isolines of the bed elevation (depthfrag) on simulated water only, plus an
+  optional shoreline glow (Sand Surface Renderer panel; saved in
+  `sandSurfaceRendererSettings.xml`; preview `tools/water_lines_preview.py`).
 - `src/Games/VegetationField.*`: one grid cell per Kinect pixel in the ROI
   (~519 x 295). Owns:
   - ELF vegetation: shrub/fruit/nut densities (0..1), ELF's literal

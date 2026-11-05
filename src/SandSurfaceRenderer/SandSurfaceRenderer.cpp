@@ -250,6 +250,17 @@ void SandSurfaceRenderer::drawSandbox() {
     heightMapShader.setUniform1i("drawContourLines", drawContourLines);
     heightMapShader.setUniform1f("heightMapNumEntries", (float)heightMap.getNumEntries());
     heightMapShader.setUniform1f("time", ofGetElapsedTimef());
+    // Water lines: u = depthfrag * x + y = elevation (mm) / spacing, the
+    // inverse of heightColorMapTransformation. Off (0) if the transform is
+    // degenerate, so the shader never divides by zero.
+    float wlDen = heightMapScale * std::max(0.1f, waterLineDistance);
+    bool wlOk = std::fabs(wlDen) > 1e-9f;
+    heightMapShader.setUniform1i("drawWaterLines", (drawWaterLines && wlOk) ? 1 : 0);
+    heightMapShader.setUniform2f("waterLineTransform",
+        wlOk ? ofVec2f(1.0f / wlDen, -heightMapOffset / wlDen) : ofVec2f(0.0f, 0.0f));
+    heightMapShader.setUniform1f("waterLineGlowPx", std::max(0.0f, waterLineGlowPx));
+    heightMapShader.setUniform1f("waterLineBrightness", ofClamp(waterLineBrightness, 0.0f, 1.0f));
+    heightMapShader.setUniform1i("drawShorelineGlow", drawShorelineGlow ? 1 : 0);
 
     bool hasVegetation = vegetationField && vegetationField->getTexture().isAllocated();
     heightMapShader.setUniform1i("hasVegetation", hasVegetation);
@@ -579,6 +590,13 @@ void SandSurfaceRenderer::drawGui() {
 	if (ImGui::SliderFloat("Contour line distance (mm)", &contourLineDistance, 1.0f, 30.0f)) {
 		contourLineFactor = contourLineFboScale / contourLineDistance;
 	}
+	ImGui::Separator();
+	ImGui::Text("Water display (simulated water only)");
+	ImGui::Checkbox("Water lines", &drawWaterLines);
+	ImGui::SliderFloat("Water line spacing (mm)", &waterLineDistance, 4.0f, 30.0f);
+	ImGui::SliderFloat("Water line glow (px)", &waterLineGlowPx, 0.0f, 6.0f);
+	ImGui::SliderFloat("Water line brightness", &waterLineBrightness, 0.0f, 1.0f);
+	ImGui::Checkbox("Shoreline glow", &drawShorelineGlow);
 	ImGui::End();
 }
 
@@ -595,6 +613,13 @@ bool SandSurfaceRenderer::loadSettings() {
 	colorMapFile = s.getChild("colorMapFile").getValue();
 	drawContourLines = s.getChild("drawContourLines").getBoolValue();
 	contourLineDistance = s.getChild("contourLineDistance").getFloatValue();
+	// Water lines: read only if present, so an older settings file keeps
+	// the defaults instead of turning the lines off.
+	if (s.getChild("drawWaterLines")) drawWaterLines = s.getChild("drawWaterLines").getBoolValue();
+	if (s.getChild("waterLineDistance")) waterLineDistance = ofClamp(s.getChild("waterLineDistance").getFloatValue(), 4.0f, 30.0f);
+	if (s.getChild("waterLineGlowPx")) waterLineGlowPx = ofClamp(s.getChild("waterLineGlowPx").getFloatValue(), 0.0f, 6.0f);
+	if (s.getChild("waterLineBrightness")) waterLineBrightness = ofClamp(s.getChild("waterLineBrightness").getFloatValue(), 0.0f, 1.0f);
+	if (s.getChild("drawShorelineGlow")) drawShorelineGlow = s.getChild("drawShorelineGlow").getBoolValue();
 
 	return true;
 }
@@ -607,6 +632,11 @@ bool SandSurfaceRenderer::saveSettings() {
 	s.appendChild("colorMapFile").set(colorMapFile);
 	s.appendChild("drawContourLines").set(drawContourLines);
 	s.appendChild("contourLineDistance").set(contourLineDistance);
+	s.appendChild("drawWaterLines").set(drawWaterLines);
+	s.appendChild("waterLineDistance").set(waterLineDistance);
+	s.appendChild("waterLineGlowPx").set(waterLineGlowPx);
+	s.appendChild("waterLineBrightness").set(waterLineBrightness);
+	s.appendChild("drawShorelineGlow").set(drawShorelineGlow);
 	return xml.save(settingsFile);
 }
 

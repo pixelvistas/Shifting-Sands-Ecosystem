@@ -59,6 +59,14 @@ uniform vec2 plantSites;          // sites in x and y
 uniform float plantSpacingMM;
 uniform float plantMmPerCell;
 uniform float plantRadiusScale;   // mm
+// Water lines (2026-11-05): glowing bathymetric contours on simulated
+// water only, from the same per-pixel elevation as the colour map
+// (depthfrag). waterLineTransform maps depthfrag to elevation / spacing.
+uniform int drawWaterLines;
+uniform vec2 waterLineTransform;
+uniform float waterLineGlowPx;     // halo falloff, projector pixels
+uniform float waterLineBrightness; // 0..1
+uniform int drawShorelineGlow;
 
 // Operator debug false colour (dark purple - teal - yellow).
 vec3 falseColour(float v)
@@ -78,6 +86,13 @@ void main()
     vec4 veg = (hasVegetation == 1) ? texture2DRect(vegetationSampler, vegUV) : vec4(0.0);
     float waterCode = veg.a * 255.0;
     bool simWater = waterCode > 0.5 && waterCode < 249.5;
+
+    // Water-line derivatives, taken here in uniform control flow (fwidth
+    // is undefined inside the per-pixel drawWater branch). They change
+    // no output by themselves.
+    float wlU = depthfrag * waterLineTransform.x + waterLineTransform.y; // elevation / spacing
+    float wlW = fwidth(wlU);           // spacings per projector pixel
+    vec2 wlCellsPerPx = fwidth(vegUV); // water-grid cells per projector pixel
 
     // Soil tint (succession model, 2026-10-28): a subtle brown in
     // proportion to soil S, wherever there is no simulated water.
@@ -141,6 +156,51 @@ void main()
         float t = clamp((waterCode - 1.0) / 248.0, 0.0, 1.0);
         vec3 water = mix(vec3(0.255, 0.714, 0.769), vec3(0.031, 0.188, 0.420), t);
         color.rgb = mix(color.rgb, water, mix(0.6, 0.95, t));
+
+        // Water lines and shoreline glow (2026-11-05), over the water
+        // colour above and only here (never on land). A ~1 px core plus
+        // an exponential halo of waterLineGlowPx, added and clamped.
+        // Must match tools/water_lines_preview.py.
+        if (drawWaterLines == 1 || drawShorelineGlow == 1)
+        {
+            float light = 0.0;
+            if (drawWaterLines == 1 && wlW > 1e-6) // flat bed: no isoline, and no division by 0
+            {
+                float f = fract(wlU);
+                float dPx = min(f, 1.0 - f) / wlW; // pixels to the nearest isoline
+                float core = clamp(1.0 - dPx, 0.0, 1.0);
+                float halo = waterLineGlowPx > 0.01 ? 0.6 * exp(-dPx / waterLineGlowPx) : 0.0;
+                // Lines closer than 4 px, gone at 2 px (steep walls), would merge into
+                // a solid band; fade them out there.
+                float fade = 1.0 - smoothstep(0.25, 0.5, wlW);
+                light = clamp(core + halo, 0.0, 1.0) * fade;
+            }
+            if (drawShorelineGlow == 1)
+            {
+                // Distance (cells) from this pixel to the nearest dry or
+                // snow texel within 3 cells, read from the existing water
+                // texture at texel centres (filtering unchanged).
+                vec2 base = floor(vegUV) + 0.5;
+                float dMin = 1e3;
+                for (int oy = -3; oy <= 3; oy++)
+                {
+                    for (int ox = -3; ox <= 3; ox++)
+                    {
+                        vec2 c = base + vec2(float(ox), float(oy));
+                        float code = texture2DRect(vegetationSampler, c).a * 255.0;
+                        if (code < 0.5 || code > 249.5)
+                            dMin = min(dMin, length(max(abs(vegUV - c) - 0.5, 0.0)));
+                    }
+                }
+                float cellsPerPx = max(max(wlCellsPerPx.x, wlCellsPerPx.y), 1e-6);
+                float dPx = dMin / cellsPerPx;
+                float core = clamp(1.0 - dPx, 0.0, 1.0);
+                float halo = waterLineGlowPx > 0.01 ? 0.6 * exp(-dPx / waterLineGlowPx) : 0.0;
+                light = max(light, clamp(core + halo, 0.0, 1.0));
+            }
+            vec3 lineColour = vec3(0.435, 0.827, 1.0); // #6FD3FF
+            color.rgb = min(color.rgb + lineColour * (waterLineBrightness * light), vec3(1.0));
+        }
     }
 
     // Operator debug overlay: moisture M or soil S in false colour.

@@ -3713,3 +3713,63 @@ nearly empty at 430 s, intermediates 440-540 s, climax from ~560 s; patch
 rims stay bare (too steep). Climax discs (10 mm) overlap heavily at 15 mm
 spacing. Not compiled with openFrameworks, shaders not compiled, not
 hardware-tested.
+
+## 2026-11-05 - Water lines (branch `ss/water-lines`, display only)
+
+Branched from `ss/succession-feedback` (f31d7a4). The water simulation,
+the water texture and its packing, the water colours, flow particles,
+`DewitzFlow`, `HeightColorMap.xml` and the land contour lines are untouched.
+
+What: glowing #6FD3FF isolines of the bed elevation, drawn only where
+`drawWater` is true, after the water colour (both `heightMapShader.frag`
+variants). `u = elevation / spacing`; distance to the nearest isoline in
+projector pixels is `min(fract u, 1 - fract u) / fwidth(u)`; light =
+clamp(core + halo) with core = clamp(1 - dPx) (~1 px line) and halo =
+0.6 exp(-dPx / glow); added to the water colour times brightness, clamped.
+Optional "Shoreline glow" (default off): the same core + halo by distance
+from the pixel to the nearest dry or snow texel within 3 cells of the
+existing water texture, read at texel centres (texture and filtering
+unchanged). GUI in the Sand Surface Renderer panel: "Water lines" (on),
+spacing 4-30 mm (10), glow 0-6 px (2), brightness 0-1 (0.8), "Shoreline
+glow" (off); saved in `sandSurfaceRendererSettings.xml`, read only when
+present so older files keep the defaults.
+
+Decisions:
+- Elevation source: `depthfrag`, not the land contours' corner FBO. Both
+  come from the same vertex transform of the same filtered depth, but the
+  FBO is RGBA8, so it holds elevation in ~0.5 mm steps (130 mm / 255);
+  `fract`/`fwidth` on a staircase give broken, flickering lines. The FBO is
+  also only rendered while land contours are on. `depthfrag` is a float
+  varying, linear in elevation; `waterLineTransform` (CPU) inverts
+  `heightColorMapTransformation` and divides by the spacing.
+- `fwidth` is taken at the top of `main()` (uniform control flow); inside
+  the per-pixel `drawWater` branch derivatives are undefined.
+- Guards: no lines where `fwidth(u) <= 1e-6` (flat bed: no isoline, no
+  division by 0); halo off below 0.01 px glow; the CPU sends
+  `drawWaterLines = 0` if the transform is degenerate.
+- Lines fade out where they are closer than 4 px, gone at 2 px
+  (`fwidth(u)` 0.25..0.5), so steep walls do not turn into a solid band. At
+  the 4 mm minimum on a 30-degree wall at 1 px/mm lines are ~7 px apart and
+  unfaded (first threshold, 6.7 px, was dimming them; moved before commit).
+- Toggles off: the new block is skipped and the top-level additions only
+  set new locals, so the image equals the previous build's.
+
+Checks (this session): both shaders pass `glslangValidator` (GL2 with
+`#extension GL_ARB_texture_rectangle` added to a temporary copy only, as
+the unmodified file also needs it there; desktop drivers enable it
+implicitly). That is a syntax and type check, not a driver compile.
+`tools/water_lines_preview.py` applies the same formulas to a bowl dug
+30 mm deep with 30-degree walls, at 1 mm per pixel (taken as 1 projector
+px/mm). Finding: at the water table (surface ~-14 mm) the bowl holds only
+~7 mm of water, so at 10 mm spacing there is a single line (at -20 mm);
+filled to +5 mm it shows three rings, five at 5 mm. Not compiled with
+openFrameworks, not hardware-tested.
+
+Hardware checklist (user):
+1. Water present: toggle "Water lines" off and on. Off, the water looks
+   exactly as before.
+2. Dig a basin below the water table and let it fill: lines appear only
+   on the water, follow the bowl, and move outward as the water rises
+   (expect few lines at the table level; see above).
+3. Leave the sand untouched for 60 s: the lines do not visibly flicker.
+4. Note the spacing and glow values that look best on sand in a dark room.
