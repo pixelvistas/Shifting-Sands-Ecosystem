@@ -18,8 +18,7 @@ Sand, ported to openFrameworks 0.12.1 with an ofxImGui GUI (`README.md`,
   toggle, flat-ground fade (display only), on `ss/water-lines`.
 - `ss/water-lines`: glowing water lines, on `ss/succession-feedback` (site-feedback
   succession, on `ss/dewitz-flow`).
-- `ss/dewitz-flow`: flow particles, water table (parent `ss/terrain-reference-visuals`). Fallback
-  `ss/ecosim-model-visuals-kiqw12` (ELF species); `1bbad8a`: last hw-confirmed ELF port.
+- `ss/dewitz-flow`: flow particles, water table. Fallback `ss/ecosim-model-visuals-kiqw12`.
 
 ## Frame order (`src/ofApp.cpp`)
 
