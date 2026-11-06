@@ -141,7 +141,6 @@ duplicate values elsewhere.
 
 ## Working rules
 
-- History and decisions go in `docs/DEVLOG.md`.
 - On every hardware report, check first: correct branch and `git pull`,
   Release build, and the Vegetation panel's elevation range reset to the
   calibrated ceiling ("Reset range to ±calibrated ceiling"), a recurring
