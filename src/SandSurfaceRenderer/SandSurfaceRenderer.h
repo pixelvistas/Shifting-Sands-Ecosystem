@@ -192,6 +192,10 @@ private:
     float landLineGlowPx = 2.0f;
     float landLineBrightness = 0.8f;
     float bandOutlineWidthPx = 1.5f;   // band edges: core width on each side
+    // Band fill on: lines are mixed over the fill in a deepened colour
+    // (darker and more saturated by this fraction) instead of added.
+    float landLineShade = 0.35f;       // "Line shade on fill", 0..0.7
+    float waterLineShade = 0.35f;      // "Water line shade on fill", 0..0.7
     bool drawLandShore = true;         // outline the shoreline on the land side
     float dimUnderPlants = 0.8f;       // line brightness x (1 - this x cover)
     bool bandFill = true;              // false: land starts black (dark room)

@@ -8,6 +8,10 @@ fade) to a synthetic box at 1 mm per pixel (taken as 1 projector px per mm):
 Band edges mode outlines each band in its own colour (2026-11-07); every N
 mm colours a line by the band at its level.
 
+Band fill on: lines are mixed over the fill (coverage = core + 0.35 halo) in
+a deepened colour ("Line shade on fill", "Water line shade on fill", 0.35);
+band fill off: additive glow (unchanged). Panels: fill on | fill off.
+
 - flat sand at +9 mm with +-1 mm noise per Kinect pixel (1.9 mm), linearly
   interpolated between pixels as the shader's mesh does;
 - two mounds reaching 75 mm with 30-degree sides; a plant-cover patch
@@ -169,9 +173,18 @@ def smoothstep(e0, e1, x):
     return t * t * (3 - 2 * t)
 
 
-def glow(dpx, glow_px):
+ADD_HALO, MIX_HALO = 0.6, 0.35  # halo weight: additive glow / coverage mixed over the fill
+
+
+def deepen(c, k):
+    """The shader's deepen(): darker by k, saturation raised by the same fraction."""
+    luma = (c * np.array([0.299, 0.587, 0.114])).sum(-1, keepdims=True)
+    return np.clip((luma + (c - luma) * (1 + k)) * (1 - k), 0, 1)
+
+
+def glow(dpx, glow_px, halo_k=ADD_HALO):
     core = np.clip(1 - dpx, 0, 1)
-    halo = 0.6 * np.exp(-dpx / glow_px) if glow_px > 0.01 else 0.0
+    halo = halo_k * np.exp(-dpx / glow_px) if glow_px > 0.01 else 0.0
     return np.clip(core + halo, 0, 1)
 
 
@@ -185,7 +198,7 @@ def flat_fade(amount):
 OUTLINE_PX = 1.5  # "Band outline width (px)" default
 
 
-def land_light(mode, spacing=10.0, offset=5.0, glow_px=2.0, outline_px=OUTLINE_PX):
+def land_light(mode, spacing=10.0, offset=5.0, glow_px=2.0, outline_px=OUTLINE_PX, halo_k=ADD_HALO):
     """(light 0..1, line colour RGB) per pixel, before brightness and fades."""
     ok = HW > 1e-6
     hw = np.maximum(HW, 1e-6)
@@ -197,7 +210,7 @@ def land_light(mode, spacing=10.0, offset=5.0, glow_px=2.0, outline_px=OUTLINE_P
         for e, g in zip(EDGES, GAPS):
             dpx = np.abs(HMM - e) / hw
             core = np.clip(outline_px + 0.5 - dpx, 0, 1)
-            halo = 0.6 * np.exp(-np.maximum(dpx - outline_px, 0) / glow_px) if glow_px > 0.01 else 0.0
+            halo = halo_k * np.exp(-np.maximum(dpx - outline_px, 0) / glow_px) if glow_px > 0.01 else 0.0
             l = np.clip(core + halo, 0, 1) * (1 - smoothstep(0.25, 0.5, hw / max(g, 0.01)))
             best = np.maximum(best, l)
         colour = colour_at(HMM)
@@ -205,40 +218,51 @@ def land_light(mode, spacing=10.0, offset=5.0, glow_px=2.0, outline_px=OUTLINE_P
         u = (HMM - offset) / spacing
         k = np.floor(u + 0.5)
         uw = hw / spacing
-        best = glow(np.abs(u - k) / uw, glow_px) * (1 - smoothstep(0.25, 0.5, uw))
+        best = glow(np.abs(u - k) / uw, glow_px, halo_k) * (1 - smoothstep(0.25, 0.5, uw))
         colour = colour_at(offset + k * spacing + 0.5)  # the band at the line's level
     return best * ok, colour
 
 
-def water_light(spacing=10.0, glow_px=2.0):
+def water_light(spacing=10.0, glow_px=2.0, halo_k=ADD_HALO):
     u = HMM / spacing  # sign of the elevation does not change the lines
     w = np.maximum(HW, 1e-6)
     f = u - np.floor(u)
-    l = glow(np.minimum(f, 1 - f) / w, glow_px) * (1 - smoothstep(0.25, 0.5, w)) * (HW > 1e-6)
+    l = glow(np.minimum(f, 1 - f) / w, glow_px, halo_k) * (1 - smoothstep(0.25, 0.5, w)) * (HW > 1e-6)
     return l
 
 
-def outline(dpx, w=OUTLINE_PX, glow_px=2.0):
+def outline(dpx, w=OUTLINE_PX, glow_px=2.0, halo_k=ADD_HALO):
     core = np.clip(w + 0.5 - dpx, 0, 1)
-    halo = 0.6 * np.exp(-np.maximum(dpx - w, 0) / glow_px) if glow_px > 0.01 else 0.0
+    halo = halo_k * np.exp(-np.maximum(dpx - w, 0) / glow_px) if glow_px > 0.01 else 0.0
     return np.clip(core + halo, 0, 1)
 
 
-def glow_water_side(dpx, glow_px=2.0):
+def glow_water_side(dpx, glow_px=2.0, halo_k=ADD_HALO):
     # Existing water-side formula: ~1 px core from the edge plus halo.
-    return np.clip(np.clip(1 - dpx, 0, 1) + (0.6 * np.exp(-dpx / glow_px) if glow_px > 0.01 else 0.0), 0, 1)
+    return np.clip(np.clip(1 - dpx, 0, 1) + (halo_k * np.exp(-dpx / glow_px) if glow_px > 0.01 else 0.0), 0, 1)
 
 
-def render(mode, fill, fade_amount, brightness=0.8, dim=0.8, land_shore=True, water_shore=True):
-    band = colour_at(HMM)  # this pixel's own band
+def render(mode, fill, fade_amount, brightness=0.8, dim=0.8, land_shore=True, water_shore=True,
+           land_shade=0.35, water_shade=0.35, additive_on_fill=False):
+    """additive_on_fill=True reproduces the previous build (glow added over the fill)."""
+    band = colour_at(HMM)  # this pixel's own band (before any soil tint)
     img = band.copy() if fill else np.zeros((H, W, 3))
     ff = flat_fade(fade_amount)
-    light, colour = land_light(mode)
     gain = brightness * (1 - dim * COVER) * ff
-    lit = colour * light[..., None]
-    if land_shore:  # "Outline shoreline (land side)": own band colour
-        lit = np.maximum(lit, band * outline(DIST_TO_WATER)[..., None])
-    land = np.minimum(img + lit * gain[..., None], 1)
+    mix_mode = fill and not additive_on_fill
+    if not mix_mode:  # band fill off: additive glow (unchanged)
+        light, colour = land_light(mode)
+        lit = colour * light[..., None]
+        if land_shore:  # "Outline shoreline (land side)": own band colour
+            lit = np.maximum(lit, band * outline(DIST_TO_WATER)[..., None])
+        land = np.minimum(img + lit * gain[..., None], 1)
+    else:  # band fill on: mix a deepened colour by coverage (core + softer halo)
+        cov, colour = land_light(mode, halo_k=MIX_HALO)
+        a = (cov * gain)[..., None]
+        land = img * (1 - a) + deepen(colour, land_shade) * a
+        if land_shore:
+            a = (outline(DIST_TO_WATER, halo_k=MIX_HALO) * gain)[..., None]
+            land = land * (1 - a) + deepen(band, land_shade) * a
     img = np.where(WET[..., None], img, land)
     # water (unchanged colours) + water lines with the flat fade
     t = np.clip(DEPTH / RANGE_MM / MAX_WATER_DEPTH_FRAC, 0, 1)
@@ -246,10 +270,15 @@ def render(mode, fill, fade_amount, brightness=0.8, dim=0.8, land_shore=True, wa
     water = (1 - t)[..., None] * np.array([0.255, 0.714, 0.769]) + t[..., None] * np.array([0.031, 0.188, 0.420])
     a = (0.6 + 0.35 * t)[..., None]
     wcol = lake * (1 - a) + water * a
-    wlight = water_light() * ff
+    hk = MIX_HALO if mix_mode else ADD_HALO
+    wlight = water_light(halo_k=hk) * ff
     if water_shore:  # "Shoreline glow" (water side), not flat-faded, as the shader
-        wlight = np.maximum(wlight, glow_water_side(DIST_TO_DRY))
-    wcol = np.minimum(wcol + LINE_RGB * (0.8 * wlight)[..., None], 1)
+        wlight = np.maximum(wlight, glow_water_side(DIST_TO_DRY, halo_k=hk))
+    if not mix_mode:
+        wcol = np.minimum(wcol + LINE_RGB * (0.8 * wlight)[..., None], 1)
+    else:
+        a = (0.8 * wlight)[..., None]
+        wcol = wcol * (1 - a) + deepen(LINE_RGB, water_shade) * a
     img = np.where(WET[..., None], wcol, img)
     return (img * 255 + 0.5).astype(np.uint8)
 
@@ -287,12 +316,12 @@ for amount in (0.0, 0.2, 0.4, 0.5, 0.6, 0.67, 0.7, 0.8, 1.0):
 
 DEFAULT = 0.6
 panels = [
-    (f"Band edges, fill ON, flat fade {DEFAULT}", render("edges", True, DEFAULT)),
-    (f"Band edges, fill OFF, flat fade {DEFAULT}", render("edges", False, DEFAULT)),
-    (f"Every 10 mm (+5), fill ON, flat fade {DEFAULT}", render("everyN", True, DEFAULT)),
-    (f"Every 10 mm (+5), fill OFF, flat fade {DEFAULT}", render("everyN", False, DEFAULT)),
-    ("Band edges, fill OFF, fade 0.6, both shoreline outlines OFF", render("edges", False, DEFAULT, land_shore=False, water_shore=False)),
-    ("Band edges, fill OFF, flat fade OFF (0)", render("edges", False, 0.0)),
+    (f"Band edges, fill ON (mixed, shade 0.35), flat fade {DEFAULT}", render("edges", True, DEFAULT)),
+    (f"Band edges, fill OFF (additive), flat fade {DEFAULT}", render("edges", False, DEFAULT)),
+    (f"Every 10 mm (+5), fill ON (mixed, shade 0.35), flat fade {DEFAULT}", render("everyN", True, DEFAULT)),
+    (f"Every 10 mm (+5), fill OFF (additive), flat fade {DEFAULT}", render("everyN", False, DEFAULT)),
+    ("Band edges, fill ON, previous build (additive over fill)", render("edges", True, DEFAULT, additive_on_fill=True)),
+    ("Band edges, fill ON (mixed), shade 0 (no deepening)", render("edges", True, DEFAULT, land_shade=0.0, water_shade=0.0)),
 ]
 gap, head = 8, 18
 sheet = Image.new("RGB", (2 * W + 3 * gap, 3 * (H + head) + 4 * gap), "white")

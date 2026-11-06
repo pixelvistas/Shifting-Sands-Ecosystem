@@ -92,6 +92,10 @@ uniform float landEdge[16];          // band edges of the colour map, mm
 uniform float landEdgeGap[16];       // mm to the nearest other edge
 uniform float landLineGlowPx;
 uniform float landLineBrightness;
+// Band fill on (2026-11-07): lines are mixed over the fill, not added (added
+// to a fill of their own colour they clamp to white), in a deepened colour.
+uniform float landLineShade;         // 0..0.7, how much darker and more saturated
+uniform float waterLineShade;        // the same for the water lines over the water
 uniform float bandOutlineWidthPx;    // band-edges mode: core half-width, px each side
 uniform int drawLandShore;           // outline the shoreline on the land side (2026-11-07)
 uniform float dimUnderPlants;        // 0..1
@@ -126,6 +130,18 @@ float riseOverRun(vec4 a, vec4 b)
     vec3 d = b.xyz - a.xyz;
     float run = sqrt(max(dot(d, d) - rise * rise, 0.0));
     return rise / max(run, 1e-3);
+}
+
+// Halo weight of the line coverage used when mixing over the band fill
+// (softer than the additive glow's 0.6).
+const float MIX_HALO = 0.35;
+
+// c made darker by k and more saturated by the same fraction (k = 0: c).
+vec3 deepen(vec3 c, float k)
+{
+    float luma = dot(c, vec3(0.299, 0.587, 0.114));
+    vec3 sat = mix(vec3(luma), c, 1.0 + k); // away from grey
+    return clamp(sat * (1.0 - k), 0.0, 1.0);
 }
 
 // Operator debug false colour (dark purple - teal - yellow).
@@ -229,7 +245,8 @@ void main()
     // tools/land_lines_preview.py.
     if (drawLandLines == 1 && !(drawSimWater == 1 && simWater) && abs(heightTransform.x) > 1e-9)
     {
-        float best = 0.0;      // strongest line here
+        float best = 0.0;      // strongest line here (additive glow)
+        float bestCov = 0.0;   // its coverage for mixing over the band fill
         vec3 lineColour = vec3(0.0);
         if (hW <= 1e-6)
         {
@@ -248,10 +265,12 @@ void main()
                     break;
                 float dPx = abs(hMM - landEdge[i]) / hW; // pixels to this edge's isoline
                 float core = clamp(w + 0.5 - dPx, 0.0, 1.0);
-                float halo = landLineGlowPx > 0.01 ? 0.6 * exp(-max(dPx - w, 0.0) / landLineGlowPx) : 0.0;
+                float hs = landLineGlowPx > 0.01 ? exp(-max(dPx - w, 0.0) / landLineGlowPx) : 0.0;
+                float halo = 0.6 * hs;
                 // Fade where this line is closer than 4 px to its neighbour.
                 float fade = 1.0 - smoothstep(0.25, 0.5, hW / max(landEdgeGap[i], 0.01));
                 best = max(best, clamp(core + halo, 0.0, 1.0) * fade);
+                bestCov = max(bestCov, clamp(core + MIX_HALO * hs, 0.0, 1.0) * fade);
             }
             lineColour = bandColour;
         }
@@ -263,8 +282,10 @@ void main()
             float uW = hW / sp;
             float dPx = abs(u - k) / uW;
             float core = clamp(1.0 - dPx, 0.0, 1.0);
-            float halo = landLineGlowPx > 0.01 ? 0.6 * exp(-dPx / landLineGlowPx) : 0.0;
+            float hs = landLineGlowPx > 0.01 ? exp(-dPx / landLineGlowPx) : 0.0;
+            float halo = 0.6 * hs;
             best = clamp(core + halo, 0.0, 1.0) * (1.0 - smoothstep(0.25, 0.5, uW));
+            bestCov = clamp(core + MIX_HALO * hs, 0.0, 1.0) * (1.0 - smoothstep(0.25, 0.5, uW));
             // Every N mm: the band at the line's own level (+0.5 mm: at a
             // boundary, the band above), so a line keeps one colour.
             float level = landLineOffset + k * sp;
@@ -278,6 +299,7 @@ void main()
         // bandOutlineWidthPx plus halo, in this pixel's own band colour, so
         // the shore shows a land-coloured half beside the blue one.
         float shore = 0.0;
+        float shoreCov = 0.0;
         if (drawLandShore == 1 && drawSimWater == 1 && hasVegetation == 1)
         {
             vec2 base = floor(vegUV) + 0.5;
@@ -296,13 +318,26 @@ void main()
             float dPx = dMin / cellsPerPx;
             float w = max(bandOutlineWidthPx, 0.0);
             float core = clamp(w + 0.5 - dPx, 0.0, 1.0);
-            float halo = landLineGlowPx > 0.01 ? 0.6 * exp(-max(dPx - w, 0.0) / landLineGlowPx) : 0.0;
+            float hs = landLineGlowPx > 0.01 ? exp(-max(dPx - w, 0.0) / landLineGlowPx) : 0.0;
+            float halo = 0.6 * hs;
             shore = clamp(core + halo, 0.0, 1.0);
+            shoreCov = clamp(core + MIX_HALO * hs, 0.0, 1.0);
         }
         float cover = clamp(veg.r + veg.g + veg.b, 0.0, 1.0); // plant cover (0 without vegetation)
         float gain = landLineBrightness * (1.0 - dimUnderPlants * cover) * flatFade;
-        vec3 lit = max(lineColour * best, bandColour * shore);
-        color.rgb = min(color.rgb + lit * gain, vec3(1.0));
+        if (bandFill == 0)
+        {
+            // Dark-room base: additive glow.
+            vec3 lit = max(lineColour * best, bandColour * shore);
+            color.rgb = min(color.rgb + lit * gain, vec3(1.0));
+        }
+        else
+        {
+            // Over the band fill: mix in a deepened band colour (bandColour
+            // is from before the soil tint).
+            color.rgb = mix(color.rgb, deepen(lineColour, landLineShade), bestCov * gain);
+            color.rgb = mix(color.rgb, deepen(bandColour, landLineShade), shoreCov * gain);
+        }
     }
 
     // Simulated water overlay (ss/terrain-reference-visuals, 2026-10-20).
@@ -328,16 +363,19 @@ void main()
         if (drawWaterLines == 1 || drawShorelineGlow == 1)
         {
             float light = 0.0;
+            float cov = 0.0; // coverage for mixing (band fill on)
             if (drawWaterLines == 1 && wlW > 1e-6) // flat bed: no isoline, and no division by 0
             {
                 float f = fract(wlU);
                 float dPx = min(f, 1.0 - f) / wlW; // pixels to the nearest isoline
                 float core = clamp(1.0 - dPx, 0.0, 1.0);
-                float halo = waterLineGlowPx > 0.01 ? 0.6 * exp(-dPx / waterLineGlowPx) : 0.0;
+                float hs = waterLineGlowPx > 0.01 ? exp(-dPx / waterLineGlowPx) : 0.0;
+                float halo = 0.6 * hs;
                 // Lines closer than 4 px, gone at 2 px (steep walls), would merge into
                 // a solid band; fade them out there.
                 float fade = 1.0 - smoothstep(0.25, 0.5, wlW);
                 light = clamp(core + halo, 0.0, 1.0) * fade * flatFade;
+                cov = clamp(core + MIX_HALO * hs, 0.0, 1.0) * fade * flatFade;
             }
             if (drawShorelineGlow == 1)
             {
@@ -359,11 +397,16 @@ void main()
                 float cellsPerPx = max(max(wlCellsPerPx.x, wlCellsPerPx.y), 1e-6);
                 float dPx = dMin / cellsPerPx;
                 float core = clamp(1.0 - dPx, 0.0, 1.0);
-                float halo = waterLineGlowPx > 0.01 ? 0.6 * exp(-dPx / waterLineGlowPx) : 0.0;
+                float hs = waterLineGlowPx > 0.01 ? exp(-dPx / waterLineGlowPx) : 0.0;
+                float halo = 0.6 * hs;
                 light = max(light, clamp(core + halo, 0.0, 1.0));
+                cov = max(cov, clamp(core + MIX_HALO * hs, 0.0, 1.0));
             }
             vec3 lineColour = vec3(0.435, 0.827, 1.0); // #6FD3FF
-            color.rgb = min(color.rgb + lineColour * (waterLineBrightness * light), vec3(1.0));
+            if (bandFill == 0)
+                color.rgb = min(color.rgb + lineColour * (waterLineBrightness * light), vec3(1.0));
+            else // band fill on: mixed in a deepened line colour, as the land lines
+                color.rgb = mix(color.rgb, deepen(lineColour, waterLineShade), waterLineBrightness * cov);
         }
     }
 

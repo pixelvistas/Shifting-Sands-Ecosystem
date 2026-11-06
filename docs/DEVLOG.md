@@ -3911,3 +3911,31 @@ position by several mm (noise / slope). Both shaders pass
 `glslangValidator` (GL2 with the rectangle extension in a temporary copy
 only); GL2 and GL3 diffs match apart from the texture call. Not compiled
 with openFrameworks, not hardware-tested.
+
+## 2026-11-07 - Lines over the band fill: mixed, not added (`ss/land-lines`)
+
+At the user's request: with "Band fill" on, the additive land lines turned
+white (a glow in the band's own colour added to that colour clamps to 1).
+Now, only with band fill on, land lines (band edges, every N mm, land-side
+shoreline) are drawn by mixing: color = mix(color, deepen(lineColour, k),
+coverage x gain), gain = brightness x (1 - dim x cover) x flat fade as
+before. coverage = clamp(core + 0.35 halo) (a softer halo than the
+additive 0.6; MIX_HALO in the shader), with the same core, glow width and
+merge fades. deepen(c, k) = clamp(mix(luma, c, 1 + k) x (1 - k)): k darker
+and k more saturated. Band colour is taken from the colour map before the
+soil tint (as before). Slider "Line shade on fill" (0-0.7, default 0.35).
+The water lines and the water-side shoreline glow follow the same choice
+over the water colour: mix(color, deepen(#6FD3FF, k), brightness x
+coverage), slider "Water line shade on fill" (0-0.7, 0.35). Both saved in
+`sandSurfaceRendererSettings.xml`.
+
+Band fill off: the additive path is unchanged (the halo exp() was factored
+into hs and 0.6 x hs is the same expression); the preview's fill-off panels
+are pixel-identical to the previous build in both modes (max difference 0).
+Note: at shade 0 the band-edge lines vanish over the fill (they are mixed in
+the fill's own colour), so the shade must stay above 0 for them to show.
+Preview (`tools/land_lines_preview.py`): panels fill on | fill off, plus the
+previous additive-over-fill look and shade 0 for comparison. Both shaders
+pass `glslangValidator` (GL2 with the rectangle extension in a temporary
+copy only); GL2 and GL3 diffs match apart from the texture call. Not
+compiled with openFrameworks, not hardware-tested.
