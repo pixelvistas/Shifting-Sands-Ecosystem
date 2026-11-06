@@ -79,9 +79,9 @@ uniform vec2 waterLineTransform;
 uniform float waterLineGlowPx;     // halo falloff, projector pixels
 uniform float waterLineBrightness; // 0..1
 uniform int drawShorelineGlow;
-// Glowing land lines (2026-11-06): contour lines on non-water pixels, each
-// in the colour of the band at its own level, same core + halo as the
-// water lines. h = colour-map key height in mm = depthfrag * x + y.
+// Glowing land lines (2026-11-06): contour lines on non-water pixels, same
+// core + halo as the water lines. Band edges: each pixel in its own band's
+// colour (bands outlined, 2026-11-07); every N mm: the band at the level. h = colour-map key height in mm = depthfrag * x + y.
 uniform int drawLandLines;
 uniform int landLineMode;            // 0 band edges, 1 every N mm
 uniform vec2 heightTransform;
@@ -92,6 +92,7 @@ uniform float landEdge[16];          // band edges of the colour map, mm
 uniform float landEdgeGap[16];       // mm to the nearest other edge
 uniform float landLineGlowPx;
 uniform float landLineBrightness;
+uniform float bandOutlineWidthPx;    // band-edges mode: core half-width, px each side
 uniform float dimUnderPlants;        // 0..1
 uniform int bandFill;                // 1 colour-map fill, 0 land starts black
 // Flat-ground fade (water and land lines): slope fitted to 8 samples of the
@@ -139,6 +140,7 @@ void main()
 {
     vec2 depthPos = vec2(depthfrag, 0.5);
     vec4 color = texture2DRect(heightColorMapSampler, depthPos); // colormap converted depth
+    vec3 bandColour = color.rgb; // this pixel's own band (band-edges outlines)
     // Band fill off (dark-room look): land starts from black; everything
     // drawn on top (soil tint, plants, water, lines) is unchanged.
     if (bandFill == 0)
@@ -227,21 +229,26 @@ void main()
     if (drawLandLines == 1 && !(drawSimWater == 1 && simWater) && hW > 1e-6 && abs(heightTransform.x) > 1e-9)
     {
         float best = 0.0;      // strongest line here
-        float bestLevel = 0.0; // its level, mm
+        vec3 lineColour;
         if (landLineMode == 0)
         {
+            // Band edges (2026-11-07): each band outlined in its own colour.
+            // Every line pixel, core and halo, takes the colour of the band
+            // the pixel itself is in, so a boundary shows two halves. Core:
+            // bandOutlineWidthPx on each side (0.5 px edge); halo from there.
+            float w = max(bandOutlineWidthPx, 0.0);
             for (int i = 0; i < 16; i++)
             {
                 if (i >= landEdgeCount)
                     break;
                 float dPx = abs(hMM - landEdge[i]) / hW; // pixels to this edge's isoline
-                float core = clamp(1.0 - dPx, 0.0, 1.0);
-                float halo = landLineGlowPx > 0.01 ? 0.6 * exp(-dPx / landLineGlowPx) : 0.0;
+                float core = clamp(w + 0.5 - dPx, 0.0, 1.0);
+                float halo = landLineGlowPx > 0.01 ? 0.6 * exp(-max(dPx - w, 0.0) / landLineGlowPx) : 0.0;
                 // Fade where this line is closer than 4 px to its neighbour.
                 float fade = 1.0 - smoothstep(0.25, 0.5, hW / max(landEdgeGap[i], 0.01));
-                float l = clamp(core + halo, 0.0, 1.0) * fade;
-                if (l > best) { best = l; bestLevel = landEdge[i]; }
+                best = max(best, clamp(core + halo, 0.0, 1.0) * fade);
             }
+            lineColour = bandColour;
         }
         else
         {
@@ -253,12 +260,12 @@ void main()
             float core = clamp(1.0 - dPx, 0.0, 1.0);
             float halo = landLineGlowPx > 0.01 ? 0.6 * exp(-dPx / landLineGlowPx) : 0.0;
             best = clamp(core + halo, 0.0, 1.0) * (1.0 - smoothstep(0.25, 0.5, uW));
-            bestLevel = landLineOffset + k * sp;
+            // Every N mm: the band at the line's own level (+0.5 mm: at a
+            // boundary, the band above), so a line keeps one colour.
+            float level = landLineOffset + k * sp;
+            lineColour = texture(heightColorMapSampler,
+                vec2((level + 0.5 - heightTransform.y) / heightTransform.x, 0.5)).rgb;
         }
-        // The band at the line's own level (+0.5 mm: at a boundary, the band
-        // above), so a line keeps one colour along its length.
-        vec3 lineColour = texture(heightColorMapSampler,
-            vec2((bestLevel + 0.5 - heightTransform.y) / heightTransform.x, 0.5)).rgb;
         float cover = clamp(veg.r + veg.g + veg.b, 0.0, 1.0); // plant cover (0 without vegetation)
         float gain = landLineBrightness * (1.0 - dimUnderPlants * cover) * flatFade;
         color.rgb = min(color.rgb + lineColour * (gain * best), vec3(1.0));

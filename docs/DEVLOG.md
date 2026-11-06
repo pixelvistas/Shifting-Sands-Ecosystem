@@ -3853,3 +3853,24 @@ Hardware checklist (user):
 5. Let plants grow on a slope: lines dim under them, and a fresh dig shows
    them sharp again.
 6. Note the glow, brightness and flat-fade values that look best on sand.
+
+## 2026-11-07 - Band edges: each band outlined in its own colour (`ss/land-lines`)
+
+At the user's request. In "Band edges" mode a land-line pixel (core and
+halo) is no longer coloured by the band at the line's level; it takes the
+colour-map colour at the pixel's own elevation (`bandColour`, sampled before
+"Band fill" can blacken the base). Each boundary therefore shows two halves,
+each glowing in its own band's colour, so every band is outlined in its own
+colour. New slider "Band outline width (px)" (0-6, default 1.5): the core is
+that wide on each side of the boundary (core = clamp(w + 0.5 - dPx), 0.5 px
+soft edge); the halo now starts at the core's edge (exp(-max(dPx - w, 0) /
+glow)). Saved in `sandSurfaceRendererSettings.xml`. The steep-slope merge
+fade, plant dimming and flat-ground fade are unchanged. "Every N mm" mode
+is unchanged (line colour = band at the line's level + 0.5 mm).
+
+`tools/land_lines_preview.py` updated to match. With the default flat fade
+(0.6) flat sand and the flat-bed interior stay at 0.00 % lit; lines on
+30-degree slopes keep 100 % (the wider core adds 0.01 % on flat sand with
+the fade off). Both shaders pass `glslangValidator` (GL2 with the rectangle
+extension in a temporary copy only); the GL2 and GL3 diffs match apart from
+the texture call. Not compiled with openFrameworks, not hardware-tested.

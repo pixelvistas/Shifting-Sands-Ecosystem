@@ -191,6 +191,7 @@ private:
     float landLineOffset = 5.0f;       // mm; levels avoid flat sand (~+9 mm)
     float landLineGlowPx = 2.0f;
     float landLineBrightness = 0.8f;
+    float bandOutlineWidthPx = 1.5f;   // band edges: core width on each side
     float dimUnderPlants = 0.8f;       // line brightness x (1 - this x cover)
     bool bandFill = true;              // false: land starts black (dark room)
     float flatFadeAmount = 0.6f;       // "Hide lines on flat ground" 0..1 (x 15 deg); 0.6 from tools/land_lines_preview.py

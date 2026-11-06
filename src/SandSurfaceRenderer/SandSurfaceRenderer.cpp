@@ -289,6 +289,7 @@ void SandSurfaceRenderer::drawSandbox() {
     }
     heightMapShader.setUniform1f("landLineGlowPx", std::max(0.0f, landLineGlowPx));
     heightMapShader.setUniform1f("landLineBrightness", ofClamp(landLineBrightness, 0.0f, 1.0f));
+    heightMapShader.setUniform1f("bandOutlineWidthPx", ofClamp(bandOutlineWidthPx, 0.0f, 6.0f));
     heightMapShader.setUniform1f("dimUnderPlants", ofClamp(dimUnderPlants, 0.0f, 1.0f));
     heightMapShader.setUniform1i("bandFill", bandFill ? 1 : 0);
     float fadeDeg = ofClamp(flatFadeAmount, 0.0f, 1.0f) * 15.0f;
@@ -639,6 +640,7 @@ void SandSurfaceRenderer::drawGui() {
 	ImGui::Combo("Land line levels", &landLineMode, modes, 2);
 	if (landLineMode == 0) {
 		ImGui::Text("%d band edges from the colour map", (int)std::min<size_t>(16, landBandEdges.size()));
+		ImGui::SliderFloat("Band outline width (px)", &bandOutlineWidthPx, 0.0f, 6.0f);
 	} else {
 		ImGui::SliderFloat("Land line spacing (mm)", &landLineSpacing, 4.0f, 30.0f);
 		landLineOffset = std::min(landLineOffset, landLineSpacing);
@@ -692,6 +694,7 @@ bool SandSurfaceRenderer::loadSettings() {
 	if (s.getChild("landLineOffset")) landLineOffset = ofClamp(s.getChild("landLineOffset").getFloatValue(), 0.0f, landLineSpacing);
 	if (s.getChild("landLineGlowPx")) landLineGlowPx = ofClamp(s.getChild("landLineGlowPx").getFloatValue(), 0.0f, 6.0f);
 	if (s.getChild("landLineBrightness")) landLineBrightness = ofClamp(s.getChild("landLineBrightness").getFloatValue(), 0.0f, 1.0f);
+	if (s.getChild("bandOutlineWidthPx")) bandOutlineWidthPx = ofClamp(s.getChild("bandOutlineWidthPx").getFloatValue(), 0.0f, 6.0f);
 	if (s.getChild("dimUnderPlants")) dimUnderPlants = ofClamp(s.getChild("dimUnderPlants").getFloatValue(), 0.0f, 1.0f);
 	if (s.getChild("bandFill")) bandFill = s.getChild("bandFill").getBoolValue();
 	if (s.getChild("flatFadeAmount")) flatFadeAmount = ofClamp(s.getChild("flatFadeAmount").getFloatValue(), 0.0f, 1.0f);
@@ -718,6 +721,7 @@ bool SandSurfaceRenderer::saveSettings() {
 	s.appendChild("landLineOffset").set(landLineOffset);
 	s.appendChild("landLineGlowPx").set(landLineGlowPx);
 	s.appendChild("landLineBrightness").set(landLineBrightness);
+	s.appendChild("bandOutlineWidthPx").set(bandOutlineWidthPx);
 	s.appendChild("dimUnderPlants").set(dimUnderPlants);
 	s.appendChild("bandFill").set(bandFill);
 	s.appendChild("flatFadeAmount").set(flatFadeAmount);

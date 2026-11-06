@@ -5,6 +5,9 @@ Applies the shader's formulas (colour map fill or black, land lines in
 "Band edges" or "Every N mm" mode, water colour, water lines, flat-ground
 fade) to a synthetic box at 1 mm per pixel (taken as 1 projector px per mm):
 
+Band edges mode outlines each band in its own colour (2026-11-07); every N
+mm colours a line by the band at its level.
+
 - flat sand at +9 mm with +-1 mm noise per Kinect pixel (1.9 mm), linearly
   interpolated between pixels as the shader's mesh does;
 - two mounds reaching 75 mm with 30-degree sides; a plant-cover patch
@@ -146,25 +149,32 @@ def flat_fade(amount):
     return smoothstep(0.5 * s, s, SLOPE)
 
 
-def land_light(mode, spacing=10.0, offset=5.0, glow_px=2.0):
-    """(light 0..1, level mm) per pixel, before brightness and fades."""
+OUTLINE_PX = 1.5  # "Band outline width (px)" default
+
+
+def land_light(mode, spacing=10.0, offset=5.0, glow_px=2.0, outline_px=OUTLINE_PX):
+    """(light 0..1, line colour RGB) per pixel, before brightness and fades."""
     ok = HW > 1e-6
     hw = np.maximum(HW, 1e-6)
     if mode == "edges":
+        # Each band outlined in its own colour: every line pixel (core and
+        # halo) takes the colour of the band the pixel itself is in. Core:
+        # outline_px on each side of the boundary; halo from the core's edge.
         best = np.zeros_like(HMM)
-        level = np.zeros_like(HMM)
         for e, g in zip(EDGES, GAPS):
-            l = glow(np.abs(HMM - e) / hw, glow_px) * (1 - smoothstep(0.25, 0.5, hw / max(g, 0.01)))
-            take = l > best
-            best = np.where(take, l, best)
-            level = np.where(take, e, level)
+            dpx = np.abs(HMM - e) / hw
+            core = np.clip(outline_px + 0.5 - dpx, 0, 1)
+            halo = 0.6 * np.exp(-np.maximum(dpx - outline_px, 0) / glow_px) if glow_px > 0.01 else 0.0
+            l = np.clip(core + halo, 0, 1) * (1 - smoothstep(0.25, 0.5, hw / max(g, 0.01)))
+            best = np.maximum(best, l)
+        colour = colour_at(HMM)
     else:
         u = (HMM - offset) / spacing
         k = np.floor(u + 0.5)
         uw = hw / spacing
         best = glow(np.abs(u - k) / uw, glow_px) * (1 - smoothstep(0.25, 0.5, uw))
-        level = offset + k * spacing
-    return best * ok, level
+        colour = colour_at(offset + k * spacing + 0.5)  # the band at the line's level
+    return best * ok, colour
 
 
 def water_light(spacing=10.0, glow_px=2.0):
@@ -178,9 +188,9 @@ def water_light(spacing=10.0, glow_px=2.0):
 def render(mode, fill, fade_amount, brightness=0.8, dim=0.8):
     img = colour_at(BED + noise_at(X, Y)) if fill else np.zeros((H, W, 3))
     ff = flat_fade(fade_amount)
-    light, level = land_light(mode)
+    light, colour = land_light(mode)
     gain = brightness * (1 - dim * COVER) * ff
-    land = np.minimum(img + colour_at(level + 0.5) * (gain * light)[..., None], 1)
+    land = np.minimum(img + colour * (gain * light)[..., None], 1)
     img = np.where(WET[..., None], img, land)
     # water (unchanged colours) + water lines with the flat fade
     t = np.clip(DEPTH / RANGE_MM / MAX_WATER_DEPTH_FRAC, 0, 1)

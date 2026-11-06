@@ -50,8 +50,8 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   isolines of the bed elevation (depthfrag) on simulated water only, plus an
   optional shoreline glow (Sand Surface Renderer panel; saved in
   `sandSurfaceRendererSettings.xml`; preview `tools/water_lines_preview.py`).
-  `ss/land-lines` adds glowing land lines in the band colour at their level
-  (band edges read from the map's keys, or every N mm), "Band fill" off for a
+  `ss/land-lines` adds glowing land lines: band edges (from the map's keys)
+  outline each band in its own colour; every N mm in the band at the level. "Band fill" off for a
   black dark-room base, and "Hide lines on flat ground" (slope fitted to 8
   filtered-depth samples at +-5 Kinect px; default 0.6, `tools/land_lines_preview.py`).
 - `src/Games/VegetationField.*`: one grid cell per Kinect pixel in the ROI
