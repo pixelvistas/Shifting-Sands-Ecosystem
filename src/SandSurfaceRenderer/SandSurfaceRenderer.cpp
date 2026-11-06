@@ -90,6 +90,8 @@ void SandSurfaceRenderer::setup(bool sdisplayGui){
         settingsLoaded = true;
     }
     
+    updateLandBandEdges();
+
     //Set elevation Min and Max
     elevationMin = -heightMap.getScalarRangeMin();
     elevationMax = -heightMap.getScalarRangeMax();
@@ -261,6 +263,38 @@ void SandSurfaceRenderer::drawSandbox() {
     heightMapShader.setUniform1f("waterLineGlowPx", std::max(0.0f, waterLineGlowPx));
     heightMapShader.setUniform1f("waterLineBrightness", ofClamp(waterLineBrightness, 0.0f, 1.0f));
     heightMapShader.setUniform1i("drawShorelineGlow", drawShorelineGlow ? 1 : 0);
+    // Glowing land lines and the flat-ground fade. heightTransform maps
+    // depthfrag to the colour map's key height in mm (the inverse of
+    // heightColorMapTransformation, whose elevation is minus key height).
+    bool htOk = std::fabs(heightMapScale) > 1e-9f;
+    heightMapShader.setUniform1i("drawLandLines", (drawLandLines && htOk) ? 1 : 0);
+    heightMapShader.setUniform1i("landLineMode", landLineMode);
+    heightMapShader.setUniform2f("heightTransform",
+        htOk ? ofVec2f(-1.0f / heightMapScale, heightMapOffset / heightMapScale) : ofVec2f(0.0f, 0.0f));
+    heightMapShader.setUniform1f("landLineSpacing", ofClamp(landLineSpacing, 4.0f, 30.0f));
+    heightMapShader.setUniform1f("landLineOffset", ofClamp(landLineOffset, 0.0f, landLineSpacing));
+    {
+        float edges[16] = { 0 }, gaps[16] = { 0 };
+        int n = std::min(16, (int)landBandEdges.size());
+        for (int i = 0; i < n; i++) {
+            edges[i] = landBandEdges[i];
+            float g = 1e3f;
+            if (i > 0) g = std::min(g, landBandEdges[i] - landBandEdges[i - 1]);
+            if (i + 1 < (int)landBandEdges.size()) g = std::min(g, landBandEdges[i + 1] - landBandEdges[i]);
+            gaps[i] = g;
+        }
+        heightMapShader.setUniform1i("landEdgeCount", n);
+        heightMapShader.setUniform1fv("landEdge", edges, 16);
+        heightMapShader.setUniform1fv("landEdgeGap", gaps, 16);
+    }
+    heightMapShader.setUniform1f("landLineGlowPx", std::max(0.0f, landLineGlowPx));
+    heightMapShader.setUniform1f("landLineBrightness", ofClamp(landLineBrightness, 0.0f, 1.0f));
+    heightMapShader.setUniform1f("dimUnderPlants", ofClamp(dimUnderPlants, 0.0f, 1.0f));
+    heightMapShader.setUniform1i("bandFill", bandFill ? 1 : 0);
+    float fadeDeg = ofClamp(flatFadeAmount, 0.0f, 1.0f) * 15.0f;
+    heightMapShader.setUniform1f("flatFadeSlope", fadeDeg > 0.0f ? std::tan(ofDegToRad(fadeDeg)) : 0.0f);
+    heightMapShader.setUniform4f("kinectROIRect", ofVec4f(kinectROI.x - 0.5f, kinectROI.y - 0.5f,
+        kinectROI.x + kinectROI.width - 1.5f, kinectROI.y + kinectROI.height - 1.5f));
 
     bool hasVegetation = vegetationField && vegetationField->getTexture().isAllocated();
     heightMapShader.setUniform1i("hasVegetation", hasVegetation);
@@ -597,7 +631,39 @@ void SandSurfaceRenderer::drawGui() {
 	ImGui::SliderFloat("Water line glow (px)", &waterLineGlowPx, 0.0f, 6.0f);
 	ImGui::SliderFloat("Water line brightness", &waterLineBrightness, 0.0f, 1.0f);
 	ImGui::Checkbox("Shoreline glow", &drawShorelineGlow);
+	ImGui::Separator();
+	ImGui::Text("Land display");
+	ImGui::Checkbox("Band fill (off = dark-room look)", &bandFill);
+	ImGui::Checkbox("Glowing land lines", &drawLandLines);
+	const char * modes[] = { "Band edges", "Every N mm" };
+	ImGui::Combo("Land line levels", &landLineMode, modes, 2);
+	if (landLineMode == 0) {
+		ImGui::Text("%d band edges from the colour map", (int)std::min<size_t>(16, landBandEdges.size()));
+	} else {
+		ImGui::SliderFloat("Land line spacing (mm)", &landLineSpacing, 4.0f, 30.0f);
+		landLineOffset = std::min(landLineOffset, landLineSpacing);
+		ImGui::SliderFloat("Land line offset (mm)", &landLineOffset, 0.0f, landLineSpacing);
+	}
+	ImGui::SliderFloat("Land line glow (px)", &landLineGlowPx, 0.0f, 6.0f);
+	ImGui::SliderFloat("Land line brightness", &landLineBrightness, 0.0f, 1.0f);
+	ImGui::SliderFloat("Dim lines under plants", &dimUnderPlants, 0.0f, 1.0f);
+	ImGui::SliderFloat("Hide lines on flat ground", &flatFadeAmount, 0.0f, 1.0f);
+	ImGui::Text("(water and land lines; 1 = below 15 deg slope; 0 = off)");
 	ImGui::End();
+}
+
+// Band boundaries of the loaded colour map: the map is stepped, each band a
+// pair of keys with the same colour, so a boundary is the height of a key
+// whose colour differs from the key below it (the start of the band above).
+void SandSurfaceRenderer::updateLandBandEdges() {
+	landBandEdges.clear();
+	std::vector<ColorMap::HeightMapKey> keys = heightMap.getKeys();
+	for (size_t i = 1; i < keys.size(); i++)
+		if (keys[i].color != keys[i - 1].color)
+			landBandEdges.push_back(keys[i].height);
+	if (landBandEdges.size() > 16)
+		ofLogWarning("SandSurfaceRenderer") << "colour map has " << landBandEdges.size()
+			<< " band edges; land lines use the lowest 16";
 }
 
 //TODO: Save additionnal settings
@@ -620,6 +686,15 @@ bool SandSurfaceRenderer::loadSettings() {
 	if (s.getChild("waterLineGlowPx")) waterLineGlowPx = ofClamp(s.getChild("waterLineGlowPx").getFloatValue(), 0.0f, 6.0f);
 	if (s.getChild("waterLineBrightness")) waterLineBrightness = ofClamp(s.getChild("waterLineBrightness").getFloatValue(), 0.0f, 1.0f);
 	if (s.getChild("drawShorelineGlow")) drawShorelineGlow = s.getChild("drawShorelineGlow").getBoolValue();
+	if (s.getChild("drawLandLines")) drawLandLines = s.getChild("drawLandLines").getBoolValue();
+	if (s.getChild("landLineMode")) landLineMode = ofClamp(s.getChild("landLineMode").getIntValue(), 0, 1);
+	if (s.getChild("landLineSpacing")) landLineSpacing = ofClamp(s.getChild("landLineSpacing").getFloatValue(), 4.0f, 30.0f);
+	if (s.getChild("landLineOffset")) landLineOffset = ofClamp(s.getChild("landLineOffset").getFloatValue(), 0.0f, landLineSpacing);
+	if (s.getChild("landLineGlowPx")) landLineGlowPx = ofClamp(s.getChild("landLineGlowPx").getFloatValue(), 0.0f, 6.0f);
+	if (s.getChild("landLineBrightness")) landLineBrightness = ofClamp(s.getChild("landLineBrightness").getFloatValue(), 0.0f, 1.0f);
+	if (s.getChild("dimUnderPlants")) dimUnderPlants = ofClamp(s.getChild("dimUnderPlants").getFloatValue(), 0.0f, 1.0f);
+	if (s.getChild("bandFill")) bandFill = s.getChild("bandFill").getBoolValue();
+	if (s.getChild("flatFadeAmount")) flatFadeAmount = ofClamp(s.getChild("flatFadeAmount").getFloatValue(), 0.0f, 1.0f);
 
 	return true;
 }
@@ -637,6 +712,15 @@ bool SandSurfaceRenderer::saveSettings() {
 	s.appendChild("waterLineGlowPx").set(waterLineGlowPx);
 	s.appendChild("waterLineBrightness").set(waterLineBrightness);
 	s.appendChild("drawShorelineGlow").set(drawShorelineGlow);
+	s.appendChild("drawLandLines").set(drawLandLines);
+	s.appendChild("landLineMode").set(landLineMode);
+	s.appendChild("landLineSpacing").set(landLineSpacing);
+	s.appendChild("landLineOffset").set(landLineOffset);
+	s.appendChild("landLineGlowPx").set(landLineGlowPx);
+	s.appendChild("landLineBrightness").set(landLineBrightness);
+	s.appendChild("dimUnderPlants").set(dimUnderPlants);
+	s.appendChild("bandFill").set(bandFill);
+	s.appendChild("flatFadeAmount").set(flatFadeAmount);
 	return xml.save(settingsFile);
 }
 

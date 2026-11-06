@@ -181,6 +181,21 @@ private:
     float waterLineGlowPx = 2.0f;      // halo falloff, projector pixels
     float waterLineBrightness = 0.8f;  // 0..1
     bool drawShorelineGlow = false;    // the same glow along the water's edge
+    // Glowing land lines (2026-11-06): contour lines on land, each in the
+    // colour of the band at its level. Display only; saved with the
+    // renderer settings. Levels: band edges of the loaded colour map, or
+    // every landLineSpacing mm from landLineOffset.
+    bool drawLandLines = true;
+    int landLineMode = 0;              // 0 band edges, 1 every N mm
+    float landLineSpacing = 10.0f;     // mm
+    float landLineOffset = 5.0f;       // mm; levels avoid flat sand (~+9 mm)
+    float landLineGlowPx = 2.0f;
+    float landLineBrightness = 0.8f;
+    float dimUnderPlants = 0.8f;       // line brightness x (1 - this x cover)
+    bool bandFill = true;              // false: land starts black (dark room)
+    float flatFadeAmount = 0.6f;       // "Hide lines on flat ground" 0..1 (x 15 deg); 0.6 from tools/land_lines_preview.py
+    std::vector<float> landBandEdges;  // colour-map band boundaries, mm
+    void updateLandBandEdges();
     
     // GUI Main interface and Modal
     bool displayGui;

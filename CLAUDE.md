@@ -14,13 +14,12 @@ Sand, ported to openFrameworks 0.12.1 with an ofxImGui GUI (`README.md`,
 
 ## Branches
 
-- `ss/water-lines` (current work): glowing bathymetric lines on the
-  simulated water (display only), branched from `ss/succession-feedback`.
+- `ss/land-lines` (current work): glowing band-coloured land lines, band-fill
+  toggle, flat-ground fade (display only), on `ss/water-lines`.
+- `ss/water-lines`: glowing lines on the simulated water, on `ss/succession-feedback`.
 - `ss/succession-feedback`: succession model with site feedback, on `ss/dewitz-flow`.
-- `ss/dewitz-flow`: Dewitz-style flow particles, water table.
-- `ss/terrain-reference-visuals`: parent of `ss/dewitz-flow`.
-- `ss/ecosim-model-visuals-kiqw12`: fallback, full ELF species rendering
-  (no further work). Commit `1bbad8a`: last hardware-confirmed ELF port.
+- `ss/dewitz-flow`: flow particles, water table (parent `ss/terrain-reference-visuals`).
+- Fallback `ss/ecosim-model-visuals-kiqw12` (ELF species); `1bbad8a`: last hw-confirmed ELF port.
 
 ## Frame order (`src/ofApp.cpp`)
 
@@ -31,8 +30,7 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
 
 ## Classes
 
-- `src/KinectProjector/*`: Kinect capture, temporal filtering, projector
-  calibration; `elevationAtKinectCoord()`, `kinectCoordToProjCoord()`.
+- `src/KinectProjector/*`: Kinect capture, temporal filtering, calibration.
 - `src/SandSurfaceRenderer/*`: draws the sand with
   `bin/data/shaders/shadersGL{2,3}/heightMapShader.{vert,frag}` (keep the
   two variants in sync). Colour comes from
@@ -41,10 +39,10 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   limits (-41.8/+80 mm); below -6 mm five darker greens (#7DAF76 ..
   #376235 at the deepest), so blue on the sand means simulated water only;
   land: green #94BF8B -6..20 mm (flat sand ~9 mm), then yellow, tan, brown
-  in 16 mm bands, white #F5F4F2 68..85 mm. LOCKED until after the 2026-11-27
-  committee submission: do not change it. The Vegetation panel's
-  palette swatch hard-codes these colours: keep it in sync. Stepped map:
-  each band is a key pair (start, next start - 0.01 mm). The shader adds the simulated-water
+  in 16 mm bands, white #F5F4F2 68..85 mm. LOCKED until after 2026-11-27
+  (committee submission). The Vegetation panel's swatch hard-codes these
+  colours (keep in sync). Stepped: each band is a key pair (start, next
+  start - 0.01 mm). The shader adds the simulated-water
   overlay (vegetation texture alpha 1..249 = depth), drawn over a plain
   lakebed #B8B0A0 (no land colour, no contours under water), and contour
   lines elsewhere. It also draws the soil tint, plants (below), the M/S
@@ -52,6 +50,10 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   isolines of the bed elevation (depthfrag) on simulated water only, plus an
   optional shoreline glow (Sand Surface Renderer panel; saved in
   `sandSurfaceRendererSettings.xml`; preview `tools/water_lines_preview.py`).
+  `ss/land-lines` adds glowing land lines in the band colour at their level
+  (band edges read from the map's keys, or every N mm), "Band fill" off for a
+  black dark-room base, and "Hide lines on flat ground" (slope fitted to 8
+  filtered-depth samples at +-5 Kinect px; default 0.6, `tools/land_lines_preview.py`).
 - `src/Games/VegetationField.*`: one grid cell per Kinect pixel in the ROI
   (~519 x 295). Owns:
   - ELF vegetation: shrub/fruit/nut densities (0..1), ELF's literal
@@ -77,7 +79,7 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   the Population panel).
 - `src/Games/WaterFlowField.*`: visible flow particles. Default mode
   "Dewitz (2018)" uses `DewitzFlow`; older modes (bed slope, pipe-model
-  velocity, `LatticeFlow`) stay selectable. Particles default to "Water
+  velocity, `LatticeFlow`: earlier LBM-in-the-water) stay selectable. Particles default to "Water
   only": they move with the pipe model's velocity (`getFlowVelocityAt`,
   smoothed; `DewitzFlow::setPipeVelocity`), spawn on `isWaterCell` cells
   weighted by local speed, fade out on land (0.5 s) and in still water
@@ -88,7 +90,6 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   hysteresis, downhill pull (default 0), attractors; purely visual. In
   "Water only" the lattice is only a small texture term (`W_LBM_TEXTURE`).
   Headless test with the real `stepFlow()`: `tools/pipe_particles_harness/`.
-- `src/Games/LatticeFlow.*`: earlier LBM-in-the-water mode; kept, not default.
 - `src/Games/SuccessionModel.*` (plain C++; branch `ss/succession-feedback`):
   vegetation with site feedback (thesis Eq. 2.2). Per-cell fields: cover of
   pioneer/intermediate/climax (0..1, total <= 1), moisture M and soil S
@@ -144,6 +145,5 @@ duplicate values elsewhere.
   Release build, and the Vegetation panel's elevation range reset to the
   calibrated ceiling ("Reset range to ±calibrated ceiling"), a recurring
   cause of wrong water/snow lines.
-- Measure before tuning: use the GUI readouts rather than adjusting by eye.
-- Avoid `near`/`far` as identifiers (Windows macros).
+- Measure before tuning (GUI readouts). Avoid `near`/`far` identifiers (Windows macros).
 - Accessibility: avoid saturated red next to saturated green.

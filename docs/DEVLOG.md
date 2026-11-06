@@ -3773,3 +3773,83 @@ Hardware checklist (user):
    (expect few lines at the table level; see above).
 3. Leave the sand untouched for 60 s: the lines do not visibly flicker.
 4. Note the spacing and glow values that look best on sand in a dark room.
+
+## 2026-11-06 - Glowing land lines, band fill, flat-ground fade (branch `ss/land-lines`, display only)
+
+Branched from `ss/water-lines` (98bebe6). Simulation, water colours, flow
+particles, succession model, plant layer, `HeightColorMap.xml` and the black
+contour lines (and their toggle) are untouched.
+
+What (both `heightMapShader.frag` variants, `SandSurfaceRenderer` uniforms,
+GUI in the Sand Surface Renderer panel, saved in
+`sandSurfaceRendererSettings.xml`, read only when present):
+- "Glowing land lines" (on): on pixels that are not drawn simulated water,
+  after the soil tint and plants. Same core + halo as the water lines, own
+  glow (2 px) and brightness (0.8), same merge fade on steep slopes.
+  Levels: "Band edges" (default; the heights of keys whose colour differs
+  from the key below, read by `updateLandBandEdges()` from the loaded map,
+  up to 16; currently -35, -25, -15, -8, -6, 20, 36, 52, 68 mm; the merge
+  fade uses each edge's gap to its neighbour, so the -8/-6 pair fades early
+  on steep walls) or "Every N mm" (spacing 4-30, 10; offset 0-spacing, 5,
+  so no level sits on resting sand at ~+9 mm). Colour: the colour map
+  sampled at the line's own level + 0.5 mm (the band above at a boundary),
+  so a line keeps one colour. Brightness x (1 - "Dim lines under plants"
+  (0.8) x plant cover), cover = R + G + B of the vegetation texture.
+- "Band fill" (on): off, the pixel starts from black instead of the colour
+  map; soil tint, plants, water, water lines and land lines are unchanged.
+- "Hide lines on flat ground" (0..1 = threshold 0..15 deg; default 0.6 =
+  9 deg): lines (water and land) fade from full at the threshold to off at
+  half of it. 0 = off.
+- Band edges are computed once in `setup()` after the map loads (the other
+  `loadFile` calls are in commented-out legacy GUI code).
+
+Decisions:
+- Flat-ground fade does not use fwidth (the user chose this after a
+  measurement): with +-1 mm noise per Kinect pixel, the per-pixel gradient
+  on flat sand (median 0.45 mm/px, p95 0.93; 1.26/2.66 if the noise were
+  per projector pixel) equals or exceeds a clean 30-degree slope
+  (0.58 mm/px), so no fwidth threshold separates noise from slope. Instead
+  the fragment shader reads the filtered depth texture the vertex shader
+  already uses (`tex0`, unit 0), rebuilds world points exactly as
+  `heightMapShader.vert` does, and fits the slope to 8 samples at +-5
+  Kinect pixels (axes and diagonals). Noise-induced slope on flat ground:
+  p99.9 4.0 deg (9.8 deg with 4 samples at +-3; 2.5 deg with 8 at +-8,
+  rejected as too blurring). Cost: 8 texture reads per pixel when the fade
+  is on and any line layer is on. Lines themselves still use the per-pixel
+  elevation and fwidth, as the water lines.
+- Level and colour use a new `heightTransform` (h = key height in mm =
+  -elevation), the inverse of `heightColorMapTransformation`.
+- Default fade 0.6, from `tools/land_lines_preview.py` (box 760 x 360 mm at
+  1 mm/px, +-1 mm noise per Kinect pixel, two 75 mm mounds with 30-degree
+  sides, basin with a 1-degree bed at -20 mm under water at -14 mm). Share
+  of pixels with added light > 0.05:
+  fade 0: flat sand 0.00 % (band edges) / 7.66 % (every N, halo haze),
+  flat-bed water 51.9 %; fade 0.4: 0 / 0 / 1.12 %; fade 0.5: 0 / 0 /
+  0.10 %; fade 0.6: 0 / 0 / 0.00 %. Line light on 30-degree slopes: 100 %
+  kept at every setting. Cost of 0.6: lines on slopes under 4.5 deg are
+  hidden, 4.5-9 deg partly.
+- Known limit: where a flat bed meets a wall at a line level (here the
+  bed at -20 mm is a 10 mm water-line level), the contour really runs along
+  the crease, its position set by noise, and the fade (which sees the
+  wall) keeps it: a speckled ring at the foot of the wall remains. Hiding
+  it would hide real lines on the walls too.
+- With "Band fill" on, land lines off and the fade at 0, the image equals
+  `ss/water-lines` (new blocks skipped, water-line light x 1.0). The fade's
+  default (0.6) is on, so by default the water lines also change.
+
+Checks: both shaders pass `glslangValidator` (GL2 with
+`#extension GL_ARB_texture_rectangle` in a temporary copy only); the GL2 and
+GL3 diffs match apart from the texture call. Not compiled with
+openFrameworks, not hardware-tested.
+
+Hardware checklist (user):
+1. All new toggles off ("Glowing land lines" off, "Band fill" on, "Hide
+   lines on flat ground" 0): the image looks exactly as on `ss/water-lines`.
+2. Land lines on, band fill on: each band boundary shows a glowing line in
+   that band's colour; flat sand shows no lines and no speckle.
+3. Band fill off, room dark: only lines, water and plants are lit.
+4. Shallow water over a flat bed: no speckled cyan (except possibly a ring
+   where the bed meets the wall at a line level; see above).
+5. Let plants grow on a slope: lines dim under them, and a fresh dig shows
+   them sharp again.
+6. Note the glow, brightness and flat-fade values that look best on sand.
