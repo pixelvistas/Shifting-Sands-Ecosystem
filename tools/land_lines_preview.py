@@ -8,9 +8,9 @@ fade) to a synthetic box at 1 mm per pixel (taken as 1 projector px per mm):
 Band edges mode outlines each band in its own colour (2026-11-07); every N
 mm colours a line by the band at its level.
 
-Band fill on: lines are mixed over the fill (coverage = core + 0.35 halo) in
-a deepened colour ("Line shade on fill", "Water line shade on fill", 0.35);
-band fill off: additive glow (unchanged). Panels: fill on | fill off.
+Band fill on: land lines are mixed over the fill (coverage = core + 0.35
+halo) in a deepened colour ("Line shade on fill", 0.35); band fill off:
+additive glow. Water lines are always additive. Panels: fill on | fill off.
 
 - flat sand at +9 mm with +-1 mm noise per Kinect pixel (1.9 mm), linearly
   interpolated between pixels as the shader's mesh does;
@@ -243,7 +243,7 @@ def glow_water_side(dpx, glow_px=2.0, halo_k=ADD_HALO):
 
 
 def render(mode, fill, fade_amount, brightness=0.8, dim=0.8, land_shore=True, water_shore=True,
-           land_shade=0.35, water_shade=0.35, additive_on_fill=False):
+           land_shade=0.35, additive_on_fill=False):
     """additive_on_fill=True reproduces the previous build (glow added over the fill)."""
     band = colour_at(HMM)  # this pixel's own band (before any soil tint)
     img = band.copy() if fill else np.zeros((H, W, 3))
@@ -270,15 +270,11 @@ def render(mode, fill, fade_amount, brightness=0.8, dim=0.8, land_shore=True, wa
     water = (1 - t)[..., None] * np.array([0.255, 0.714, 0.769]) + t[..., None] * np.array([0.031, 0.188, 0.420])
     a = (0.6 + 0.35 * t)[..., None]
     wcol = lake * (1 - a) + water * a
-    hk = MIX_HALO if mix_mode else ADD_HALO
-    wlight = water_light(halo_k=hk) * ff
+    # Water lines and water-side shore: additive glow whatever the band fill.
+    wlight = water_light() * ff
     if water_shore:  # "Shoreline glow" (water side), not flat-faded, as the shader
-        wlight = np.maximum(wlight, glow_water_side(DIST_TO_DRY, halo_k=hk))
-    if not mix_mode:
-        wcol = np.minimum(wcol + LINE_RGB * (0.8 * wlight)[..., None], 1)
-    else:
-        a = (0.8 * wlight)[..., None]
-        wcol = wcol * (1 - a) + deepen(LINE_RGB, water_shade) * a
+        wlight = np.maximum(wlight, glow_water_side(DIST_TO_DRY))
+    wcol = np.minimum(wcol + LINE_RGB * (0.8 * wlight)[..., None], 1)
     img = np.where(WET[..., None], wcol, img)
     return (img * 255 + 0.5).astype(np.uint8)
 
@@ -321,7 +317,7 @@ panels = [
     (f"Every 10 mm (+5), fill ON (mixed, shade 0.35), flat fade {DEFAULT}", render("everyN", True, DEFAULT)),
     (f"Every 10 mm (+5), fill OFF (additive), flat fade {DEFAULT}", render("everyN", False, DEFAULT)),
     ("Band edges, fill ON, previous build (additive over fill)", render("edges", True, DEFAULT, additive_on_fill=True)),
-    ("Band edges, fill ON (mixed), shade 0 (no deepening)", render("edges", True, DEFAULT, land_shade=0.0, water_shade=0.0)),
+    ("Band edges, fill ON (mixed), shade 0 (no deepening)", render("edges", True, DEFAULT, land_shade=0.0)),
 ]
 gap, head = 8, 18
 sheet = Image.new("RGB", (2 * W + 3 * gap, 3 * (H + head) + 4 * gap), "white")

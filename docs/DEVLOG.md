@@ -3939,3 +3939,18 @@ previous additive-over-fill look and shade 0 for comparison. Both shaders
 pass `glslangValidator` (GL2 with the rectangle extension in a temporary
 copy only); GL2 and GL3 diffs match apart from the texture call. Not
 compiled with openFrameworks, not hardware-tested.
+
+## 2026-11-08 - Water lines back to the additive glow (`ss/land-lines`)
+
+At the user's request: the water lines and the water-side "Shoreline glow"
+are drawn with the additive glow of 98bebe6 again, whatever the band fill
+setting: color.rgb = min(color.rgb + lineColour * (waterLineBrightness *
+light), 1). The mixed/deepened water lines of 2026-11-07 are removed, with
+the "Water line shade on fill" slider, its uniform and its setting (an
+older settings file's waterLineShade entry is ignored). The water block now
+equals 98bebe6's except that the line light keeps the flat-ground fade
+(x flatFade). Land lines unchanged: mixed in a deepened band colour with
+band fill on ("Line shade on fill"), additive with it off. Preview updated
+to match. Both shaders pass `glslangValidator` (GL2 with the rectangle
+extension in a temporary copy only); GL2 and GL3 diffs match apart from
+the texture call. Not compiled with openFrameworks, not hardware-tested.

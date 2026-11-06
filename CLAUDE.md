@@ -51,8 +51,8 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   `sandSurfaceRendererSettings.xml`; preview `tools/water_lines_preview.py`).
   `ss/land-lines` adds glowing land lines: band edges (from the map's keys)
   outline each band in its own colour, the shore too (land side; water side blue,
-  both on); every N mm in the band at the level. Fill on: lines mixed in a deepened
-  colour ("Line shade on fill"); off: additive glow. "Band fill" off for a
+  both on); every N mm in the band at the level. Fill on: land lines mixed in a deepened
+  colour ("Line shade on fill"); off, and water lines always: additive glow. "Band fill" off for a
   black dark-room base, and "Hide lines on flat ground" (slope fitted to 8
   filtered-depth samples at +-5 Kinect px; default 0.6, `tools/land_lines_preview.py`).
 - `src/Games/VegetationField.*`: one grid cell per Kinect pixel in the ROI

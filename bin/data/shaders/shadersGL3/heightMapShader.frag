@@ -95,7 +95,6 @@ uniform float landLineBrightness;
 // Band fill on (2026-11-07): lines are mixed over the fill, not added (added
 // to a fill of their own colour they clamp to white), in a deepened colour.
 uniform float landLineShade;         // 0..0.7, how much darker and more saturated
-uniform float waterLineShade;        // the same for the water lines over the water
 uniform float bandOutlineWidthPx;    // band-edges mode: core half-width, px each side
 uniform int drawLandShore;           // outline the shoreline on the land side (2026-11-07)
 uniform float dimUnderPlants;        // 0..1
@@ -363,19 +362,16 @@ void main()
         if (drawWaterLines == 1 || drawShorelineGlow == 1)
         {
             float light = 0.0;
-            float cov = 0.0; // coverage for mixing (band fill on)
             if (drawWaterLines == 1 && wlW > 1e-6) // flat bed: no isoline, and no division by 0
             {
                 float f = fract(wlU);
                 float dPx = min(f, 1.0 - f) / wlW; // pixels to the nearest isoline
                 float core = clamp(1.0 - dPx, 0.0, 1.0);
-                float hs = waterLineGlowPx > 0.01 ? exp(-dPx / waterLineGlowPx) : 0.0;
-                float halo = 0.6 * hs;
+                float halo = waterLineGlowPx > 0.01 ? 0.6 * exp(-dPx / waterLineGlowPx) : 0.0;
                 // Lines closer than 4 px, gone at 2 px (steep walls), would merge into
                 // a solid band; fade them out there.
                 float fade = 1.0 - smoothstep(0.25, 0.5, wlW);
                 light = clamp(core + halo, 0.0, 1.0) * fade * flatFade;
-                cov = clamp(core + MIX_HALO * hs, 0.0, 1.0) * fade * flatFade;
             }
             if (drawShorelineGlow == 1)
             {
@@ -397,16 +393,13 @@ void main()
                 float cellsPerPx = max(max(wlCellsPerPx.x, wlCellsPerPx.y), 1e-6);
                 float dPx = dMin / cellsPerPx;
                 float core = clamp(1.0 - dPx, 0.0, 1.0);
-                float hs = waterLineGlowPx > 0.01 ? exp(-dPx / waterLineGlowPx) : 0.0;
-                float halo = 0.6 * hs;
+                float halo = waterLineGlowPx > 0.01 ? 0.6 * exp(-dPx / waterLineGlowPx) : 0.0;
                 light = max(light, clamp(core + halo, 0.0, 1.0));
-                cov = max(cov, clamp(core + MIX_HALO * hs, 0.0, 1.0));
             }
             vec3 lineColour = vec3(0.435, 0.827, 1.0); // #6FD3FF
-            if (bandFill == 0)
-                color.rgb = min(color.rgb + lineColour * (waterLineBrightness * light), vec3(1.0));
-            else // band fill on: mixed in a deepened line colour, as the land lines
-                color.rgb = mix(color.rgb, deepen(lineColour, waterLineShade), waterLineBrightness * cov);
+            // Additive glow whatever the band fill (2026-11-08: the mixed
+            // water lines were reverted; land lines still mix on fill).
+            color.rgb = min(color.rgb + lineColour * (waterLineBrightness * light), vec3(1.0));
         }
     }
 
