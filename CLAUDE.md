@@ -16,8 +16,8 @@ Sand, ported to openFrameworks 0.12.1 with an ofxImGui GUI (`README.md`,
 
 - `ss/land-lines` (current work): glowing band-coloured land lines, band-fill
   toggle, flat-ground fade (display only), on `ss/water-lines`.
-- `ss/water-lines`: glowing lines on the simulated water, on `ss/succession-feedback`.
-- `ss/succession-feedback`: succession model with site feedback, on `ss/dewitz-flow`.
+- `ss/water-lines`: glowing water lines, on `ss/succession-feedback` (site-feedback
+  succession, on `ss/dewitz-flow`).
 - `ss/dewitz-flow`: flow particles, water table (parent `ss/terrain-reference-visuals`).
 - Fallback `ss/ecosim-model-visuals-kiqw12` (ELF species); `1bbad8a`: last hw-confirmed ELF port.
 
@@ -48,10 +48,11 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   lines elsewhere. It also draws the soil tint, plants (below), the M/S
   debug overlay and, on `ss/water-lines`, water lines: glowing #6FD3FF
   isolines of the bed elevation (depthfrag) on simulated water only, plus an
-  optional shoreline glow (Sand Surface Renderer panel; saved in
+  shoreline glow (Sand Surface Renderer panel; saved in
   `sandSurfaceRendererSettings.xml`; preview `tools/water_lines_preview.py`).
   `ss/land-lines` adds glowing land lines: band edges (from the map's keys)
-  outline each band in its own colour; every N mm in the band at the level. "Band fill" off for a
+  outline each band in its own colour, the shore too (land side; water side blue,
+  both on); every N mm in the band at the level. "Band fill" off for a
   black dark-room base, and "Hide lines on flat ground" (slope fitted to 8
   filtered-depth samples at +-5 Kinect px; default 0.6, `tools/land_lines_preview.py`).
 - `src/Games/VegetationField.*`: one grid cell per Kinect pixel in the ROI

@@ -3874,3 +3874,40 @@ is unchanged (line colour = band at the line's level + 0.5 mm).
 the fade off). Both shaders pass `glslangValidator` (GL2 with the rectangle
 extension in a temporary copy only); the GL2 and GL3 diffs match apart from
 the texture call. Not compiled with openFrameworks, not hardware-tested.
+
+## 2026-11-07 - Shoreline outline on the land side (`ss/land-lines`)
+
+At the user's request. Land pixels (not drawn simulated water) within 3
+water-texture cells of a simulated-water texel get a core + halo outline
+in the pixel's own band colour: distance from the pixel to the nearest
+water texel's edge, by the same 7 x 7 texel-centre search "Shoreline glow"
+uses from the water side (existing water texture, filtering unchanged),
+converted to projector pixels with fwidth(vegUV). Same settings as the
+band-edge outlines: "Band outline width (px)" (core, from the shore
+outward; also shown in "Every N mm" mode when this is on), "Land line
+glow", "Land line brightness", "Hide lines on flat ground", "Dim lines
+under plants". Combined with the land lines by max per channel. New toggle
+"Outline shoreline (land side)", default on; part of the land-line layer
+(needs "Glowing land lines" and "Draw simulated water"). The water-side
+"Shoreline glow" now defaults to on, so the shore shows a land-coloured
+half and a blue half. A settings file that already stores
+drawShorelineGlow = 0 keeps it off until the box is ticked once.
+
+Notes: the flat-ground fade applies to the land-side outline (as asked), so
+on a beach flatter than ~4.5 deg it is hidden while the water side (not
+faded, unchanged) still glows. Cost: up to 49 extra water-texture reads per
+land pixel while the toggle is on (as the water side). The land-line block
+no longer requires fwidth(h) > 1e-6 as a whole: only the isoline part
+does, so the shore outline also draws on a pixel that is exactly flat.
+
+Preview (`tools/land_lines_preview.py`): box now 760 x 460 mm with a
+shallow inflow lake along the bottom (bed -12 mm, water -4 mm, 15-degree
+beach); a panel with both shoreline outlines off for comparison. Flat-fade
+figures unchanged (default 0.6: flat sand and flat-bed interior 0.00 %
+lit, 30-degree slopes 100 % kept). Visible in the preview and not part of
+this change: the existing water lines speckle in the lake shallows, where
+the -10 mm line crosses a 15-degree beach and +-1 mm noise moves its
+position by several mm (noise / slope). Both shaders pass
+`glslangValidator` (GL2 with the rectangle extension in a temporary copy
+only); GL2 and GL3 diffs match apart from the texture call. Not compiled
+with openFrameworks, not hardware-tested.

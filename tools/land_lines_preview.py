@@ -12,6 +12,9 @@ mm colours a line by the band at its level.
   interpolated between pixels as the shader's mesh does;
 - two mounds reaching 75 mm with 30-degree sides; a plant-cover patch
   (cover 0.8) on part of the left mound shows "Dim lines under plants";
+- a shallow inflow lake along the bottom edge (bed -12 mm, water -4 mm,
+  15-degree beach) and the basin below show the shoreline outlines: land side
+  in the land pixel's band colour, water side in blue ("Shoreline glow");
 - a dug basin, 30-degree walls, a nearly flat bed (-20 mm, tilted 1 deg)
   under shallow water (surface -14 mm, the water table + ~1 mm).
 
@@ -33,10 +36,11 @@ from PIL import Image, ImageDraw
 OUT = sys.argv[1]
 ROOT = sys.argv[2] if len(sys.argv) > 2 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 
-W, H = 760, 360          # mm = px
+W, H = 760, 460          # mm = px
 KPX = 1.9                # mm per Kinect pixel (one water-grid cell)
 NOISE_MM = 1.0
 SAND, TABLE_SURFACE = 9.0, -14.0
+LAKE_BED, LAKE_SURFACE, LAKE_Y = -12.0, -4.0, 400.0  # inflow lake along the bottom edge
 TAN30 = np.tan(np.radians(30))
 LINE_RGB = np.array([0x6F, 0xD3, 0xFF]) / 255.0
 RANGE_MM, MAX_WATER_DEPTH_FRAC = 130.0, 0.05
@@ -80,7 +84,10 @@ def terrain(x, y):
     r = np.hypot(x - 620.0, y - 180.0)
     floor = -20.0 + np.tan(np.radians(1.0)) * (x - 620.0)
     wall = floor + np.maximum(0.0, r - 60.0) * TAN30
-    return np.where(wall < t, wall, t)
+    t = np.where(wall < t, wall, t)
+    # lake along the bottom edge: bed -12 mm, 15-degree beach up to the sand
+    lake = LAKE_BED + np.maximum(0.0, LAKE_Y - y) * np.tan(np.radians(15.0))
+    return np.where(lake < SAND, np.minimum(t, lake), t)
 
 
 nx, ny = int(W / KPX) + 3, int(H / KPX) + 3
@@ -126,8 +133,34 @@ SLOPE = np.hypot(0.5 * (GX + (G1 + G2) / np.sqrt(2)), 0.5 * (GY + (G1 - G2) / np
 # water: per cell, as the texture (nearest), where the bed is below the surface
 CX = (np.floor(X / KPX) + 0.5) * KPX
 CY = (np.floor(Y / KPX) + 0.5) * KPX
-DEPTH = np.maximum(0.0, TABLE_SURFACE - terrain(CX, CY))
+SURFACE = np.where(CY > 300.0, LAKE_SURFACE, TABLE_SURFACE)
+DEPTH = np.maximum(0.0, SURFACE - terrain(CX, CY))
 WET = DEPTH > 0.0
+# Water texture cells (one per Kinect pixel), for the shoreline searches.
+NCX, NCY = int(np.ceil(W / KPX)), int(np.ceil(H / KPX))
+_cc = lambda n: (np.arange(n) + 0.5) * KPX
+_CY, _CX = np.meshgrid(_cc(NCY), _cc(NCX), indexing="ij")
+WET_CELLS = (np.where(_CY > 300.0, LAKE_SURFACE, TABLE_SURFACE) - terrain(_CX, _CY)) > 0.0
+
+
+def shore_distance_px(target_cells):
+    """Per pixel: distance (px, 1 px/mm) to the nearest target texel within
+    3 cells, from the pixel to the texel's edge (the shader's search)."""
+    vx, vy = X / KPX, Y / KPX                 # vegUV
+    bi, bj = np.floor(vy).astype(int), np.floor(vx).astype(int)
+    dmin = np.full(X.shape, 1e3)
+    for oy in range(-3, 4):
+        for ox in range(-3, 4):
+            ci, cj = np.clip(bi + oy, 0, NCY - 1), np.clip(bj + ox, 0, NCX - 1)
+            hit = target_cells[ci, cj]
+            ddx = np.maximum(np.abs(vx - (cj + 0.5)) - 0.5, 0)
+            ddy = np.maximum(np.abs(vy - (ci + 0.5)) - 0.5, 0)
+            dmin = np.where(hit, np.minimum(dmin, np.hypot(ddx, ddy)), dmin)
+    return dmin * KPX
+
+
+DIST_TO_WATER = shore_distance_px(WET_CELLS)   # land side
+DIST_TO_DRY = shore_distance_px(~WET_CELLS)    # water side
 COVER = np.where((np.abs(X - 95) < 30) & (np.abs(Y - 150) < 45), 0.8, 0.0)
 
 
@@ -185,12 +218,27 @@ def water_light(spacing=10.0, glow_px=2.0):
     return l
 
 
-def render(mode, fill, fade_amount, brightness=0.8, dim=0.8):
-    img = colour_at(BED + noise_at(X, Y)) if fill else np.zeros((H, W, 3))
+def outline(dpx, w=OUTLINE_PX, glow_px=2.0):
+    core = np.clip(w + 0.5 - dpx, 0, 1)
+    halo = 0.6 * np.exp(-np.maximum(dpx - w, 0) / glow_px) if glow_px > 0.01 else 0.0
+    return np.clip(core + halo, 0, 1)
+
+
+def glow_water_side(dpx, glow_px=2.0):
+    # Existing water-side formula: ~1 px core from the edge plus halo.
+    return np.clip(np.clip(1 - dpx, 0, 1) + (0.6 * np.exp(-dpx / glow_px) if glow_px > 0.01 else 0.0), 0, 1)
+
+
+def render(mode, fill, fade_amount, brightness=0.8, dim=0.8, land_shore=True, water_shore=True):
+    band = colour_at(HMM)  # this pixel's own band
+    img = band.copy() if fill else np.zeros((H, W, 3))
     ff = flat_fade(fade_amount)
     light, colour = land_light(mode)
     gain = brightness * (1 - dim * COVER) * ff
-    land = np.minimum(img + colour * (gain * light)[..., None], 1)
+    lit = colour * light[..., None]
+    if land_shore:  # "Outline shoreline (land side)": own band colour
+        lit = np.maximum(lit, band * outline(DIST_TO_WATER)[..., None])
+    land = np.minimum(img + lit * gain[..., None], 1)
     img = np.where(WET[..., None], img, land)
     # water (unchanged colours) + water lines with the flat fade
     t = np.clip(DEPTH / RANGE_MM / MAX_WATER_DEPTH_FRAC, 0, 1)
@@ -198,14 +246,17 @@ def render(mode, fill, fade_amount, brightness=0.8, dim=0.8):
     water = (1 - t)[..., None] * np.array([0.255, 0.714, 0.769]) + t[..., None] * np.array([0.031, 0.188, 0.420])
     a = (0.6 + 0.35 * t)[..., None]
     wcol = lake * (1 - a) + water * a
-    wcol = np.minimum(wcol + LINE_RGB * (0.8 * water_light() * ff)[..., None], 1)
+    wlight = water_light() * ff
+    if water_shore:  # "Shoreline glow" (water side), not flat-faded, as the shader
+        wlight = np.maximum(wlight, glow_water_side(DIST_TO_DRY))
+    wcol = np.minimum(wcol + LINE_RGB * (0.8 * wlight)[..., None], 1)
     img = np.where(WET[..., None], wcol, img)
     return (img * 255 + 0.5).astype(np.uint8)
 
 
 # ------------------------------------------------------------ measurements
 mound_r = np.minimum(np.hypot(X - 125, Y - 180), np.hypot(X - 365, Y - 180))
-FLAT = (mound_r > 135) & (np.hypot(X - 620, Y - 180) > 130) & (X > 10) & (X < W - 10) & (Y > 10) & (Y < H - 10)
+FLAT = (mound_r > 135) & (np.hypot(X - 620, Y - 180) > 130) & (X > 10) & (X < W - 10) & (Y > 10) & (Y < 290)
 SLOPED = (mound_r * TAN30 > 8) & (mound_r * TAN30 < 60) & (COVER == 0)  # 30-degree mound sides
 FLATBED = WET & (np.hypot(X - 620, Y - 180) < 50)
 
@@ -240,8 +291,8 @@ panels = [
     (f"Band edges, fill OFF, flat fade {DEFAULT}", render("edges", False, DEFAULT)),
     (f"Every 10 mm (+5), fill ON, flat fade {DEFAULT}", render("everyN", True, DEFAULT)),
     (f"Every 10 mm (+5), fill OFF, flat fade {DEFAULT}", render("everyN", False, DEFAULT)),
+    ("Band edges, fill OFF, fade 0.6, both shoreline outlines OFF", render("edges", False, DEFAULT, land_shore=False, water_shore=False)),
     ("Band edges, fill OFF, flat fade OFF (0)", render("edges", False, 0.0)),
-    ("Every 10 mm (+5), fill OFF, flat fade OFF (0)", render("everyN", False, 0.0)),
 ]
 gap, head = 8, 18
 sheet = Image.new("RGB", (2 * W + 3 * gap, 3 * (H + head) + 4 * gap), "white")
@@ -253,4 +304,5 @@ for k, (title, im) in enumerate(panels):
     sheet.paste(Image.fromarray(im), (x0, y0 + head))
 sheet.save(OUT)
 print("band edges (mm):", [round(e, 2) for e in EDGES])
-print("wrote", OUT, "(1 mm per pixel; each panel 760 x 360 mm; plant cover 0.8 in the box on the left mound)")
+print("wrote", OUT, "(1 mm per pixel; each panel 760 x 460 mm; plant cover 0.8 in the box on the left mound;"
+      " shoreline outlines on unless stated)")

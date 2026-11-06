@@ -81,6 +81,7 @@ uniform float landEdgeGap[16];       // mm to the nearest other edge
 uniform float landLineGlowPx;
 uniform float landLineBrightness;
 uniform float bandOutlineWidthPx;    // band-edges mode: core half-width, px each side
+uniform int drawLandShore;           // outline the shoreline on the land side (2026-11-07)
 uniform float dimUnderPlants;        // 0..1
 uniform int bandFill;                // 1 colour-map fill, 0 land starts black
 // Flat-ground fade (water and land lines): slope fitted to 8 samples of the
@@ -214,11 +215,15 @@ void main()
     // Glowing land lines (2026-11-06), over the land colours, soil tint and
     // plants, never on drawn simulated water. Must match
     // tools/land_lines_preview.py.
-    if (drawLandLines == 1 && !(drawSimWater == 1 && simWater) && hW > 1e-6 && abs(heightTransform.x) > 1e-9)
+    if (drawLandLines == 1 && !(drawSimWater == 1 && simWater) && abs(heightTransform.x) > 1e-9)
     {
         float best = 0.0;      // strongest line here
-        vec3 lineColour;
-        if (landLineMode == 0)
+        vec3 lineColour = vec3(0.0);
+        if (hW <= 1e-6)
+        {
+            // Flat in this pixel: no isoline (and no division by 0).
+        }
+        else if (landLineMode == 0)
         {
             // Band edges (2026-11-07): each band outlined in its own colour.
             // Every line pixel, core and halo, takes the colour of the band
@@ -254,9 +259,38 @@ void main()
             lineColour = texture2DRect(heightColorMapSampler,
                 vec2((level + 0.5 - heightTransform.y) / heightTransform.x, 0.5)).rgb;
         }
+        // Shoreline, land side (2026-11-07): distance from this land pixel to
+        // the nearest simulated-water texel within 3 cells, by the same
+        // search as "Shoreline glow" uses from the water side (existing
+        // water texture, texel centres, filtering unchanged). Core of
+        // bandOutlineWidthPx plus halo, in this pixel's own band colour, so
+        // the shore shows a land-coloured half beside the blue one.
+        float shore = 0.0;
+        if (drawLandShore == 1 && drawSimWater == 1 && hasVegetation == 1)
+        {
+            vec2 base = floor(vegUV) + 0.5;
+            float dMin = 1e3;
+            for (int oy = -3; oy <= 3; oy++)
+            {
+                for (int ox = -3; ox <= 3; ox++)
+                {
+                    vec2 c = base + vec2(float(ox), float(oy));
+                    float code = texture2DRect(vegetationSampler, c).a * 255.0;
+                    if (code > 0.5 && code < 249.5)
+                        dMin = min(dMin, length(max(abs(vegUV - c) - 0.5, 0.0)));
+                }
+            }
+            float cellsPerPx = max(max(wlCellsPerPx.x, wlCellsPerPx.y), 1e-6);
+            float dPx = dMin / cellsPerPx;
+            float w = max(bandOutlineWidthPx, 0.0);
+            float core = clamp(w + 0.5 - dPx, 0.0, 1.0);
+            float halo = landLineGlowPx > 0.01 ? 0.6 * exp(-max(dPx - w, 0.0) / landLineGlowPx) : 0.0;
+            shore = clamp(core + halo, 0.0, 1.0);
+        }
         float cover = clamp(veg.r + veg.g + veg.b, 0.0, 1.0); // plant cover (0 without vegetation)
         float gain = landLineBrightness * (1.0 - dimUnderPlants * cover) * flatFade;
-        color.rgb = min(color.rgb + lineColour * (gain * best), vec3(1.0));
+        vec3 lit = max(lineColour * best, bandColour * shore);
+        color.rgb = min(color.rgb + lit * gain, vec3(1.0));
     }
 
     // Simulated water overlay (ss/terrain-reference-visuals, 2026-10-20).
