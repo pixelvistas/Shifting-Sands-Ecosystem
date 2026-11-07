@@ -1,6 +1,11 @@
 <?xml version="1.0"?>
 <SURFACERENDERERSETTINGS>
 	<colorMapFile>HeightColorMap.xml</colorMapFile>
-	<drawContourLines>1</drawContourLines>
+	<drawContourLines>0</drawContourLines>
 	<contourLineDistance>10</contourLineDistance>
+	<drawWaterLines>1</drawWaterLines>
+	<waterLineDistance>10</waterLineDistance>
+	<waterLineGlowPx>2</waterLineGlowPx>
+	<waterLineBrightness>0.8</waterLineBrightness>
+	<drawShorelineGlow>0</drawShorelineGlow>
 </SURFACERENDERERSETTINGS>
