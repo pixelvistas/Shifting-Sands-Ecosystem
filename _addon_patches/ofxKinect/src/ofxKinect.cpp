@@ -36,6 +36,35 @@
 
 #include "ofxKinectExtras.h"
 
+//---------------------------------------------------------------------------
+// Shifting Sands patch: Kinect sub-device selection (single setting).
+//
+// OFXKINECT_OPEN_MOTOR = 0 (default): open FREENECT_DEVICE_CAMERA only.
+//   Depth and RGB stream; no motor, LED or accelerometer access. On a
+//   model 1473 / K4W, libfreenect 0.7.5 reaches the motor through the
+//   audio sub-device and must upload audio firmware first; opening the
+//   camera alone avoids that, so no firmware file is required. The
+//   sandbox never drives the motor: the "Tilt X/Y" values only rotate
+//   the software base plane in KinectProjector.
+// OFXKINECT_OPEN_MOTOR = 1: open FREENECT_DEVICE_MOTOR | FREENECT_DEVICE_CAMERA,
+//   the stock ofxKinect 0.12.1 behaviour, kept for comparison and
+//   required by the 0.9.3 fallback stack (see PATCHES.md).
+//
+// Set it in KinectDriver.props (Visual Studio, property KinectOpenMotor)
+// or with PROJECT_DEFINES in config.make (Makefile builds).
+//---------------------------------------------------------------------------
+#ifndef OFXKINECT_OPEN_MOTOR
+#define OFXKINECT_OPEN_MOTOR 0
+#endif
+
+static freenect_device_flags ofxKinectSubdevices() {
+#if OFXKINECT_OPEN_MOTOR
+	return (freenect_device_flags)(FREENECT_DEVICE_MOTOR | FREENECT_DEVICE_CAMERA);
+#else
+	return FREENECT_DEVICE_CAMERA;
+#endif
+}
+
 #define OFX_KINECT_GRAVITY 9.80665
 
 // context static
@@ -213,7 +242,7 @@ bool ofxKinect::open(int deviceIndex) {
         }
     }
 	else {
-		bHasMotorControl = true;
+		bHasMotorControl = (OFXKINECT_OPEN_MOTOR != 0);
 	}
 
 	lastDeviceIndex = deviceIndex;
@@ -255,7 +284,7 @@ bool ofxKinect::open(string serial) {
         }
     }
 	else {
-		bHasMotorControl = true;
+		bHasMotorControl = (OFXKINECT_OPEN_MOTOR != 0);
 	}
     
 	lastDeviceIndex = kinectContext.getDeviceIndex(serial);
@@ -917,13 +946,20 @@ bool ofxKinectContext::init() {
 		return false;
 	}
     
-    #ifdef OFX_KINECT_EXTRA_FW
+    // Shifting Sands patch: stock ofxKinectExtras.h always defines
+    // OFX_KINECT_EXTRA_FW, which hands libfreenect the audio firmware embedded
+    // in ofxKinectExtras.cpp. That firmware is only used when the audio
+    // sub-device is opened, which happens only with OFXKINECT_OPEN_MOTOR=1, so
+    // camera-only builds skip it and need not compile ofxKinectExtras.cpp.
+    #if defined(OFX_KINECT_EXTRA_FW) && OFXKINECT_OPEN_MOTOR
         freenect_set_fw_address_nui(kinectContext, ofxKinectExtras::getFWData1473(), ofxKinectExtras::getFWSize1473());
         freenect_set_fw_address_k4w(kinectContext, ofxKinectExtras::getFWDatak4w(), ofxKinectExtras::getFWSizek4w());
     #endif
     
 	freenect_set_log_level(kinectContext, FREENECT_LOG_WARNING);
-	freenect_select_subdevices(kinectContext, (freenect_device_flags)(FREENECT_DEVICE_MOTOR | FREENECT_DEVICE_CAMERA));
+	freenect_select_subdevices(kinectContext, ofxKinectSubdevices());
+	ofLogNotice("ofxKinect.driver") << "init(): sub-devices "
+		<< (OFXKINECT_OPEN_MOTOR ? "MOTOR | CAMERA" : "CAMERA only (no motor, LED or firmware)");
 	bInited = true;
 	ofLogVerbose("ofxKinect") << "context inited";
 	

@@ -129,12 +129,12 @@ duplicate values elsewhere.
   configuration (Debug runs at ~5 fps). The `.vcxproj` and
   `.vcxproj.filters` list source files explicitly: add every new file to
   both.
+- Kinect: libfreenect 0.7.5 + libusb 1.0.30 via `tools/drivers/`, camera only; Windows
+  passed 2026-11-07 (`docs/DRIVER_TEST.md`); fallback `KinectDriverStack=fallback`.
 - The development session has no openFrameworks SDK. Only plain-C++
   classes can be compiled there. Headless harnesses:
-  - `tools/dewitz_harness/build.sh` (compiles `DewitzFlow.cpp`; reference
-    prototype `tools/dewitz_proto.py`).
-  - For `stepFlow()`, the function text was extracted and compiled
-    against a stub class in the scratchpad (see the DEVLOG, 2026-10-22).
+  - `tools/dewitz_harness/build.sh` (compiles `DewitzFlow.cpp`; prototype `tools/dewitz_proto.py`).
+  - `stepFlow()`: function text compiled against a stub class (DEVLOG, 2026-10-22).
 - Everything else is verified only on the sandbox by the user. Say so
   plainly when reporting: "not compiled with openFrameworks, not
   hardware-tested".
