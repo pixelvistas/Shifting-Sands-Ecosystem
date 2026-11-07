@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  KinectDriver.props - Kinect driver stack selection for the Visual Studio build.
+  Imported by Magic-Sand-Ecosystem.vcxproj. See PATCHES.md (section 3) and
+  docs/DRIVER_TEST.md.
+
+  KinectDriverStack
+    upstream  (default) Link the prebuilt libfreenect v0.7.5 + libusb 1.0.27
+              that tools\drivers\build_libfreenect_windows.ps1 installs into
+              ofxKinect\libs\libfreenect\. No libfreenect sources are compiled
+              into the project. ofxKinectExtras.cpp (audio firmware embedded
+              in stock ofxKinect) is compiled only when KinectOpenMotor=true,
+              the only mode in which libfreenect uses it.
+    fallback  Compile the openFrameworks 0.9.3 libfreenect transplant from
+              source and link ofxKinect\libs\libusb\lib\vs\x64\libusb.lib, as
+              in the build recorded as working before this change. Restore the
+              sources first with build_libfreenect_windows.ps1 -RestoreFallback.
+
+  KinectOpenMotor
+    false     Open FREENECT_DEVICE_CAMERA only (OFXKINECT_OPEN_MOTOR=0).
+    true      Open FREENECT_DEVICE_MOTOR | FREENECT_DEVICE_CAMERA
+              (OFXKINECT_OPEN_MOTOR=1), the stock ofxKinect behaviour.
+    Default: false for upstream, true for fallback (the fallback was only ever
+    recorded working with MOTOR | CAMERA).
+
+  Both can be overridden per build without editing this file, e.g.
+    msbuild Magic-Sand-Ecosystem.sln /p:Configuration=Release /p:KinectDriverStack=fallback
+    msbuild Magic-Sand-Ecosystem.sln /p:Configuration=Release /p:KinectOpenMotor=true
+  Only x64 libraries are produced; ARM64/ARM64EC configurations are not supported
+  by the upstream stack.
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <KinectDriverStack Condition="'$(KinectDriverStack)'==''">upstream</KinectDriverStack>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <KinectOpenMotor Condition="'$(KinectOpenMotor)'=='' and '$(KinectDriverStack)'=='fallback'">true</KinectOpenMotor>
+    <KinectOpenMotor Condition="'$(KinectOpenMotor)'==''">false</KinectOpenMotor>
+    <KinectOfxKinectDir>$(MSBuildThisFileDirectory)..\..\..\addons\ofxKinect\</KinectOfxKinectDir>
+    <KinectFreenectDir>$(KinectOfxKinectDir)libs\libfreenect\</KinectFreenectDir>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(KinectDriverStack)'=='upstream'">
+    <KinectDriverIncludeDirs>$(KinectFreenectDir)include;$(KinectFreenectDir)include\libusb-1.0</KinectDriverIncludeDirs>
+    <KinectDriverLibDirs>$(KinectFreenectDir)lib\vs\x64\$(Configuration)</KinectDriverLibDirs>
+    <KinectDriverLibs>freenect.lib;libusb-1.0.lib</KinectDriverLibs>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(KinectDriverStack)'=='fallback'">
+    <KinectDriverIncludeDirs></KinectDriverIncludeDirs>
+    <KinectDriverLibDirs>$(KinectOfxKinectDir)libs\libusb\lib\vs\x64</KinectDriverLibDirs>
+    <KinectDriverLibs>libusb.lib</KinectDriverLibs>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <KinectDriverDefines Condition="'$(KinectOpenMotor)'=='true'">OFXKINECT_OPEN_MOTOR=1</KinectDriverDefines>
+    <KinectDriverDefines Condition="'$(KinectOpenMotor)'!='true'">OFXKINECT_OPEN_MOTOR=0</KinectDriverDefines>
+  </PropertyGroup>
+
+  <!-- Fail early, with the fix, when the addon folder does not match the selected stack. -->
+  <Target Name="KinectDriverCheck" BeforeTargets="ClCompile">
+    <Error Condition="'$(KinectDriverStack)'!='upstream' and '$(KinectDriverStack)'!='fallback'"
+           Text="KinectDriverStack must be 'upstream' or 'fallback' (got '$(KinectDriverStack)'). See KinectDriver.props." />
+    <Error Condition="'$(KinectDriverStack)'=='upstream' and !Exists('$(KinectFreenectDir)lib\vs\x64\$(Configuration)\freenect.lib')"
+           Text="KinectDriverStack=upstream but $(KinectFreenectDir)lib\vs\x64\$(Configuration)\freenect.lib does not exist. Run tools\drivers\build_libfreenect_windows.ps1, or set KinectDriverStack=fallback." />
+    <Error Condition="'$(KinectDriverStack)'=='upstream' and Exists('$(KinectFreenectDir)src\core.c')"
+           Text="KinectDriverStack=upstream but $(KinectFreenectDir) still contains libfreenect sources (the 0.9.3 transplant). Run tools\drivers\build_libfreenect_windows.ps1, which moves them to ofxKinect\_libfreenect_backups." />
+    <Error Condition="'$(KinectDriverStack)'=='fallback' and !Exists('$(KinectFreenectDir)src\core.c')"
+           Text="KinectDriverStack=fallback but $(KinectFreenectDir)src\core.c does not exist. Run tools\drivers\build_libfreenect_windows.ps1 -RestoreFallback." />
+    <Message Importance="high" Text="Kinect driver stack: $(KinectDriverStack), $(KinectDriverDefines)" />
+  </Target>
+</Project>

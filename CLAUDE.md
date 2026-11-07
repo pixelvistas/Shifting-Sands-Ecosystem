@@ -3132,3 +3132,8 @@ section with tunables and readouts (fluid/inlet cells, cost ms, max
 lattice speed, resets). Avoided `near` as an identifier (a Windows
 macro). WaterFlowField changes not compiled (no oF SDK); not
 hardware-tested.
+
+## Kinect driver stack (branch ss/current-drivers, 2026-11-03)
+Upstream libfreenect v0.7.5 + libusb (1.0.30 via vcpkg 2026.10.16 on Windows; distro on Linux) via `tools/drivers/build_libfreenect_{windows.ps1,linux.sh}`; camera sub-device only (`OFXKINECT_OPEN_MOTOR`, `KinectDriver.props`).
+0.9.3 transplant kept as fallback (`_addon_patches/fallback-libfreenect-0.9.3/`, `KinectDriverStack=fallback`). No platform counts as working until `docs/DRIVER_TEST.md` records a pass.
+Windows: depth streams on this stack (2026-11-07, Release x64, v143-built libs); RUN! did not load saved calibration (uninvestigated, recalibrate each session). Linux: compiles/links/initialises; project needs C++17-shim and ofxCv fixes on GCC.
