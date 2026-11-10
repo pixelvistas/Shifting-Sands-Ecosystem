@@ -17,6 +17,9 @@ increasing (display only: never writes to the model).
   from the growth front (down the cover gradient of the seed's role, into
   bare ground). All scaled per role by SPEED (pioneer light and fast,
   intermediate about half, climax nearly still); lifetime per role.
+- Rarity (2026-11-11): only cells whose window growth is at or above the
+  SPAWN_PERCENTILE of all growing cells spawn (still weighted by growth),
+  and by default only pioneer growth spawns (PIONEER_ONLY).
 - Optional "mortality motes" (default off): where cover decreases, motes
   in a desaturated role colour that stay put, shrink and fade.
 - Colour: the role colour, mixed from a dim grey (the colour's luminance x
@@ -68,6 +71,8 @@ public:
 	static float SEEDS_PER_UNIT_GROWTH;
 	static int MAX_PARTICLES;
 	static float GROWTH_EPS;          // per-window growth below this is ignored
+	static float SPAWN_PERCENTILE;    // spawn only from growing cells at/above this growth percentile
+	static bool PIONEER_ONLY;         // only pioneer growth spawns seeds
 	static float WIND_DIR_DEG;        // direction the wind blows towards, 0 = +x
 	static float WIND_MM_PER_SEC;
 	static float CURL_MM_PER_SEC;
@@ -96,7 +101,12 @@ private:
 	float windowElapsed = 0.0f;
 	int windowSteps = 0;
 	// spawn schedule for the current window (cells x role), cumulative weights
-	struct Pool { std::vector<int> cell; std::vector<float> cdf; float total = 0.0f; double acc = 0.0; float rate = 0.0f; };
+	struct Pool { std::vector<int> cell; std::vector<float> cdf, g; float total = 0.0f; double acc = 0.0; float rate = 0.0f; };
+	// Growth histogram per role (HIST_BINS over cover change 0..1), filled
+	// during the window close; finding the percentile then needs no sort.
+	static const int HIST_BINS = 4096;
+	std::vector<unsigned> hist[3];
+	void keepTopPercentile(Pool & p, std::vector<unsigned> & h);
 	Pool seedPool[3], motePool[3];   // active (spawning now)
 	Pool nextSeed[3], nextMote[3];   // being built while a window closes
 	int closing = -1;                // row class being closed, -1 = none

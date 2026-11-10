@@ -1,7 +1,11 @@
 /***********************************************************************
-SeedLayer - draws SeedParticles (display only) the way WaterFlowField draws
-its flow particles: squares alpha-blended into an FBO that is cleared to
-black and faded each frame, composited additively over the sand. Grid
+SeedLayer - draws SeedParticles (display only) much as WaterFlowField draws
+its flow particles: soft round points (radial falloff to zero at the edge)
+drawn premultiplied into an RGBA FBO that is cleared and faded each frame
+(all four channels), then composited over the sand: additively with band
+fill off (black adds nothing, as before), and with normal "over" blending at
+SEED_OPACITY_ON_FILL with band fill on, so seeds keep their colour instead
+of washing to white on the lit fill. Grid
 coordinates go to the projector through KinectProjector's
 kinectCoordToProjCoord on a coarse lookup grid (as WaterFlowField).
 
@@ -29,12 +33,15 @@ public:
 	void drawProjectorWindow();
 	void drawGui(); // inside the Vegetation panel
 
-	static float SEED_SIZE_PX;    // square size in projector pixels
-	static float SEED_FADE;       // FBO fade per frame (trail length)
+	static float SEED_SIZE_PX;    // soft point diameter in projector pixels
+	static float SEED_FADE;       // FBO fade per frame ("Seed trail length": lower = longer)
 	static float SEED_BRIGHTNESS;
+	static float SEED_OPACITY_ON_FILL;
+	static bool BAND_FILL_ON;     // set each frame by SandSurfaceRenderer
 
 private:
 	bool drawnThisFrame() const;
+	void composite(float x, float y, float w, float h);
 	SeedParticles particles;
 	ofVec2f projRes;
 	ofFbo fbo;

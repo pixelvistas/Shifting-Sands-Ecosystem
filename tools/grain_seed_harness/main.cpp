@@ -11,7 +11,8 @@
 // signal vs a naive frame difference, seeds at the regrowth front, update
 // time at 20,000 particles).
 //
-// Usage: ./grain_seed_harness <outdir> [repoRoot]
+// Usage: ./grain_seed_harness <outdir> [repoRoot] [M]   (M: mound run only)
+// Frames: <run>_NNNN.png (band fill off), <run>fill_NNNN.png (band fill on).
 #include "../../src/Games/SuccessionModel.h"
 #include "../../src/Games/SeedParticles.h"
 #include "../dewitz_harness/png.h"
@@ -36,10 +37,13 @@ static const int PX = 2;                 // projector pixels per cell (~1.05 px/
 static const int FW = GW * PX, FH = GH * PX;
 // Display settings (defaults of PlantLayer / SeedLayer).
 static const float GRAIN_SCALE = 1.0f;
-static const float GRAIN_BRIGHTNESS = 1.5f; // band fill off
-static const float SEED_SIZE_PX = 2.0f;
-static const float SEED_FADE = 0.25f;       // FBO fade per frame
+static const float GRAIN_BRIGHTNESS_DARK = 1.5f; // band fill off
+static const float GRAIN_BRIGHTNESS_FILL = 1.0f; // band fill on
+static const float SEED_SIZE_PX = 4.0f;          // soft point diameter
+static const float SEED_FADE = 0.125f;           // FBO fade per frame
 static const float SEED_BRIGHTNESS = 1.0f;
+static const float SEED_OPACITY_ON_FILL = 0.7f;
+static const float SOIL_TINT = 0.35f;            // VegetationField::SOIL_TINT_STRENGTH
 
 // ------------------------------------------------------------ preset
 static std::string tag(const std::string & block, const std::string & name)
@@ -74,6 +78,30 @@ static bool readPreset(const std::string & path, SM::RoleParams out[3])
 	return true;
 }
 
+// ------------------------------------------------------------ colour map (band fill on)
+struct Key { float h; float r, g, b; };
+static std::vector<Key> colourMap;
+static void readColourMap(const std::string & path)
+{
+	std::ifstream f(path);
+	std::stringstream ss; ss << f.rdbuf();
+	std::string doc = ss.str();
+	size_t pos = 0;
+	while ((pos = doc.find("<key>", pos)) != std::string::npos) {
+		size_t end = doc.find("</key>", pos);
+		std::string k = doc.substr(pos, end - pos);
+		colourMap.push_back({ (float)atof(tag(k, "height").c_str()), (float)atof(tag(k, "color-r").c_str()) / 255.0f,
+			(float)atof(tag(k, "color-g").c_str()) / 255.0f, (float)atof(tag(k, "color-b").c_str()) / 255.0f });
+		pos = end;
+	}
+}
+static const Key & colourAt(float h) // stepped: the last key at or below
+{
+	const Key * k = &colourMap.front();
+	for (const Key & c : colourMap) if (c.h <= h) k = &c;
+	return *k;
+}
+
 // ------------------------------------------------------------ shader copy
 // Bayer 4x4 threshold, as heightMapShader.frag's bayer4(): index =
 // 4 b2(x mod 2, y mod 2) + b2(floor(x/2) mod 2, floor(y/2) mod 2),
@@ -94,8 +122,8 @@ struct World {
 	std::mt19937 rng{ 7 };
 	SM m;
 	SeedParticles seeds;
-	std::vector<float> fbo;     // seed layer, RGB float, FW x FH
-	World() : bed(GW * GH, 0.0f), noisy(GW * GH), above(GW * GH), water(GW * GH, 0), fbo((size_t)FW * FH * 3, 0.0f) {}
+	std::vector<float> fbo;     // seed layer, premultiplied RGBA float, FW x FH
+	World() : bed(GW * GH, 0.0f), noisy(GW * GH), above(GW * GH), water(GW * GH, 0), fbo((size_t)FW * FH * 4, 0.0f) {}
 	void step() {
 		std::uniform_real_distribution<float> U(-1.0f, 1.0f);
 		for (int i = 0; i < GW * GH; i++) { noisy[i] = bed[i] + U(rng); above[i] = bed[i] - TABLE_MM; }
@@ -108,32 +136,41 @@ struct World {
 		seeds.update(covers, m.soil(), water.data(), GW, GH, MM_PER_CELL, DT, SM::UPDATE_INTERLEAVE);
 		drawSeedsIntoFbo();
 	}
-	// SeedLayer: fade the FBO, then alpha-blend a square per particle.
+	// SeedLayer: fade all four channels, then a soft round point per
+	// particle (coverage falls linearly to 0 at the rim), premultiplied "over".
 	void drawSeedsIntoFbo() {
 		for (float & v : fbo) v *= (1.0f - SEED_FADE);
 		for (size_t i = 0; i < seeds.count(); i++) {
 			float a = seeds.alpha(i);
-			if (a <= 0.0f) continue;
-			float half = 0.5f * SEED_SIZE_PX * seeds.sizeFactor(i);
+			float r = 0.5f * SEED_SIZE_PX * seeds.sizeFactor(i);
+			if (a <= 0.0f || r <= 0.0f) continue;
 			float cx = seeds.posX(i) * PX, cy = seeds.posY(i) * PX;
-			int x0 = (int)std::floor(cx - half + 0.5f), x1 = (int)std::floor(cx + half - 0.5f);
-			int y0 = (int)std::floor(cy - half + 0.5f), y1 = (int)std::floor(cy + half - 0.5f);
 			const float * c = seeds.rgb(i);
-			for (int y = std::max(0, y0); y <= std::min(FH - 1, y1); y++)
-				for (int x = std::max(0, x0); x <= std::min(FW - 1, x1); x++) {
-					float * p = &fbo[((size_t)y * FW + x) * 3];
-					for (int k = 0; k < 3; k++) p[k] = p[k] * (1 - a) + std::min(1.0f, c[k] * SEED_BRIGHTNESS) * a;
+			for (int y = std::max(0, (int)std::floor(cy - r)); y <= std::min(FH - 1, (int)std::floor(cy + r)); y++)
+				for (int x = std::max(0, (int)std::floor(cx - r)); x <= std::min(FW - 1, (int)std::floor(cx + r)); x++) {
+					float d = std::hypot(x + 0.5f - cx, y + 0.5f - cy);
+					if (d >= r) continue;
+					float cov = a * (1.0f - d / r);
+					float * p = &fbo[((size_t)y * FW + x) * 4];
+					for (int k = 0; k < 3; k++) p[k] = std::min(1.0f, c[k] * SEED_BRIGHTNESS) * cov + p[k] * (1 - cov);
+					p[3] = cov + p[3] * (1 - cov);
 				}
 		}
 	}
 	// Grain dither (as the shader) + water + seed FBO, on unlit sand.
-	std::vector<unsigned char> render(bool withSeeds = true, bool withGrain = true) const {
+	std::vector<unsigned char> render(bool fill = false, bool withSeeds = true, bool withGrain = true) const {
 		std::vector<unsigned char> img((size_t)FW * FH * 3);
 		const float base[3] = { 1.0f, 2.0f, 4.0f };
 		for (int py = 0; py < FH; py++)
 			for (int px = 0; px < FW; px++) {
 				int i = (py / PX) * GW + px / PX;
 				float rgb[3] = { 0, 0, 0 };
+				if (fill && !water[i]) { // colour map at the bed + soil tint (land lines not drawn here)
+					const Key & k = colourAt(bed[i]);
+					float st = SOIL_TINT * tex8(m.soil()[i]);
+					const float brown[3] = { 0.42f, 0.27f, 0.13f }, kc[3] = { k.r, k.g, k.b };
+					for (int q = 0; q < 3; q++) rgb[q] = kc[q] + (brown[q] - kc[q]) * st;
+				}
 				if (water[i]) { // lakebed + water colour (t = 0.4), as the shader
 					const float lake[3] = { 0.722f, 0.690f, 0.627f }, sh[3] = { 0.255f, 0.714f, 0.769f }, dp[3] = { 0.031f, 0.188f, 0.420f };
 					for (int k = 0; k < 3; k++) { float w = sh[k] + (dp[k] - sh[k]) * 0.4f; rgb[k] = lake[k] + (w - lake[k]) * 0.74f; }
@@ -147,12 +184,16 @@ struct World {
 						if (bayer4(bx, by) < cov[r]) {
 							float c[3];
 							SeedParticles::roleColour(r, soil, c);
-							for (int k = 0; k < 3; k++) rgb[k] = std::min(1.0f, c[k] * GRAIN_BRIGHTNESS);
+							float gb = fill ? GRAIN_BRIGHTNESS_FILL : GRAIN_BRIGHTNESS_DARK;
+							for (int k = 0; k < 3; k++) rgb[k] = std::min(1.0f, c[k] * gb);
 						}
 					}
 				}
+				const float * f = &fbo[((size_t)py * FW + px) * 4];
 				for (int k = 0; k < 3; k++) {
-					float v = rgb[k] + (withSeeds ? fbo[((size_t)py * FW + px) * 3 + k] : 0.0f);
+					float v = rgb[k];
+					if (withSeeds) // fill off: additive; fill on: premultiplied "over" at the opacity
+						v = fill ? v * (1.0f - SEED_OPACITY_ON_FILL * f[3]) + SEED_OPACITY_ON_FILL * f[k] : v + f[k];
 					img[((size_t)py * FW + px) * 3 + k] = (unsigned char)std::lround(std::min(1.0f, v) * 255.0f);
 				}
 			}
@@ -214,6 +255,8 @@ static void run(const std::string & name, World & w, int seconds, int digAt,
 	std::vector<double> rowClass(3, 0.0);
 	int spawnsCounted = 0;
 	double frontSpawns = 0, frontTotal = 0;
+	std::vector<std::vector<unsigned char>> framesFill;
+	double countSum = 0; size_t countMax = 0; int countN = 0;
 	std::vector<float> prevCover;
 	const int steps = (int)(seconds / DT);
 	for (int s = 1; s <= steps; s++) {
@@ -244,17 +287,23 @@ static void run(const std::string & name, World & w, int seconds, int digAt,
 					frontTotal += 1; if (nearPatch) frontSpawns += 1;
 				}
 		}
+		countSum += w.seeds.count(); countMax = std::max(countMax, w.seeds.count()); countN++;
 		if (s % (int)(2 / DT) == 0) {
-			std::vector<unsigned char> img = w.render();
+			std::vector<unsigned char> img = w.render(false), imgFill = w.render(true);
 			char fn[256];
 			snprintf(fn, sizeof fn, "%s/%s_%04d.png", OUT.c_str(), name.c_str(), (int)std::lround(t));
 			png::writeRGB(fn, FW, FH, img);
+			snprintf(fn, sizeof fn, "%s/%sfill_%04d.png", OUT.c_str(), name.c_str(), (int)std::lround(t));
+			png::writeRGB(fn, FW, FH, imgFill);
 			if (((int)std::lround(t)) % 30 == 0 || (digAt > 0 && (int)std::lround(t) == digAt + 10)) {
-				frames.push_back(img); times.push_back((int)std::lround(t));
+				frames.push_back(img); framesFill.push_back(imgFill); times.push_back((int)std::lround(t));
 			}
 		}
 	}
 	sheet(name + "_contact_sheet", frames, times, 4);
+	sheet(name + "fill_contact_sheet", framesFill, times, 4);
+	printf("  %s seeds alive: mean %.0f, max %zu (cap %d); %d seeds spawned (%.1f per s)\n", name.c_str(),
+		countSum / std::max(1, countN), countMax, SeedParticles::MAX_PARTICLES, spawnsCounted, spawnsCounted / (float)seconds);
 	double tot = rowClass[0] + rowClass[1] + rowClass[2];
 	printf("  %s seed spawns by row mod 3 over the run: %.1f%% / %.1f%% / %.1f%% (%d spawns)\n", name.c_str(),
 		100 * rowClass[0] / std::max(1.0, tot), 100 * rowClass[1] / std::max(1.0, tot), 100 * rowClass[2] / std::max(1.0, tot), spawnsCounted);
@@ -265,32 +314,38 @@ static void run(const std::string & name, World & w, int seconds, int digAt,
 	}
 }
 
-static void benchmark()
+static void benchmark(bool pioneerOnly)
 {
-	// Real grid size; growth everywhere so the cap (20,000) is reached.
+	// Real grid size, current defaults; every cell grows at its own random
+	// rate (worst case for the window close and the percentile).
 	const int C = 519, R = 295, N = C * R;
-	std::vector<float> cov[3];
+	std::vector<float> cov[3], rate(N);
 	for (auto & v : cov) v.assign(N, 0.0f);
+	std::mt19937 g(3);
+	std::uniform_real_distribution<float> U(0.0001f, 0.002f);
+	for (float & r : rate) r = U(g);
 	std::vector<float> soil(N, 0.5f);
 	std::vector<unsigned char> water(N, 0);
 	SeedParticles s;
-	float saved = SeedParticles::SEEDS_PER_UNIT_GROWTH;
-	SeedParticles::SEEDS_PER_UNIT_GROWTH = 200.0f;
-	double sum = 0.0, worst = 0.0; int n = 0; size_t maxCount = 0;
+	bool saved = SeedParticles::PIONEER_ONLY;
+	SeedParticles::PIONEER_ONLY = pioneerOnly;
 	std::vector<double> all;
+	double first = 0.0; size_t maxCount = 0;
 	for (int f = 0; f < 1200; f++) {
-		for (int r = 0; r < 3; r++) for (int i = 0; i < N; i++) cov[r][i] = std::min(1.0f, cov[r][i] + 0.0004f * (1 + ((i + f) % 7 == 0)));
-		if (f % 400 == 0) for (int r = 0; r < 3; r++) std::fill(cov[r].begin(), cov[r].end(), 0.0f);
+		for (int r = 0; r < 3; r++) for (int i = 0; i < N; i++) cov[r][i] = std::min(1.0f, cov[r][i] + rate[i]);
+		if (f % 400 == 399) for (int r = 0; r < 3; r++) std::fill(cov[r].begin(), cov[r].end(), 0.0f);
 		const float * cv[3] = { cov[0].data(), cov[1].data(), cov[2].data() };
 		s.update(cv, soil.data(), water.data(), C, R, 1.9f, 1.0f / 60.0f, 3);
 		maxCount = std::max(maxCount, s.count());
-		if (s.count() >= 19000) { sum += s.lastUpdateMs(); worst = std::max(worst, s.lastUpdateMs()); n++; all.push_back(s.lastUpdateMs()); }
+		if (f < 60) first = std::max(first, s.lastUpdateMs()); else all.push_back(s.lastUpdateMs());
 	}
-	SeedParticles::SEEDS_PER_UNIT_GROWTH = saved;
+	SeedParticles::PIONEER_ONLY = saved;
 	std::sort(all.begin(), all.end());
-	double p99 = all.empty() ? 0.0 : all[(size_t)(0.99 * (all.size() - 1))];
-	printf("benchmark (519 x 295 grid, growth in every cell, cap 20000): max particles %zu; update at >= 19000 particles: mean %.2f ms, p99 %.2f ms, worst %.2f ms over %d frames\n",
-		maxCount, n ? sum / n : 0.0, p99, worst, n);
+	double sum = 0; for (double v : all) sum += v;
+	printf("benchmark (519 x 295 grid, every cell growing, defaults, pioneer only %s): max particles %zu (cap %d); "
+		"update mean %.2f ms, p99 %.2f ms, worst %.2f ms (after the first second; first second worst %.2f ms)\n",
+		pioneerOnly ? "on" : "off", maxCount, SeedParticles::MAX_PARTICLES, sum / all.size(),
+		all[(size_t)(0.99 * (all.size() - 1))], all.back(), first);
 }
 
 int main(int argc, char ** argv)
@@ -302,9 +357,12 @@ int main(int argc, char ** argv)
 	if (!readPreset(ROOT + "/bin/data/settings/ecologyParamsDesigner.xml", designer)) { fprintf(stderr, "no preset\n"); return 1; }
 	std::string err;
 
-	benchmark();
+	readColourMap(ROOT + "/bin/data/colorMaps/HeightColorMap.xml");
+	const bool onlyM = argc > 3 && std::string(argv[3]) == "M";
+	benchmark(true);
+	benchmark(false);
 
-	{ // T1: flat moist ground from bare (S = 0)
+	if (!onlyM) { // T1: flat moist ground from bare (S = 0)
 		World w; w.m.setParams(designer, err);
 		printf("T1 (flat, moist, S = 0), 360 s:\n");
 		run("T1", w, 360, -1, 0, 0, 0, 0);

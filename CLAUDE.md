@@ -101,8 +101,8 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   intermediate 2, climax 4, x scale; grey to role colour by soil S).
 - `src/Games/SeedParticles.*` (plain C++) + `SeedLayer.*` (FBO, additive, as the
   water particles): seeds where cover grew over a 0.5 s window closed on whole
-  multiples of UPDATE_INTERLEAVE (no striping); wind + curl noise + drift from
-  the front. Test: `tools/grain_seed_harness/`.
+  multiples of UPDATE_INTERLEAVE (no striping), top 10 % pioneer growth only, cap
+  1500, soft slow motes; additive on black, "over" on the fill. Test: `tools/grain_seed_harness/`.
 
 ## Hydrology (`VegetationField::stepFlow()`)
 

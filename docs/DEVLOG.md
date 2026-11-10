@@ -4244,3 +4244,56 @@ Hardware checklist (user):
 4. Seeds appear only where plants are spreading; dig a patch and watch the
    regrowth front produce seeds.
 5. Note the grain scale, brightness, wind and seed-rate values that look best.
+
+## 2026-11-11 - Seeds retuned: rare, slow motes at the most active colonisation (`ss/plant-grain`)
+
+At the user's request; display only (succession model, grain dither,
+water and lines unchanged). New defaults:
+
+| Setting | Was | Now |
+|---|---|---|
+| MAX_PARTICLES ("Seed cap", 100-20000) | 20000 | 1500 |
+| SEEDS_PER_UNIT_GROWTH (slider 0-50) | 20 | 2.0 |
+| SPAWN_PERCENTILE ("Spawn percentile", 0.5-0.99), new | - | 0.90 |
+| PIONEER_ONLY ("Pioneer seeds only"), new | - | on |
+| SEED_SIZE_PX ("Seed size (px)", 1-10) | 2 (square) | 4 (soft round) |
+| SEED_FADE ("Seed trail length", fade per frame, lower = longer) | 0.25 | 0.125 |
+| SEED_OPACITY_ON_FILL ("Seed opacity on fill"), new | - | 0.7 |
+| WIND_MM_PER_SEC | 6 | 3 |
+| CURL_MM_PER_SEC | 5 | 2.5 |
+| OUTWARD_MM_PER_SEC | 4 | 2 |
+| LIFE_SEC pioneer | 6 | 12 |
+
+- Percentile: during the (row-class-spread) window close, each growing cell's
+  growth (> GROWTH_EPS) goes into a 4096-bin histogram over 0..1 per role;
+  at the end of the close the bin holding the SPAWN_PERCENTILE quantile is
+  found and only cells at or above that bin's lower edge stay in the spawn
+  pool (cumulative weights rebuilt, still weighted by growth). One pass, no
+  sort. With PIONEER_ONLY, intermediate and climax growth build no seed pool.
+- Drawing (SeedLayer): soft round points (triangle fan, premultiplied colour x
+  alpha at the centre, zero at the rim) into an RGBA FBO; the fade scales all
+  four channels (glBlendFunc(ZERO, ONE_MINUS_SRC_ALPHA)), seeds go "over"
+  premultiplied. Composite: band fill off = additive (as before); band fill
+  on = premultiplied "over" with the FBO tinted by the opacity, i.e. sand x
+  (1 - 0.7 x coverage) + 0.7 x colour, so seeds keep their colour on the lit
+  fill. SandSurfaceRenderer sets SeedLayer::BAND_FILL_ON each frame.
+
+Harness (`tools/grain_seed_harness/`, `./grain_seed_harness <out> ../.. M`;
+now also renders band fill on: colour map + soil tint + grain at brightness
+1.0, seeds "over" at 0.7; land lines are not drawn there):
+- Mound + water channel, real SuccessionModel, 420 s: 161 seeds alive on
+  average (max 1500 during the first uniform pioneer flush), 20 spawned/s;
+  spawns by row mod 3: 32.5 / 31.9 / 35.7 % (8389 spawns, clustered in few
+  hot cells, so noisier than before; no stripe pattern in the frames).
+- The fastest pioneer growth is on the mound's colonisation ring and the
+  channel banks; after the dig at 300 s only 2 % of seeds were born within
+  4 cells of the patch (5 % of the area): the percentile picks the fastest
+  pioneer fronts, and the patch is not one of them in this run.
+- Seed colour follows soil like the grain, so on the low-soil mound seeds are
+  grey-green; on the fill they read as faint motes (raise "Seed brightness"
+  or "Seed opacity on fill" if too faint on the sand).
+- Update time (519 x 295, every cell growing at its own rate, defaults):
+  pioneer only: mean 0.12 ms, p99 0.64 ms, worst 0.81 ms; with "Pioneer
+  seeds only" off: mean 0.18 ms, p99 1.51 ms, one frame 2.93 ms (a window
+  close with three full pools in that worst case).
+Not compiled with openFrameworks, not hardware-tested.

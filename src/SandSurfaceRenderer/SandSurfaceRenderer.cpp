@@ -330,6 +330,7 @@ void SandSurfaceRenderer::drawSandbox() {
     // grain needs the site-feedback model (cover in the vegetation texture).
     bool grain = vegetationField && hasVegetation && vegetationField->hasSiteData()
         && PlantLayer::PLANT_DISPLAY == PlantLayer::DISPLAY_GRAIN;
+    SeedLayer::BAND_FILL_ON = bandFill; // seeds: "over" on the fill, additive on black
     heightMapShader.setUniform1i("plantDisplay", grain ? 1 : (PlantLayer::drawDiscs() ? 0 : 2));
     heightMapShader.setUniform1f("grainScale", ofClamp(PlantLayer::GRAIN_SCALE, 1.0f, 4.0f));
     heightMapShader.setUniform1f("grainBrightness", ofClamp(bandFill ? PlantLayer::GRAIN_BRIGHTNESS_FILL : PlantLayer::GRAIN_BRIGHTNESS_DARK, 1.0f, 2.0f));

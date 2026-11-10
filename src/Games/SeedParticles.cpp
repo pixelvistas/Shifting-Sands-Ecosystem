@@ -5,19 +5,21 @@
 
 bool SeedParticles::ENABLED = true;
 float SeedParticles::WINDOW_SEC = 0.5f;
-float SeedParticles::SEEDS_PER_UNIT_GROWTH = 20.0f;
-int SeedParticles::MAX_PARTICLES = 20000;
+float SeedParticles::SEEDS_PER_UNIT_GROWTH = 2.0f;
+int SeedParticles::MAX_PARTICLES = 1500;
 float SeedParticles::GROWTH_EPS = 0.002f;
+float SeedParticles::SPAWN_PERCENTILE = 0.90f;
+bool SeedParticles::PIONEER_ONLY = true;
 float SeedParticles::WIND_DIR_DEG = 30.0f;
-float SeedParticles::WIND_MM_PER_SEC = 6.0f;
-float SeedParticles::CURL_MM_PER_SEC = 5.0f;
+float SeedParticles::WIND_MM_PER_SEC = 3.0f;
+float SeedParticles::CURL_MM_PER_SEC = 2.5f;
 float SeedParticles::CURL_SCALE_MM = 60.0f;
 float SeedParticles::CURL_PERIOD_SEC = 20.0f;
-float SeedParticles::OUTWARD_MM_PER_SEC = 4.0f;
+float SeedParticles::OUTWARD_MM_PER_SEC = 2.0f;
 // pioneer: light seed, fast and long-drifting; intermediate about half;
 // climax: heavy seed, settles almost where it forms.
 float SeedParticles::SPEED[3] = { 1.0f, 0.5f, 0.05f };
-float SeedParticles::LIFE_SEC[3] = { 6.0f, 3.0f, 1.5f };
+float SeedParticles::LIFE_SEC[3] = { 12.0f, 3.0f, 1.5f };
 bool SeedParticles::MORTALITY_MOTES = false;
 float SeedParticles::MOTES_PER_UNIT_LOSS = 20.0f;
 float SeedParticles::MOTE_LIFE_SEC = 1.5f;
@@ -83,6 +85,37 @@ void SeedParticles::curl(float xmm, float ymm, float & cx, float & cy) const
 	cy = -dpdx;
 }
 
+// Keep only entries whose growth is at or above the SPAWN_PERCENTILE value
+// of all entries (the histogram bin holding that quantile and above), and
+// rebuild the cumulative weights. One pass; no sort.
+void SeedParticles::keepTopPercentile(Pool & p, std::vector<unsigned> & h)
+{
+	const size_t n = p.cell.size();
+	const float pct = std::min(0.999f, std::max(0.0f, SPAWN_PERCENTILE));
+	if (n == 0 || pct <= 0.0f || (int)h.size() != HIST_BINS)
+		return;
+	const double below = pct * (double)n; // cells strictly under the quantile
+	double cum = 0.0;
+	int bin = 0;
+	for (; bin < HIST_BINS - 1; bin++) {
+		if (cum + h[bin] > below) break;
+		cum += h[bin];
+	}
+	const float threshold = (float)bin / HIST_BINS; // lower edge of the quantile's bin
+	size_t k = 0;
+	float total = 0.0f;
+	for (size_t i = 0; i < n; i++) {
+		if (p.g[i] < threshold) continue;
+		total += p.g[i];
+		p.cell[k] = p.cell[i];
+		p.g[k] = p.g[i];
+		p.cdf[k] = total;
+		k++;
+	}
+	p.cell.resize(k); p.g.resize(k); p.cdf.resize(k);
+	p.total = total;
+}
+
 void SeedParticles::spawn(int cell, int r, int k, const float * soil, const float * const cover[3])
 {
 	const int gx = cell % cols, gy = cell / cols;
@@ -146,7 +179,8 @@ void SeedParticles::update(const float * const cover[3], const float * soil, con
 		reset();
 		cols = c; rows = r; mmPerCell = mm;
 		for (int q = 0; q < 3; q++) { // no reallocation on the first window close
-			for (Pool * p : { &seedPool[q], &nextSeed[q] }) { p->cell.reserve((size_t)c * r); p->cdf.reserve((size_t)c * r); }
+			for (Pool * p : { &seedPool[q], &nextSeed[q] }) { p->cell.reserve((size_t)c * r); p->cdf.reserve((size_t)c * r); p->g.reserve((size_t)c * r); }
+			hist[q].assign(HIST_BINS, 0u);
 		}
 	}
 	if (!ENABLED) {
@@ -175,7 +209,8 @@ void SeedParticles::update(const float * const cover[3], const float * soil, con
 		windowElapsed = 0.0f;
 		windowSteps = 0;
 		for (int q = 0; q < 3; q++) {
-			nextSeed[q].cell.clear(); nextSeed[q].cdf.clear(); nextSeed[q].total = 0.0f;
+			nextSeed[q].cell.clear(); nextSeed[q].cdf.clear(); nextSeed[q].g.clear(); nextSeed[q].total = 0.0f;
+			hist[q].assign(HIST_BINS, 0u);
 			nextMote[q].cell.clear(); nextMote[q].cdf.clear(); nextMote[q].total = 0.0f;
 		}
 	}
@@ -187,6 +222,8 @@ void SeedParticles::update(const float * const cover[3], const float * soil, con
 			for (int q = 0; q < 3; q++) {
 				Pool & sp = nextSeed[q];
 				Pool & mp = nextMote[q];
+				const bool seeds = !(PIONEER_ONLY && q != PIONEER);
+				unsigned * hq = hist[q].data();
 				const float * now = cover[q] + (size_t)gy * cols;
 				float * old = &snap[(size_t)q * n + (size_t)gy * cols];
 				const unsigned char * wr = water ? water + (size_t)gy * cols : nullptr;
@@ -194,13 +231,20 @@ void SeedParticles::update(const float * const cover[3], const float * soil, con
 					float d = now[gx] - old[gx];
 					old[gx] = now[gx];
 					if (wr && wr[gx]) continue;
-					if (d > GROWTH_EPS) { sp.total += d; sp.cell.push_back(gy * cols + gx); sp.cdf.push_back(sp.total); }
+					if (d > GROWTH_EPS) {
+						if (seeds) {
+							sp.total += d; sp.cell.push_back(gy * cols + gx); sp.cdf.push_back(sp.total); sp.g.push_back(d);
+							hq[std::min(HIST_BINS - 1, (int)(d * HIST_BINS))]++;
+						}
+					}
 					else if (MORTALITY_MOTES && -d > GROWTH_EPS) { mp.total -= d; mp.cell.push_back(gy * cols + gx); mp.cdf.push_back(mp.total); }
 				}
 			}
 		if (++closing >= K) {
-			// Spread this window's seeds over the next window.
+			// Spread this window's seeds over the next window, from the
+			// fastest-growing cells only.
 			for (int q = 0; q < 3; q++) {
+				keepTopPercentile(nextSeed[q], hist[q]);
 				std::swap(seedPool[q].cell, nextSeed[q].cell); std::swap(seedPool[q].cdf, nextSeed[q].cdf);
 				seedPool[q].total = nextSeed[q].total;
 				seedPool[q].rate = nextSeed[q].total * SEEDS_PER_UNIT_GROWTH / closeLen;
