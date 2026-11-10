@@ -88,6 +88,9 @@ OF_ROOT = ../../..
 #   Note: Leave a leading space when adding list items with the += operator
 ################################################################################
 # PROJECT_DEFINES = 
+# Kinect sub-devices (PATCHES.md, section 3b): camera only by default; uncomment
+# to open MOTOR | CAMERA for comparison.
+# PROJECT_DEFINES = OFXKINECT_OPEN_MOTOR=1
 
 ################################################################################
 # PROJECT CFLAGS

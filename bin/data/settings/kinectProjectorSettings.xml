@@ -1,10 +1,10 @@
 <?xml version="1.0"?>
 <KINECTSETTINGS>
 	<kinectROI>
-		<x>55</x>
-		<y>99</y>
-		<width>502</width>
-		<height>313</height>
+		<x>44</x>
+		<y>124</y>
+		<width>530</width>
+		<height>307</height>
 	</kinectROI>
 	<basePlaneNormalBack>
 		<x>0</x>
@@ -26,6 +26,6 @@
 	<spatialFiltering>0</spatialFiltering>
 	<followBigChanges>0</followBigChanges>
 	<numAveragingSlots>15</numAveragingSlots>
-	<OutlierInpainting>0</OutlierInpainting>
+	<OutlierInpainting>1</OutlierInpainting>
 	<FullFrameFiltering>0</FullFrameFiltering>
 </KINECTSETTINGS>

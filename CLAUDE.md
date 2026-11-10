@@ -16,10 +16,8 @@ Sand, ported to openFrameworks 0.12.1 with an ofxImGui GUI (`README.md`,
 
 - `ss/plant-grain` (current work): grain-dither plants and seed particles
   (display only), on `ss/land-lines`.
-- `ss/land-lines`: glowing band-coloured land lines, band-fill toggle,
-  flat-ground fade (display only), on `ss/water-lines`.
-- `ss/water-lines`: glowing water lines, on `ss/succession-feedback` (site-feedback
-  succession, on `ss/dewitz-flow`).
+- `ss/land-lines`: land lines, band fill, flat fade, Kinect driver stack; on `ss/water-lines`.
+- `ss/water-lines` (water lines) on `ss/succession-feedback` (succession) on `ss/dewitz-flow`.
 - `ss/dewitz-flow`: flow particles, water table. Fallback `ss/ecosim-model-visuals-kiqw12`.
 
 ## Frame order (`src/ofApp.cpp`)
@@ -131,6 +129,8 @@ duplicate values elsewhere.
   configuration (Debug runs at ~5 fps). The `.vcxproj` and
   `.vcxproj.filters` list source files explicitly: add every new file to
   both.
+- Kinect: libfreenect 0.7.5 + libusb 1.0.30 via `tools/drivers/`, camera only; Windows
+  passed 2026-11-07 (`docs/DRIVER_TEST.md`); fallback `KinectDriverStack=fallback`.
 - The development session has no openFrameworks SDK. Only plain-C++
   classes can be compiled there. Headless harnesses:
   - `tools/dewitz_harness/build.sh` (`DewitzFlow.cpp`; prototype `tools/dewitz_proto.py`).
