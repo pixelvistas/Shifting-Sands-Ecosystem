@@ -14,8 +14,10 @@ Sand, ported to openFrameworks 0.12.1 with an ofxImGui GUI (`README.md`,
 
 ## Branches
 
-- `ss/land-lines` (current work): glowing band-coloured land lines, band-fill
-  toggle, flat-ground fade (display only), on `ss/water-lines`.
+- `ss/plant-grain` (current work): grain-dither plants and seed particles
+  (display only), on `ss/land-lines`.
+- `ss/land-lines`: glowing band-coloured land lines, band-fill toggle,
+  flat-ground fade (display only), on `ss/water-lines`.
 - `ss/water-lines`: glowing water lines, on `ss/succession-feedback` (site-feedback
   succession, on `ss/dewitz-flow`).
 - `ss/dewitz-flow`: flow particles, water table. Fallback `ss/ecosim-model-visuals-kiqw12`.
@@ -44,11 +46,9 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   start - 0.01 mm). The shader adds the simulated-water
   overlay (vegetation texture alpha 1..249 = depth), drawn over a plain
   lakebed #B8B0A0 (no land colour, no contours under water), and contour
-  lines elsewhere. It also draws the soil tint, plants (below), the M/S
-  debug overlay and, on `ss/water-lines`, water lines: glowing #6FD3FF
-  isolines of the bed elevation (depthfrag) on simulated water only, plus an
-  shoreline glow (Sand Surface Renderer panel; saved in
-  `sandSurfaceRendererSettings.xml`; preview `tools/water_lines_preview.py`).
+  lines elsewhere; also soil tint, plants (below), M/S debug overlay, water lines
+  (glowing #6FD3FF bed isolines on simulated water, + shoreline glow; Sand Surface
+  Renderer panel, `sandSurfaceRendererSettings.xml`, `tools/water_lines_preview.py`).
   `ss/land-lines` adds glowing land lines: band edges (from the map's keys)
   outline each band in its own colour, the shore too (land side; water side blue,
   both on); every N mm in the band at the level. Fill on: land lines mixed in a deepened
@@ -66,18 +66,14 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   - Hydrology (`stepFlow()`): see below.
   - `combinedTex` (RGBA8): R/G/B = shrub/fruit/nut, A = water depth
     (1..249) or snow (255).
-  - Queries: `isWaterCell`, `isWaterAt`, `getWaterDepthAt`,
-    `getFlowVelocityAt`, `getDepthBelowWaterTableAt`, `getElevationGrid`,
-    `getMmPerCell`; agent food: `eatShrubOrFruit`, `eatFruitOrNut`.
+  - Queries: `isWaterCell`, `getWaterDepthAt`, `getFlowVelocityAt`,
+    `getDepthBelowWaterTableAt`, `getElevationGrid`; food: `eat*`.
   - Owns an `EcologyParams` (shown in the Vegetation panel).
-- `src/Games/EcologyParams.*`: loads the designer or published preset
-  (`bin/data/settings/ecologyParams{Designer,Published}.xml`): per role
-  (pioneer=fruit, intermediate=nut, climax=shrub) moisture, slope and soil
-  depth ranges with units and sources. The published preset is still
-  TODO placeholders (zeros).
-- `src/Games/CritterController.*`, `Critter.*`, `HumanAgent.*`: ELF deer
-  and human agents (spawn counts default to 0 on this branch line; use
-  the Population panel).
+- `src/Games/EcologyParams.*`: designer/published preset (`bin/data/settings/
+  ecologyParams*.xml`): per role (pioneer=fruit, intermediate=nut, climax=shrub)
+  moisture, slope, soil depth ranges. Published preset: still TODO zeros.
+- `src/Games/CritterController.*`, `Critter.*`, `HumanAgent.*`: ELF deer and
+  humans (spawn counts default to 0; Population panel).
 - `src/Games/WaterFlowField.*`: visible flow particles. Default mode
   "Dewitz (2018)" uses `DewitzFlow`; older modes (bed slope, pipe-model
   velocity, `LatticeFlow`: earlier LBM-in-the-water) stay selectable. Particles default to "Water
@@ -100,9 +96,15 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   "Vegetation model" switches ELF bands (Eq. 2.1) / Site feedback (default).
   Updates every 3rd row per frame (`UPDATE_INTERLEAVE`). Headless tests:
   `tools/succession_harness/` (T1-T7, `plot.py`).
-- `src/Games/PlantLayer.*` (plain C++): draws the model's dominant role per
-  jittered site (15 mm) as a top-down disc with a rim, eased; state texel per
-  site, drawn by the shader in mm. Test: `tools/plant_harness/`.
+- `src/Games/PlantLayer.*` (plain C++): "Plant display" Discs / Grain dither
+  (default) / Off. Discs: dominant role per jittered site (15 mm), eased; state
+  texel per site, drawn by the shader in mm (`tools/plant_harness/`). Grain: the
+  shader's Bayer 4x4 dither in projector px (density = cover; pioneer 1 px,
+  intermediate 2, climax 4, x scale; grey to role colour by soil S).
+- `src/Games/SeedParticles.*` (plain C++) + `SeedLayer.*` (FBO, additive, as the
+  water particles): seeds where cover grew over a 0.5 s window closed on whole
+  multiples of UPDATE_INTERLEAVE (no striping); wind + curl noise + drift from
+  the front. Test: `tools/grain_seed_harness/`.
 
 ## Hydrology (`VegetationField::stepFlow()`)
 
@@ -131,10 +133,8 @@ duplicate values elsewhere.
   both.
 - The development session has no openFrameworks SDK. Only plain-C++
   classes can be compiled there. Headless harnesses:
-  - `tools/dewitz_harness/build.sh` (compiles `DewitzFlow.cpp`; reference
-    prototype `tools/dewitz_proto.py`).
-  - For `stepFlow()`, the function text was extracted and compiled
-    against a stub class in the scratchpad (see the DEVLOG, 2026-10-22).
+  - `tools/dewitz_harness/build.sh` (`DewitzFlow.cpp`; prototype `tools/dewitz_proto.py`).
+  - `stepFlow()`: function text compiled against a stub class (DEVLOG, 2026-10-22).
 - Everything else is verified only on the sandbox by the user. Say so
   plainly when reporting: "not compiled with openFrameworks, not
   hardware-tested".

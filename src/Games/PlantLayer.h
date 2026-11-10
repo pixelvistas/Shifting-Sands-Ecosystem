@@ -51,8 +51,19 @@ public:
 	void renderOver(std::vector<unsigned char> & rgb, int w, int h, float pxPerMM,
 		const unsigned char * waterAtPx = nullptr) const;
 
+	// Plant display (2026-11-10): DISCS = this class's discs; GRAIN = the
+	// Bayer grain dither in heightMapShader.frag (default); OFF. The disc
+	// state is only updated in DISCS mode.
+	enum { DISPLAY_DISCS = 0, DISPLAY_GRAIN = 1, DISPLAY_OFF = 2 };
+	static int PLANT_DISPLAY;
+	static bool drawDiscs() { return PLANT_DISPLAY == DISPLAY_DISCS; }
+	// Grain dither: size multiplier (pioneer 1 px, intermediate 2, climax 4)
+	// and brightness with band fill on / off (SandSurfaceRenderer picks one).
+	static float GRAIN_SCALE;
+	static float GRAIN_BRIGHTNESS_FILL;
+	static float GRAIN_BRIGHTNESS_DARK;
+
 	// Tunables (Vegetation panel -> Plants).
-	static bool DRAW_PLANTS;
 	static float PLANT_SPACING_MM;
 	static float PLANT_MIN_COVER;
 	static float PLANT_EASE_SEC;

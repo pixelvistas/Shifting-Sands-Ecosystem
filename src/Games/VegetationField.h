@@ -239,6 +239,7 @@ Ecosystem extension, part of the Shifting Sands fork of Magic Sand.
 #include "EcologyParams.h"
 #include "SuccessionModel.h"
 #include "PlantLayer.h"
+#include "SeedLayer.h"
 
 class VegetationField {
 public:
@@ -628,7 +629,11 @@ public:
 	// Individual plants drawn from the site model's cover (PlantLayer):
 	// one RGBA8 texel of state per plant site, see PlantLayer::packState().
 	ofTexture & getPlantTexture() { return plantTex; }
-	bool hasPlantData() const { return VEGETATION_MODEL == MODEL_SITE_FEEDBACK && PlantLayer::DRAW_PLANTS && plantTex.isAllocated(); }
+	bool hasPlantData() const { return VEGETATION_MODEL == MODEL_SITE_FEEDBACK && PlantLayer::drawDiscs() && plantTex.isAllocated(); }
+	// Seed particles (SeedLayer, display only): drawn by ofApp after the sand.
+	void setProjectorRes(const ofVec2f & r) { seedLayer.setProjectorRes(r); }
+	void drawSeedsMainWindow(float x, float y, float w, float h) { if (VEGETATION_MODEL == MODEL_SITE_FEEDBACK) seedLayer.drawMainWindow(x, y, w, h); }
+	void drawSeedsProjectorWindow() { if (VEGETATION_MODEL == MODEL_SITE_FEEDBACK) seedLayer.drawProjectorWindow(); }
 	PlantLayer const & getPlants() const { return plants; }
 	float getMmPerCellValue() const { return mmPerCell; }
 
@@ -650,6 +655,7 @@ private:
 	PlantLayer plants;
 	std::vector<unsigned char> plantState;
 	ofTexture plantTex;
+	SeedLayer seedLayer;
 
 	// elevation (mm) -> fraction of [elevationMin, elevationMax], clamped
 	// 0..1 - the shared normalization every classification decision in

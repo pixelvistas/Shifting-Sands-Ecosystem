@@ -827,8 +827,15 @@ void VegetationField::stepSuccession(unsigned char * texData)
 	siteTex.loadData(sitePixels);
 	siteTex.setTextureMinMagFilter(GL_NEAREST, GL_NEAREST);
 
+	// Seed particles (display only) - see SeedParticles / SeedLayer.
+	{
+		const float * covers[3] = { pio, mid, cli };
+		seedLayer.update(kinectProjector, covers, soil, succWater.data(), cols, rows, mmPerCell, dt,
+			SuccessionModel::UPDATE_INTERLEAVE, getGridOrigin(), getGridStep());
+	}
+
 	// Plants (display only) - see PlantLayer.
-	if (PlantLayer::DRAW_PLANTS) {
+	if (PlantLayer::drawDiscs()) {
 		const float * covers[3] = { pio, mid, cli };
 		plants.update(covers, succWater.data(), cols, rows, mmPerCell, dt);
 		plants.packState(plantState);
@@ -1245,14 +1252,23 @@ void VegetationField::drawSuccessionGui()
 		succession.reset();
 
 	ImGui::Text("Plants (display only)");
-	ImGui::Checkbox("Draw plants", &PlantLayer::DRAW_PLANTS);
-	ImGui::SliderFloat("Plant spacing (mm)", &PlantLayer::PLANT_SPACING_MM, 5.0f, 40.0f);
-	ImGui::SliderFloat("Pioneer max radius (mm)", &PlantLayer::MAX_RADIUS_MM[PlantLayer::PIONEER], 0.5f, 20.0f);
-	ImGui::SliderFloat("Intermediate max radius (mm)", &PlantLayer::MAX_RADIUS_MM[PlantLayer::INTERMEDIATE], 0.5f, 20.0f);
-	ImGui::SliderFloat("Climax max radius (mm)", &PlantLayer::MAX_RADIUS_MM[PlantLayer::CLIMAX], 0.5f, 20.0f);
-	ImGui::Text("(radii are capped at 1.1 x spacing)");
-	ImGui::SliderFloat("Plant minimum cover", &PlantLayer::PLANT_MIN_COVER, 0.0f, 1.0f);
-	ImGui::SliderFloat("Plant easing (s)", &PlantLayer::PLANT_EASE_SEC, 0.1f, 10.0f);
+	const char * plantModes[] = { "Discs", "Grain dither", "Off" };
+	ImGui::Combo("Plant display", &PlantLayer::PLANT_DISPLAY, plantModes, 3);
+	if (PlantLayer::PLANT_DISPLAY == PlantLayer::DISPLAY_GRAIN) {
+		ImGui::Text("(dot density = cover, grain size = stage, colour = soil)");
+		ImGui::SliderFloat("Grain scale", &PlantLayer::GRAIN_SCALE, 1.0f, 4.0f);
+		ImGui::SliderFloat("Plant brightness (band fill on)", &PlantLayer::GRAIN_BRIGHTNESS_FILL, 1.0f, 2.0f);
+		ImGui::SliderFloat("Plant brightness (band fill off)", &PlantLayer::GRAIN_BRIGHTNESS_DARK, 1.0f, 2.0f);
+	} else if (PlantLayer::drawDiscs()) {
+		ImGui::SliderFloat("Plant spacing (mm)", &PlantLayer::PLANT_SPACING_MM, 5.0f, 40.0f);
+		ImGui::SliderFloat("Pioneer max radius (mm)", &PlantLayer::MAX_RADIUS_MM[PlantLayer::PIONEER], 0.5f, 20.0f);
+		ImGui::SliderFloat("Intermediate max radius (mm)", &PlantLayer::MAX_RADIUS_MM[PlantLayer::INTERMEDIATE], 0.5f, 20.0f);
+		ImGui::SliderFloat("Climax max radius (mm)", &PlantLayer::MAX_RADIUS_MM[PlantLayer::CLIMAX], 0.5f, 20.0f);
+		ImGui::Text("(radii are capped at 1.1 x spacing)");
+		ImGui::SliderFloat("Plant minimum cover", &PlantLayer::PLANT_MIN_COVER, 0.0f, 1.0f);
+		ImGui::SliderFloat("Plant easing (s)", &PlantLayer::PLANT_EASE_SEC, 0.1f, 10.0f);
+	}
+	seedLayer.drawGui();
 
 	if (ImGui::TreeNode("Succession rates")) {
 		ImGui::Text("Vegetation (per second)");

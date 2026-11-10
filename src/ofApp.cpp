@@ -76,6 +76,7 @@ void ofApp::setup() {
 
 	waterFlowField.setup(kinectProjector, &vegetationField);
 	waterFlowField.setProjectorRes(projRes);
+	vegetationField.setProjectorRes(projRes);
 	waterFlowField.setKinectROI(kinectROI);
 
 	lastKinectROI = kinectROI;
@@ -153,6 +154,7 @@ void ofApp::draw()
 		// VegetationField.h), plus the ELF deer/human population - see
 		// ofApp.h's header note on what has been removed from this branch.
 		sandSurfaceRenderer->drawMainWindow(x, y, w, h);
+		vegetationField.drawSeedsMainWindow(x, y, w, h);
 		waterFlowField.drawMainWindow(x, y, w, h);
 		critterController.drawMainWindow(x, y, w, h);
 	}
@@ -176,6 +178,7 @@ void ofApp::drawProjWindow(ofEventArgs &args)
 	if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING)
 	{
 		sandSurfaceRenderer->drawProjectorWindow();
+		vegetationField.drawSeedsProjectorWindow();
 		waterFlowField.drawProjectorWindow();
 		critterController.drawProjectorWindow();
 	}

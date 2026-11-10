@@ -2,7 +2,10 @@
 #include <algorithm>
 #include <cmath>
 
-bool PlantLayer::DRAW_PLANTS = true;
+int PlantLayer::PLANT_DISPLAY = PlantLayer::DISPLAY_GRAIN;
+float PlantLayer::GRAIN_SCALE = 1.0f;
+float PlantLayer::GRAIN_BRIGHTNESS_FILL = 1.0f;
+float PlantLayer::GRAIN_BRIGHTNESS_DARK = 1.5f; // climax stays visible on unlit sand
 float PlantLayer::PLANT_SPACING_MM = 15.0f;
 float PlantLayer::PLANT_MIN_COVER = 0.15f;
 float PlantLayer::PLANT_EASE_SEC = 2.0f;

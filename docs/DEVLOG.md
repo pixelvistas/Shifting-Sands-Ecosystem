@@ -3954,3 +3954,81 @@ band fill on ("Line shade on fill"), additive with it off. Preview updated
 to match. Both shaders pass `glslangValidator` (GL2 with the rectangle
 extension in a temporary copy only); GL2 and GL3 diffs match apart from
 the texture call. Not compiled with openFrameworks, not hardware-tested.
+
+## 2026-11-10 - Grain-dither plants and seed particles (branch `ss/plant-grain`, display only)
+
+Branched from `ss/land-lines` (72aa979). SuccessionModel, hydrology, water
+particles and the colour map are unchanged; nothing here writes to the model.
+
+Mapping confirmed in `VegetationField::stepSuccession()`: `combinedTex`
+R = climax, G = pioneer, B = intermediate cover (8 bit); `siteTex` R = soil S.
+
+1. "Plant display" (Vegetation panel; `PlantLayer::PLANT_DISPLAY`): Discs
+   (the PlantLayer discs, unchanged; replaces the "Draw plants" toggle, whose
+   `true` equals Discs), Grain dither (default), Off. Grain is drawn in
+   `heightMapShader.frag` (both variants) where the discs were (after the soil
+   tint, before the land lines, never on simulated water; the land lines still
+   dim under cover): Bayer 4x4 thresholds (index + 0.5) / 16 on
+   floor(gl_FragCoord / size), so the pattern is fixed on the sand and only
+   the threshold moves with cover; pioneer 1 px, intermediate 2 px, climax
+   4 px, x "Grain scale" (1-4), drawn in that order (coarser on top). Colour:
+   mix(grey = role luminance x 0.45, role colour, soil S) x "Plant brightness"
+   (1-2; separate values for band fill on (1.0) and off (1.5), the renderer
+   picks by the band-fill state). Only with the site-feedback model.
+2. Seed particles: `SeedParticles` (plain C++) + `SeedLayer` (oF: FBO cleared
+   to black, faded per frame, squares alpha-blended in, composited
+   additively after the sand; grid -> projector through the same
+   kinectCoordToProjCoord lookup grid as WaterFlowField). Owned by
+   VegetationField, updated after each SuccessionModel step, drawn by ofApp
+   after the sand surface. Growth signal: snapshot of cover; the window
+   (0.5 s) closes only after a whole multiple of UPDATE_INTERLEAVE steps and
+   the close is spread over UPDATE_INTERLEAVE frames, one row class each, so
+   every row's window holds the same number of model updates (no striping).
+   Spawns over the next window in proportion to max(0, now - snapshot) per
+   cell and role (SEEDS_PER_UNIT_GROWTH 20, GROWTH_EPS 0.002), never on water;
+   seeds landing on water vanish. Motion: wind (30 deg, 6 mm/s) + curl noise
+   (5 mm/s, 60 mm eddies, 20 s period; evaluated per frame on a lattice every
+   8 cells, interpolated) + drift down the role's cover gradient (4 mm/s), all
+   x per-role speed (1.0 / 0.5 / 0.05); life 6 / 3 / 1.5 s (+-25 %). Colour as
+   the grain (shared roleColour()). Cap 20,000; size 2 px; trail fade 0.25.
+   "Mortality motes" (off): where cover falls, desaturated motes that stay,
+   shrink and fade (1.5 s). "Disturbance burst": not done; the model only
+   reports a count of disturbed cells, not which cells, so it would need a
+   model change (asked the user).
+
+Harness `tools/grain_seed_harness/` (real SuccessionModel.cpp and
+SeedParticles.cpp; grain and seed drawing copied from the shader/SeedLayer;
+2 projector px per cell, unlit sand; `make_gif.py`):
+- Striping: a naive one-step cover difference puts 100 % of pioneer growth
+  in one row class (rows mod 3); seed spawns over the runs: T1 34.1 / 32.9 /
+  33.1 %, M 33.1 / 32.0 / 34.9 %.
+- Grain: T1 shows grey 1 px grain on bare soil, colour arriving as S builds,
+  2 px intermediate, 4 px climax. Note: at full cover a stage is a solid
+  fill (density = cover), so grain size reads only at partial cover.
+- Seeds follow growth: in M (mound + water channel, patch dug at 300 s),
+  11 % of seeds born 305-360 s were within 4 cells of the patch (5 % of the
+  area). The rest came from real growth elsewhere: the mound slopes go through
+  repeated pioneer booms and die-backs in the model, and the channel banks keep
+  regrowing.
+- Time (519 x 295 grid, growth in every cell, at 19,000-20,000 particles):
+  mean 0.40 ms, p99 1.06 ms; the single worst frame (7.7 ms) is the first
+  window close (first touch of the reserved memory), later frames above 2 ms
+  are rare container noise.
+- Motes (synthetic test): spawned only where cover fell, stayed in place,
+  size and alpha shrinking.
+Shaders: both pass `glslangValidator` (GL2 with the rectangle extension in a
+temporary copy only); GL2 and GL3 diffs match apart from the texture call.
+With "Plant display" = Discs and seeds off the shader output equals
+`ss/land-lines` (plantDisplay = 0 skips the grain block; the other additions
+are declarations and functions). Not compiled with openFrameworks, not
+hardware-tested.
+
+Hardware checklist (user):
+1. Discs + seeds off: looks exactly as before.
+2. Grain dither, band fill off, dark room: grain is crisp on the sand (no
+   shimmer), and the three grain sizes are distinguishable from 1 m away.
+3. Moist flat ground from bare: fine grey grain first, colour arriving,
+   coarser grain later.
+4. Seeds appear only where plants are spreading; dig a patch and watch the
+   regrowth front produce seeds.
+5. Note the grain scale, brightness, wind and seed-rate values that look best.

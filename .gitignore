@@ -267,3 +267,4 @@ tools/succession_harness/succession_harness
 tools/pipe_particles_harness/pipe_particles_harness
 tools/pipe_particles_harness/gen/
 tools/plant_harness/plant_harness
+tools/grain_seed_harness/grain_seed_harness

@@ -326,6 +326,13 @@ void SandSurfaceRenderer::drawSandbox() {
         heightMapShader.setUniform1f("plantMmPerCell", vegetationField->getMmPerCellValue());
         heightMapShader.setUniform1f("plantRadiusScale", plants.radiusScale());
     }
+    // Plant display: 0 discs (hasPlants above), 1 grain dither, 2 off; the
+    // grain needs the site-feedback model (cover in the vegetation texture).
+    bool grain = vegetationField && hasVegetation && vegetationField->hasSiteData()
+        && PlantLayer::PLANT_DISPLAY == PlantLayer::DISPLAY_GRAIN;
+    heightMapShader.setUniform1i("plantDisplay", grain ? 1 : (PlantLayer::drawDiscs() ? 0 : 2));
+    heightMapShader.setUniform1f("grainScale", ofClamp(PlantLayer::GRAIN_SCALE, 1.0f, 4.0f));
+    heightMapShader.setUniform1f("grainBrightness", ofClamp(bandFill ? PlantLayer::GRAIN_BRIGHTNESS_FILL : PlantLayer::GRAIN_BRIGHTNESS_DARK, 1.0f, 2.0f));
     // Debug aid - see VegetationField::DEBUG_SHOW_SNOW's header note.
     heightMapShader.setUniform1i("debugShowSnow", VegetationField::DEBUG_SHOW_SNOW ? 1 : 0);
     // waterLevelFrac is still needed here (land vegetation's landT below

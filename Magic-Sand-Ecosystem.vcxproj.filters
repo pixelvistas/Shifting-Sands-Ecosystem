@@ -25,6 +25,12 @@
 		<ClCompile Include="src\Games\PlantLayer.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
+		<ClCompile Include="src\Games\SeedParticles.cpp">
+			<Filter>src\Games</Filter>
+		</ClCompile>
+		<ClCompile Include="src\Games\SeedLayer.cpp">
+			<Filter>src\Games</Filter>
+		</ClCompile>
 		<ClCompile Include="src\Games\WaterFlowField.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
@@ -753,6 +759,12 @@
 			<Filter>src\Games</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Games\PlantLayer.h">
+			<Filter>src\Games</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Games\SeedParticles.h">
+			<Filter>src\Games</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Games\SeedLayer.h">
 			<Filter>src\Games</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Games\WaterFlowField.h">

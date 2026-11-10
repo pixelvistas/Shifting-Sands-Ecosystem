@@ -71,6 +71,13 @@ uniform vec2 plantSites;          // sites in x and y
 uniform float plantSpacingMM;
 uniform float plantMmPerCell;
 uniform float plantRadiusScale;   // mm
+// Plant display (2026-11-10): 0 discs (above), 1 grain dither, 2 off. The
+// grain is an ordered Bayer 4x4 dither in projector pixels: dot density =
+// cover, grain size = stage (pioneer 1 px, intermediate 2, climax 4, x
+// grainScale), colour mixed from grey to the role colour by soil S.
+uniform int plantDisplay;
+uniform float grainScale;
+uniform float grainBrightness;
 // Water lines (2026-11-05): glowing bathymetric contours on simulated
 // water only, from the same per-pixel elevation as the colour map
 // (depthfrag). waterLineTransform maps depthfrag to elevation / spacing.
@@ -141,6 +148,27 @@ vec3 deepen(vec3 c, float k)
     float luma = dot(c, vec3(0.299, 0.587, 0.114));
     vec3 sat = mix(vec3(luma), c, 1.0 + k); // away from grey
     return clamp(sat * (1.0 - k), 0.0, 1.0);
+}
+
+// Bayer 4x4 threshold (index + 0.5) / 16 for an integer cell p (any range):
+// index = 4 b2(p mod 2) + b2(floor(p / 2) mod 2), b2(x, y) = 2x + 3y - 4xy.
+// Must match tools/grain_seed_harness.
+float bayer4(vec2 p)
+{
+    vec2 q = mod(p, 4.0);
+    vec2 a = mod(q, 2.0);
+    vec2 b = floor(q / 2.0);
+    float idx = 4.0 * (2.0 * a.x + 3.0 * a.y - 4.0 * a.x * a.y) + (2.0 * b.x + 3.0 * b.y - 4.0 * b.x * b.y);
+    return (idx + 0.5) / 16.0;
+}
+
+// Grain colour: from a dim grey (the role colour's luminance x 0.45) to the
+// full role colour by soil S, times grainBrightness. Same formula as
+// SeedParticles::roleColour().
+vec3 grainColour(vec3 c, float soilS)
+{
+    float grey = dot(c, vec3(0.299, 0.587, 0.114)) * 0.45;
+    return min(mix(vec3(grey), c, clamp(soilS, 0.0, 1.0)) * grainBrightness, vec3(1.0));
 }
 
 // Operator debug false colour (dark purple - teal - yellow).
@@ -237,6 +265,23 @@ void main()
                 color.rgb = mix(color.rgb, mix(fill, rimColour, rim), plantCover);
             }
         }
+    }
+
+    // Grain dither (2026-11-10): what is growing now. Cover from the
+    // vegetation texture (G = pioneer, B = intermediate, R = climax), soil S
+    // from the site texture; never on simulated water. Drawn pioneer,
+    // intermediate, climax, so the coarser later stages sit on top.
+    if (plantDisplay == 1 && hasVegetation == 1 && !simWater)
+    {
+        float soilS = (hasSite == 1) ? texture(siteSampler, vegUV).r : 0.0;
+        vec2 fc = gl_FragCoord.xy;
+        float g = max(grainScale, 1.0);
+        if (bayer4(floor(fc / g)) < veg.g)
+            color.rgb = grainColour(vec3(0.788, 0.859, 0.431), soilS); // pioneer #C9DB6E
+        if (bayer4(floor(fc / (2.0 * g))) < veg.b)
+            color.rgb = grainColour(vec3(0.369, 0.608, 0.298), soilS); // intermediate #5E9B4C
+        if (bayer4(floor(fc / (4.0 * g))) < veg.r)
+            color.rgb = grainColour(vec3(0.184, 0.369, 0.204), soilS); // climax #2F5E34
     }
 
     // Glowing land lines (2026-11-06), over the land colours, soil tint and
