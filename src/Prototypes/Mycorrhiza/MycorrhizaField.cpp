@@ -106,7 +106,7 @@ MycorrhizaField::~MycorrhizaField() {}
 void MycorrhizaField::parallel(size_t n, const std::function<void(size_t, size_t, int)> & f)
 {
 	const int parts = std::max(1, std::min(16, THREADS));
-	if (parts == 1 || n < 1024) {
+	if (parts == 1 || n < 64) { // n: items (agents) or rows
 		f(0, n, 0);
 		return;
 	}
@@ -150,6 +150,9 @@ void MycorrhizaField::resize(int c, int r)
 	markTime.assign(n, 0.0f); footprint.assign(n, 0.0f); mark.assign(n, 0); markTmp.assign(n, 0);
 	attractBlocks.assign(nb, 0.0f); warmBlocks.assign(nb, 0.0f); blurTmp.assign(nb, 0.0f); blockLabel.assign(nb, 0);
 	ow = (cols + 1) / 2; oh = (rows + 1) / 2;
+	lw = (cols + 1) / 2; lhh = (rows + 1) / 2;
+	for (std::vector<float> * v : { &lz, &lsrc, &llife, &ldepth, &lq, &lmat, &lmark, &lfr, &lfd, &lscale, &ltmp, &lqtmp, &lvx, &lvy })
+		v->assign((size_t)lw * lhh, 0.0f);
 	occThread.assign((size_t)ow * oh, 0); occTime.assign((size_t)ow * oh, -1e9f);
 	clear();
 }

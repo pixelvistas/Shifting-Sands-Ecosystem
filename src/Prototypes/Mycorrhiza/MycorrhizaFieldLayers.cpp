@@ -9,19 +9,23 @@ Patches (the ground a hand has shaped):
   sample (a hand) keep their means and are not marked until the sand under
   them is seen again. The mark is closed (3 x 3 dilate then erode, so small
   gaps fill) and blurred (3 x 3) into a footprint with smooth edges.
-- Presence (0..1) rises to 1 over PATCH_RISE_SEC under the footprint and
-  otherwise fades to 10 % over TRACE_MEMORY_MIN; under water it clears in
-  about 0.5 s.
-- Maturity (0..1, the colour): a new mark resets it to 0. Afterwards it
-  eases up (MATURITY_EASE_SEC) toward the ground's life = max(total cover,
-  soil S) from the succession model, never decreasing until the next mark.
-  With MATURITY_TIME_WEIGHT = 0 (default) the colour is purely the model's
-  recovery; above 0 it is blended with time since the mark (1 after
-  MATURE_SEC).
+- (2026-11-14) The footprint is the source of a light-liquid: a viscous
+  shallow flow at half resolution (updateLiquid(), described there) that
+  runs downhill and pools in basins, grows with continued interaction,
+  ignores simulated water and evaporates over the trace memory. Presence
+  is smoothstep(0, LIQUID_PRESENCE_MM, depth).
+- Maturity (0..1, the colour) is a tracer carried with the liquid: a new
+  mark resets it to 0; it eases up (MATURITY_EASE_SEC) toward the ground's
+  life = max(total cover, soil S) from the succession model, never
+  decreasing until the next mark. With MATURITY_TIME_WEIGHT = 0 (default)
+  the colour is purely the model's recovery; above 0 it is blended with
+  time since the mark (1 after MATURE_SEC).
 
 Hyphae (threads between patches), tip growth:
 - Tips are born on patch boundary cells (presence >= 0.5 next to < 0.5,
-  not water), HYPHA_SPAWN_PER_SEC per mm of boundary x presence, heading
+  not water), HYPHA_SPAWN_PER_SEC per mm of boundary x presence x
+  (1 + HYPHA_TOUCH_BOOST x touch), so the network grows faster while people
+  interact, heading
   outward along the presence gradient +-25 degrees, up to MAX_TIPS.
 - Each step a tip advances HYPHA_SPEED_MM_S x mix(MIN_MOBILITY, 1,
   max(S, M)) x dt. Its heading is a persistent random walk (TURN_NOISE_DEG
@@ -53,27 +57,31 @@ succession model.
 #include <cmath>
 
 float MycorrhizaField::PATCH_CELL_MM = 3.0f;
-float MycorrhizaField::PATCH_RISE_SEC = 0.3f;
 float MycorrhizaField::MATURITY_EASE_SEC = 3.0f;
 float MycorrhizaField::MATURITY_TIME_WEIGHT = 0.0f;
 float MycorrhizaField::MATURE_SEC = 30.0f;
+float MycorrhizaField::LIQUID_SOURCE_MM_S = 6.0f;
+float MycorrhizaField::LIQUID_VISCOSITY = 1.3f;
+float MycorrhizaField::LIQUID_PRESENCE_MM = 1.5f;
+int MycorrhizaField::LIQUID_SUBSTEPS = 2;
+float MycorrhizaField::HYPHA_TOUCH_BOOST = 3.0f;
 float MycorrhizaField::HYPHA_SPAWN_PER_SEC = 0.006f;
 int MycorrhizaField::MAX_TIPS = 2000;
 int MycorrhizaField::MAX_SEGMENTS = 60000;
-float MycorrhizaField::HYPHA_SPEED_MM_S = 6.0f;
+float MycorrhizaField::HYPHA_SPEED_MM_S = 10.0f;
 float MycorrhizaField::TURN_NOISE_DEG = 12.0f;
 float MycorrhizaField::ATTRACT_WEIGHT = 0.08f;
 float MycorrhizaField::ATTRACT_PLANT = 0.3f;
 float MycorrhizaField::BRANCH_PER_MM = 0.02f;
 int MycorrhizaField::MAX_GENERATION = 4;
-float MycorrhizaField::HYPHA_WIDTH_PX = 1.6f;
-float MycorrhizaField::HYPHA_MIN_WIDTH_PX = 0.7f;
-float MycorrhizaField::TIP_LIFE_SEC = 15.0f;
+float MycorrhizaField::HYPHA_WIDTH_PX = 2.2f;
+float MycorrhizaField::HYPHA_MIN_WIDTH_PX = 0.8f;
+float MycorrhizaField::TIP_LIFE_SEC = 20.0f;
 float MycorrhizaField::SEGMENT_MM = 2.0f;
 float MycorrhizaField::HOME_MM = 15.0f;
 
 static const float L_DEG = 3.14159265358979f / 180.0f;
-static const float WATER_CLEAR_SEC = 0.5f;
+static const float LIQUID_CUTOFF_MM = 0.1f;   // thinner liquid is dropped (invisible; keeps the wet area small)
 static const float FUSE_AFTER_MM = 6.0f;
 static const float FUSE_MIN_AGE_SEC = 1.0f;
 static const float LEAVE_HOME_MM = 5.0f;
@@ -94,6 +102,7 @@ void MycorrhizaField::clearLayers()
 	std::fill(maturityMap.begin(), maturityMap.end(), 0.0f);
 	std::fill(markTime.begin(), markTime.end(), 0.0f);
 	std::fill(footprint.begin(), footprint.end(), 0.0f);
+	for (std::vector<float> * v : { &ldepth, &lq, &lmat, &lvx, &lvy, &lmark }) std::fill(v->begin(), v->end(), 0.0f);
 	std::fill(mark.begin(), mark.end(), (unsigned char)0);
 	std::fill(attractBlocks.begin(), attractBlocks.end(), 0.0f);
 	std::fill(warmBlocks.begin(), warmBlocks.end(), 0.0f);
@@ -181,23 +190,11 @@ void MycorrhizaField::updatePatches(const Inputs & in, float dt, bool adopting)
 				mk[(size_t)y * W + x] = v;
 			}
 	});
-	// 3. Footprint: 3 x 3 box blur of the closed mark; 4. presence and maturity.
-	const float rise = dt / std::max(1e-3f, PATCH_RISE_SEC);
-	const double mem = std::max(0.05f, TRACE_MEMORY_MIN) * 60.0;
-	const float fade = (float)std::pow(0.1, dt / mem);
-	const float waterFade = std::exp(-dt / WATER_CLEAR_SEC);
-	const float aEase = 1.0f - std::exp(-dt / std::max(1e-3f, MATURITY_EASE_SEC));
-	const float tw = std::min(1.0f, std::max(0.0f, MATURITY_TIME_WEIGHT));
-	const float matureInv = 1.0f / std::max(0.1f, MATURE_SEC);
-	const float now = (float)time;
+	// 3. Footprint: 3 x 3 box blur of the closed mark (the source of the light-liquid).
 	float * fp = footprint.data();
-	float * P = presenceMap.data();
-	float * Mt = maturityMap.data();
-	float * mt = markTime.data();
 	parallel((size_t)H, [&](size_t y0, size_t y1, int) {
 		for (int y = (int)y0; y < (int)y1; y++)
 			for (int x = 0; x < W; x++) {
-				const size_t i = (size_t)y * W + x;
 				int sum = 0;
 				if (any && x >= X0 && x < X1 && y >= Y0 && y < Y1)
 					for (int dy = -1; dy <= 1; dy++) {
@@ -205,28 +202,167 @@ void MycorrhizaField::updatePatches(const Inputs & in, float dt, bool adopting)
 						for (int dx = -1; dx <= 1; dx++)
 							sum += mk[(size_t)yy * W + std::min(W - 1, std::max(0, x + dx))];
 					}
-				const float f = sum / 9.0f;
-				fp[i] = f;
-				if (in.water && in.water[i]) {
-					P[i] *= waterFade;
-				} else if (f > 0.0f) {
-					P[i] = std::min(1.0f, P[i] + f * rise);
-				} else {
-					P[i] *= fade;
+				fp[(size_t)y * W + x] = sum / 9.0f;
+			}
+	});
+	updateLiquid(in, dt);
+}
+
+// ------------------------------------------------------------ light-liquid (half resolution)
+// Viscous shallow flow over the settled sand (cellSlow), at 2 x 2 cells:
+// flux between neighbours = LIQUID_VISCOSITY x h_up^3 x (surface difference)
+// x dt / dx^2 (h_up: depth on the higher-surface side), so thin edges hardly
+// move and deep liquid flows like lava; each cell sends at most a quarter of
+// its depth per substep (no negative depth). Reshaped sand (the footprint)
+// adds LIQUID_SOURCE_MM_S x footprint; liquid evaporates to 10 % over the
+// trace memory. It ignores simulated water: basins fill with light.
+// Maturity is a tracer carried with the liquid (fresh liquid is 0, a new
+// mark resets it), eased up toward the ground's life = max(total cover, S)
+// (never down until the next mark), optionally blended with time since the
+// mark (MATURITY_TIME_WEIGHT). Presence = smoothstep(0, LIQUID_PRESENCE_MM,
+// depth), upsampled to cells with maturity.
+void MycorrhizaField::updateLiquid(const Inputs & in, float dt)
+{
+	const int W = cols, H = rows, LW = lw, LH = lhh;
+	const size_t ln = (size_t)LW * LH;
+	const float dx = 2.0f * std::max(1e-3f, in.mmPerCell);
+	const float now = (float)time;
+	// 1. Terrain, source and life per half cell.
+	parallel((size_t)LH, [&](size_t r0, size_t r1, int) {
+		for (int j = (int)r0; j < (int)r1; j++)
+			for (int i = 0; i < LW; i++) {
+				const size_t l = (size_t)j * LW + i;
+				float z = 0, src = 0, life = 0;
+				const bool wet = ldepth[l] > 0.0f;
+				for (int dy = 0; dy < 2; dy++)
+					for (int dxi = 0; dxi < 2; dxi++) {
+						const int x = std::min(W - 1, 2 * i + dxi), y = std::min(H - 1, 2 * j + dy);
+						const size_t c = (size_t)y * W + x;
+						z += cellSlow[c]; src += footprint[c];
+						if (wet || footprint[c] > 0.0f) { // life only where there is (or will be) liquid
+							float cv = 0;
+							for (int r = 0; r < 3; r++) if (in.cover[r]) cv += in.cover[r][c];
+							life += std::max(std::min(1.0f, cv), in.soil ? in.soil[c] : 0.0f);
+						}
+					}
+				lz[l] = 0.25f * z; lsrc[l] = 0.25f * src; llife[l] = 0.25f * life;
+			}
+	});
+	// 2. Source; a new mark resets maturity.
+	const float add = std::max(0.0f, LIQUID_SOURCE_MM_S) * dt;
+	for (size_t l = 0; l < ln; l++) {
+		if (lsrc[l] <= 0.0f) continue;
+		ldepth[l] += add * lsrc[l];
+		if (lsrc[l] >= 0.5f) { lq[l] = 0.0f; lmark[l] = now; }
+	}
+	// 3. Flow, in substeps (Jacobi: fluxes from the state at the start of each substep).
+	const int nsub = std::max(1, std::min(8, LIQUID_SUBSTEPS));
+	const float dts = dt / nsub;
+	const float kv = std::max(0.0f, LIQUID_VISCOSITY) * dts / (dx * dx);
+	std::fill(lvx.begin(), lvx.end(), 0.0f);
+	std::fill(lvy.begin(), lvy.end(), 0.0f);
+	float * h = ldepth.data();
+	float * q = lq.data();
+	float * FR = lfr.data();
+	float * FD = lfd.data();
+	float * sc = lscale.data();
+	for (int sub = 0; sub < nsub; sub++) {
+		// a. Raw fluxes across the right and lower face of each cell (positive: out of this cell).
+		parallel((size_t)LH, [&](size_t r0, size_t r1, int) {
+			for (int j = (int)r0; j < (int)r1; j++)
+				for (int i = 0; i < LW; i++) {
+					const size_t l = (size_t)j * LW + i;
+					const float s0 = lz[l] + h[l];
+					const bool dry = h[l] <= 0.0f;
+					auto flux = [&](size_t m) {
+						const float ds = s0 - (lz[m] + h[m]);
+						const float hu = ds > 0.0f ? h[l] : h[m];
+						return kv * hu * hu * hu * ds;
+					};
+					// two dry cells exchange nothing
+					FR[l] = i < LW - 1 && !(dry && h[l + 1] <= 0.0f) ? flux(l + 1) : 0.0f;
+					FD[l] = j < LH - 1 && !(dry && h[l + LW] <= 0.0f) ? flux(l + LW) : 0.0f;
 				}
-				if (f >= 0.5f) { // a new mark: fresh again
-					Mt[i] = 0.0f;
-					mt[i] = now;
-				} else if (P[i] > 0.0f) {
-					float c = 0.0f;
-					for (int r = 0; r < 3; r++) if (in.cover[r]) c += in.cover[r][i];
-					float target = std::max(std::min(1.0f, c), in.soil ? in.soil[i] : 0.0f);
-					if (tw > 0.0f)
-						target = (1.0f - tw) * target + tw * std::min(1.0f, (now - mt[i]) * matureInv);
-					if (target > Mt[i])
-						Mt[i] += (target - Mt[i]) * aEase;
+		});
+		// b. Outflow limit per cell: at most a quarter of its depth.
+		parallel((size_t)LH, [&](size_t r0, size_t r1, int) {
+			for (int j = (int)r0; j < (int)r1; j++)
+				for (int i = 0; i < LW; i++) {
+					const size_t l = (size_t)j * LW + i;
+					float out = std::max(0.0f, FR[l]) + std::max(0.0f, FD[l]);
+					if (i > 0) out += std::max(0.0f, -FR[l - 1]);
+					if (j > 0) out += std::max(0.0f, -FD[l - LW]);
+					sc[l] = out > 0.25f * h[l] ? (out > 0.0f ? 0.25f * h[l] / out : 0.0f) : 1.0f;
 				}
-				if (P[i] < 0.01f) { P[i] = 0.0f; Mt[i] = 0.0f; }
+		});
+		// c. Apply (each face scaled by its source cell); tracer moves with the source's maturity.
+		parallel((size_t)LH, [&](size_t r0, size_t r1, int) {
+			for (int j = (int)r0; j < (int)r1; j++)
+				for (int i = 0; i < LW; i++) {
+					const size_t l = (size_t)j * LW + i;
+					auto face = [&](float F, size_t a, size_t b) { // F > 0: a -> b
+						const size_t src = F > 0.0f ? a : b;
+						return F * sc[src];
+					};
+					auto conc = [&](size_t c) { return h[c] > 1e-6f ? q[c] / h[c] : 0.0f; };
+					float dh = 0, dq = 0, fxR = 0, fxL = 0, fyD = 0, fyU = 0;
+					if (i < LW - 1) { const float f = face(FR[l], l, l + 1); fxR = f; dh -= f; dq -= f * conc(f > 0 ? l : l + 1); }
+					if (i > 0) { const float f = face(FR[l - 1], l - 1, l); fxL = f; dh += f; dq += f * conc(f > 0 ? l - 1 : l); }
+					if (j < LH - 1) { const float f = face(FD[l], l, l + LW); fyD = f; dh -= f; dq -= f * conc(f > 0 ? l : l + LW); }
+					if (j > 0) { const float f = face(FD[l - LW], l - LW, l); fyU = f; dh += f; dq += f * conc(f > 0 ? l - LW : l); }
+					ltmp[l] = dh; lqtmp[l] = dq;
+					// velocity (mm/s), mean over the substeps: face flux / depth
+					if (h[l] > 0.05f) {
+						lvx[l] += 0.5f * (fxL + fxR) * dx / (h[l] * dts) / nsub;
+						lvy[l] += 0.5f * (fyU + fyD) * dx / (h[l] * dts) / nsub;
+					}
+				}
+		});
+		for (size_t l = 0; l < ln; l++) {
+			h[l] = std::max(0.0f, h[l] + ltmp[l]);
+			q[l] = std::max(0.0f, std::min(h[l], q[l] + lqtmp[l]));
+		}
+	}
+	// 4. Evaporation, maturity, cut-off.
+	const double mem = std::max(0.05f, TRACE_MEMORY_MIN) * 60.0;
+	const float fade = (float)std::pow(0.1, dt / mem);
+	const float aEase = 1.0f - std::exp(-dt / std::max(1e-3f, MATURITY_EASE_SEC));
+	const float tw = std::min(1.0f, std::max(0.0f, MATURITY_TIME_WEIGHT));
+	const float matureInv = 1.0f / std::max(0.1f, MATURE_SEC);
+	for (size_t l = 0; l < ln; l++) {
+		h[l] *= fade; q[l] *= fade;
+		if (h[l] < LIQUID_CUTOFF_MM) { h[l] = 0.0f; q[l] = 0.0f; lmat[l] = 0.0f; continue; } // invisible film: dry
+		float m = q[l] / h[l];
+		if (lsrc[l] < 0.5f) {
+			float target = llife[l];
+			if (tw > 0.0f) target = (1.0f - tw) * target + tw * std::min(1.0f, (now - lmark[l]) * matureInv);
+			if (target > m) m += (target - m) * aEase;
+		}
+		lmat[l] = m;
+		q[l] = m * h[l];
+	}
+	// 5. Presence and maturity per cell (bilinear from the half grid).
+	const float pInv = 1.0f / std::max(0.05f, LIQUID_PRESENCE_MM);
+	float * P = presenceMap.data();
+	float * Mt = maturityMap.data();
+	parallel((size_t)H, [&](size_t y0, size_t y1, int) {
+		for (int y = (int)y0; y < (int)y1; y++)
+			for (int x = 0; x < W; x++) {
+				const float fx = (x + 0.5f) * 0.5f - 0.5f, fy = (y + 0.5f) * 0.5f - 0.5f;
+				const int i0 = std::max(0, std::min(LW - 1, (int)std::floor(fx))), j0 = std::max(0, std::min(LH - 1, (int)std::floor(fy)));
+				const int i1 = std::min(LW - 1, i0 + 1), j1 = std::min(LH - 1, j0 + 1);
+				const size_t c = (size_t)y * W + x;
+				if (ldepth[(size_t)j0 * LW + i0] <= 0.0f && ldepth[(size_t)j0 * LW + i1] <= 0.0f &&
+					ldepth[(size_t)j1 * LW + i0] <= 0.0f && ldepth[(size_t)j1 * LW + i1] <= 0.0f) { P[c] = 0.0f; Mt[c] = 0.0f; continue; }
+				const float tx = std::min(1.0f, std::max(0.0f, fx - i0)), ty = std::min(1.0f, std::max(0.0f, fy - j0));
+				auto bl = [&](const std::vector<float> & f) {
+					return (f[(size_t)j0 * LW + i0] * (1 - tx) + f[(size_t)j0 * LW + i1] * tx) * (1 - ty) +
+						(f[(size_t)j1 * LW + i0] * (1 - tx) + f[(size_t)j1 * LW + i1] * tx) * ty;
+				};
+				const float d = bl(ldepth) * pInv;
+				const float t = std::min(1.0f, std::max(0.0f, d));
+				P[c] = t * t * (3.0f - 2.0f * t);
+				Mt[c] = P[c] > 0.0f ? bl(lmat) : 0.0f;
 			}
 	});
 }
@@ -337,7 +473,8 @@ void MycorrhizaField::spawnTips(const Inputs & in, float dt)
 				(y > 0 && P[i - W] < 0.5f) || (y < H - 1 && P[i + W] < 0.5f);
 			if (!edge) continue;
 			boundaryCount++;
-			if ((int)tipList.size() >= MAX_TIPS || rnd01() >= perCell * P[i]) continue;
+			const float boost = 1.0f + std::max(0.0f, HYPHA_TOUCH_BOOST) * touch[(size_t)(y / blockSize) * bw + x / blockSize];
+			if ((int)tipList.size() >= MAX_TIPS || rnd01() >= perCell * P[i] * boost) continue;
 			const float gx = P[i - (x > 0 ? 1 : 0)] - P[i + (x < W - 1 ? 1 : 0)];
 			const float gy = P[i - (y > 0 ? W : 0)] - P[i + (y < H - 1 ? W : 0)];
 			const float a = std::atan2(gy, gx) + (rnd01() * 2.0f - 1.0f) * jitter;

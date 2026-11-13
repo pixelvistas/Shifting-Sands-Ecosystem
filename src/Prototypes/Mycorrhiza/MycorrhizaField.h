@@ -120,6 +120,12 @@ public:
 	const float * maturity() const { return maturityMap.data(); }
 	// Per touch block: blurred presence x maturity, for warming threads near mature patches.
 	const float * warmthBlocks() const { return warmBlocks.data(); }
+	// Light-liquid at half resolution (cell (i, j) covers grid cells 2i..2i+1, 2j..2j+1).
+	int getLiquidCols() const { return lw; }
+	int getLiquidRows() const { return lhh; }
+	const float * liquidDepth() const { return ldepth.data(); }   // mm
+	const float * liquidVelX() const { return lvx.data(); }       // mm/s
+	const float * liquidVelY() const { return lvy.data(); }
 	struct Segment {
 		float x0, y0, x1, y1;   // grid cells
 		float width;            // projector px; 0 = removed (water)
@@ -200,10 +206,15 @@ public:
 	static int THREADS;                // worker parts for the per-cell and agent loops (1 = single thread)
 	// Patches.
 	static float PATCH_CELL_MM;        // a cell in a touched block whose fast mean departs from its slow mean by this is marked
-	static float PATCH_RISE_SEC;       // presence rises to 1 over this where marked
 	static float MATURITY_EASE_SEC;    // maturity eases up toward the ground's life over this
 	static float MATURITY_TIME_WEIGHT; // 0: colour is purely the model's recovery; > 0 blends in time since the mark
 	static float MATURE_SEC;           // time since the mark at which the time term reaches 1
+	// Light-liquid (the lit ground).
+	static float LIQUID_SOURCE_MM_S;   // depth added per second where the sand is being reshaped
+	static float LIQUID_VISCOSITY;     // flux = this x h^3 x surface difference / dx^2
+	static float LIQUID_PRESENCE_MM;   // depth at which the ground is fully lit
+	static int LIQUID_SUBSTEPS;
+	static float HYPHA_TOUCH_BOOST;    // tip spawning x (1 + this x touch)
 	// Hyphae.
 	static float HYPHA_SPAWN_PER_SEC;  // tips per second per mm of patch boundary (x presence)
 	static int MAX_TIPS;
@@ -227,6 +238,7 @@ private:
 	void resize(int c, int r);
 	void updatePatches(const Inputs & in, float dt, bool adopting);
 	void updateAttractant(const Inputs & in);
+	void updateLiquid(const Inputs & in, float dt);
 	void labelPatchBlocks();
 	void spawnTips(const Inputs & in, float dt);
 	void growTips(const Inputs & in, float dt);
@@ -273,6 +285,9 @@ private:
 	// Patches.
 	std::vector<float> cellFast, cellSlow, presenceMap, maturityMap, markTime, footprint;
 	std::vector<unsigned char> mark, markTmp;
+	// Light-liquid, half resolution (lw x lhh).
+	int lw = 0, lhh = 0;
+	std::vector<float> lz, lsrc, llife, ldepth, lq, lmat, lmark, lfr, lfd, lscale, ltmp, lqtmp, lvx, lvy;
 	// Per block: attractant (blurred presence + plant cover), warmth, patch labels, blur scratch.
 	std::vector<float> attractBlocks, warmBlocks, blurTmp;
 	std::vector<int> blockLabel, labelQueue;

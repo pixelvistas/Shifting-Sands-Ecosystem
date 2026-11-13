@@ -4610,3 +4610,87 @@ not hardware-tested.
    fades slowly.
 6. Note fps, texture scale, flow speed, hypha speed, branching and glow values
    that look best; "Save preset" and record them here.
+
+## 2026-11-14 - Prototype 2: the lit ground becomes a light-liquid; glossy marbled shading
+
+User feedback on hardware (`1703e83`): the graphics should move like viscous
+water or lava; the network receded from basins in the sand instead of filling
+them (while hyphae should reach out of the basins); the network should grow
+as interaction continues; the reference is much more liquid and higher
+quality. The reference video was re-read (frames every 0.5 s, from
+`git show origin/main:...` into `/tmp`, nothing committed). Observed: the
+glow fills the whole dug depression to its rim and stays; it drifts along the
+basin with glossy bands and white specular streaks; cyan inflow streams into
+amber rather than switching colour in place; threads leave the rim after
+~4-5 s, thicken into trunks and, with continued activity, form a looped mesh
+between lit areas.
+
+**Cause of "recedes from basins".** Light was set only where the sand was
+changing, and was cleared within ~0.5 s on simulated water. A basin dug below
+the water table fills with simulated water (seepage), which erased the light.
+
+**Light-liquid** (`MycorrhizaField::updateLiquid`, half resolution, 2 x 2
+cells): viscous shallow flow over the settled sand (`cellSlow`); flux between
+neighbours = `LIQUID_VISCOSITY` (1.3) x h_up^3 x surface difference x dt /
+dx^2, at most a quarter of a cell's depth per substep (`LIQUID_SUBSTEPS` 2);
+thin edges barely move, deep liquid flows like lava. Reshaped sand (the
+closed, blurred mark) pours in `LIQUID_SOURCE_MM_S` (6 mm/s) x footprint, so
+continued interaction adds liquid and basins fill toward their rims. It
+ignores simulated water. Evaporates to 10 % over the trace memory; films below
+0.1 mm are dropped. Presence = smoothstep(0, `LIQUID_PRESENCE_MM` 1.5 mm,
+depth). Maturity is a tracer carried with the liquid (fresh liquid 0, a new
+mark resets it), eased toward life = max(cover, S) as before, never down until
+the next mark. `PATCH_RISE_SEC` is removed (the liquid replaces it).
+
+**Hyphae:** spawning x (1 + `HYPHA_TOUCH_BOOST` (3) x touch), so the network
+grows faster while people interact; defaults `HYPHA_SPEED_MM_S` 10 (was 6),
+`TIP_LIFE_SEC` 20 (was 15), `HYPHA_WIDTH_PX` 2.2 (was 1.6) to 0.8, glow 0.7.
+
+**Shader (`patches.frag`, GL2/GL3):** the swirl is a soft 4-octave body plus
+bright ridges along the iso-contours of a smooth 2-octave warped field,
+averaged along the curl direction (marbling streaks; `WARP` 2.5, `BANDS` 6,
+`RIDGE_WIDTH` 0.35, `STREAK` 0.45, texture scale 40 mm, contrast 1.5); moved
+along the liquid's own velocity with a flow map (two phases, `FLOW_CYCLE`
+2 s; velocity and depth uploaded as a half-resolution texture, ranges
+`V_MAX` 30 mm/s, `H_MAX` 12 mm); lit as a glossy surface (normals from
+dFdx/dFdy of the swirl height, `BUMP` 3; diffuse + specular, `SPEC_GAIN` 0.55,
+`SHININESS` 28); colour by maturity over a deep-blue trough colour `#0A2A6E`,
+warmer where the liquid is deep. Variants tried on the harness before this:
+plain 4-octave swirl at 16 mm ("crumpled foil"), high-contrast streaks
+(blotchy), ridges on a 4-octave field (broken crinkles).
+
+**Performance fix:** `parallel()` ran single-threaded below 1,024 items, and
+every per-row pass hands it a row count (295 or 148), so the patch passes were
+never threaded; threshold now 64. Fast paths: no flux between two dry half
+cells; no upsampling where all four half cells are dry; plant life read only
+where there is liquid.
+
+**Harness** (same scenarios as 2026-11-13, plus: 3 s after sweep A, its
+deepest part (dug > 10 mm) is turned to water in the test world, standing for
+the water table filling a dug basin):
+- Noise, both styles: 0 response over 10 min of +-2 mm noise.
+- Succession model bit-identical with the module on or off (2,000 steps,
+  hash d1cfe157a1d99389).
+- Cost, 12 sweeps then 65 s: patches 1.82 ms mean (p95 2.92) with 4 threads,
+  3.51 ms on 1; hyphae 0.22; attractant 0.56; touch 0.14; whole step 2.75 ms
+  (p95 3.91). Story: whole step 2.73 ms mean, one 14.8 ms outlier. Physarum
+  style at 100,000 agents 1.95 ms (4 threads).
+- Story: black before touch; sweep A lit as it ended, IoU 0.90; the flooded
+  basin stays 100 % lit at +0/+10/+30/+60 s; maturity 0.5 after 8 s (A, damp)
+  vs 68 s (B, dry), 5 s (C, old ground) vs 10 s (D, new fill); 3,787 tips,
+  3,618 fusions, 7 connections to another patch; no live thread on water; lit
+  amount after the last sweep +2 min 83 %, +5 min 52 %, +7.5 min 32 %.
+  The fade is slower than the trace memory alone suggests: a deep pool stays
+  fully lit until it evaporates below 1.5 mm ("Fully lit at depth").
+- Evidence: `docs/prototype2_mycorrhiza/p2_liquid.gif`,
+  `p2_liquid_still_24s.png`, `p2_liquid_still_80s.png`.
+
+Remaining gap to the reference: the fill's features are still finer and less
+luminous than the video's broad glossy bands, and lit areas are as large as
+the harness's sweeps (the video's hand moves far more sand). First sliders on
+the sand: texture scale, marbling bands, gloss relief, highlight strength,
+pour rate, viscosity.
+
+All module shaders compiled and linked with glslangValidator (GL2 and GL3);
+`MycorrhizaRenderer.cpp` syntax-checked against oF/ImGui stubs with real
+glm. Not compiled with openFrameworks, not hardware-tested.

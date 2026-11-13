@@ -8,9 +8,9 @@ bool MycorrhizaRenderer::OVERLAY_ON_SANDBOX = false;
 
 // "Patches and hyphae" (2026-11-13). Colours from the brief; no saturated
 // green anywhere, so no red-green adjacency.
-float MycorrhizaRenderer::PATCH_SCALE_MM = 16.0f;
+float MycorrhizaRenderer::PATCH_SCALE_MM = 40.0f;
 float MycorrhizaRenderer::PATCH_FLOW = 0.15f;
-float MycorrhizaRenderer::PATCH_CONTRAST = 2.0f;
+float MycorrhizaRenderer::PATCH_CONTRAST = 1.5f;
 float MycorrhizaRenderer::PATCH_BRIGHTNESS = 1.1f;
 float MycorrhizaRenderer::EDGE_COOL = 0.7f;
 float MycorrhizaRenderer::RIM_GAIN = 0.35f;
@@ -25,7 +25,19 @@ ofFloatColor MycorrhizaRenderer::HYPHA_WARM = ofFloatColor(0xFF / 255.0f, 0xE2 /
 float MycorrhizaRenderer::WARM_GAIN = 4.0f;
 float MycorrhizaRenderer::HYPHA_BRIGHTNESS = 0.85f;
 float MycorrhizaRenderer::GLOW_RADIUS_PX = 2.0f;
-float MycorrhizaRenderer::GLOW_STRENGTH = 0.5f;
+float MycorrhizaRenderer::GLOW_STRENGTH = 0.7f;
+// Liquid look (2026-11-14): marbling, flow map, gloss.
+float MycorrhizaRenderer::WARP = 2.5f;
+float MycorrhizaRenderer::STREAK = 0.45f;
+float MycorrhizaRenderer::BANDS = 6.0f;
+float MycorrhizaRenderer::RIDGE_WIDTH = 0.35f;
+float MycorrhizaRenderer::FLOW_CYCLE = 2.0f;
+float MycorrhizaRenderer::V_MAX = 30.0f;
+float MycorrhizaRenderer::H_MAX = 12.0f;
+float MycorrhizaRenderer::BUMP = 3.0f;
+float MycorrhizaRenderer::SPEC_GAIN = 0.55f;
+float MycorrhizaRenderer::SHININESS = 28.0f;
+ofFloatColor MycorrhizaRenderer::TROUGH_COLOR = ofFloatColor(0x0A / 255.0f, 0x2A / 255.0f, 0x6E / 255.0f);
 
 // "Physarum (previous)" (2026-11-13 intermediate pass, unchanged).
 float MycorrhizaRenderer::GAMMA = 1.1f;
@@ -254,6 +266,18 @@ void MycorrhizaRenderer::uploadPatches()
 		w[4 * i + 3] = 255;
 	}
 	warmTex.loadData(warmPix);
+	// Light-liquid, half resolution: R, G velocity (0.5 + v / (2 V_MAX)), B depth / H_MAX.
+	const int lwN = field.getLiquidCols(), lhN = field.getLiquidRows();
+	prep(flowTex, flowPix, lwN, lhN);
+	const float vInv = 1.0f / (2.0f * std::max(1.0f, V_MAX)), hInv = 1.0f / std::max(0.1f, H_MAX);
+	unsigned char * fl = flowPix.getData();
+	for (size_t i = 0; i < (size_t)lwN * lhN; i++) {
+		fl[4 * i + 0] = q(0.5f + field.liquidVelX()[i] * vInv);
+		fl[4 * i + 1] = q(0.5f + field.liquidVelY()[i] * vInv);
+		fl[4 * i + 2] = q(field.liquidDepth()[i] * hInv);
+		fl[4 * i + 3] = 255;
+	}
+	flowTex.loadData(flowPix);
 	lastUploadMs = (ofGetElapsedTimeMicros() - t0) / 1000.0f;
 }
 
@@ -423,6 +447,18 @@ void MycorrhizaRenderer::renderLayers()
 	if (patchTex.isAllocated()) {
 		patchShader.begin();
 		patchShader.setUniformTexture("patchTex", patchTex, 1);
+		patchShader.setUniformTexture("flowTex", flowTex, 2);
+		patchShader.setUniform1f("warp", WARP);
+		patchShader.setUniform1f("streak", STREAK);
+		patchShader.setUniform1f("bands", std::max(0.5f, BANDS));
+		patchShader.setUniform1f("ridgeWidth", ofClamp(RIDGE_WIDTH, 0.01f, 1.0f));
+		patchShader.setUniform1f("flowCycle", std::max(0.1f, FLOW_CYCLE));
+		patchShader.setUniform1f("vMax", std::max(1.0f, V_MAX));
+		patchShader.setUniform1f("hMax", std::max(0.1f, H_MAX));
+		patchShader.setUniform1f("bump", BUMP);
+		patchShader.setUniform1f("specGain", SPEC_GAIN);
+		patchShader.setUniform1f("shininess", std::max(1.0f, SHININESS));
+		patchShader.setUniform3f("trough", TROUGH_COLOR.r, TROUGH_COLOR.g, TROUGH_COLOR.b);
 		patchShader.setUniform1f("time", now);
 		patchShader.setUniform1f("cellMM", std::max(1e-3f, vegetation->getMmPerCell()));
 		patchShader.setUniform1f("scaleMM", std::max(1.0f, PATCH_SCALE_MM));
@@ -547,13 +583,15 @@ void MycorrhizaRenderer::drawOverlayProjectorWindow() { composite(0, 0, projRes.
 	X(TRACE_DEPOSIT) X(TRACE_SENSE) X(TRACE_SATURATION) X(FOOD_DEPOSIT) X(TOUCH_DEPOSIT) X(TRAIL_DECAY) \
 	X(TRACE_MEMORY_MIN) X(AGENT_LIFE_SEC) X(LEVEL_PERCENTILE) X(LEVEL_FALL_SEC) X(LEVEL_FLOOR) \
 	X(HEIGHT_LOW_MM) X(HEIGHT_HIGH_MM) \
-	X(PATCH_CELL_MM) X(PATCH_RISE_SEC) X(MATURITY_EASE_SEC) X(MATURITY_TIME_WEIGHT) X(MATURE_SEC) \
+	X(PATCH_CELL_MM) X(MATURITY_EASE_SEC) X(MATURITY_TIME_WEIGHT) X(MATURE_SEC) \
 	X(HYPHA_SPAWN_PER_SEC) X(HYPHA_SPEED_MM_S) X(TURN_NOISE_DEG) X(ATTRACT_WEIGHT) X(ATTRACT_PLANT) X(BRANCH_PER_MM) \
-	X(HYPHA_WIDTH_PX) X(HYPHA_MIN_WIDTH_PX) X(TIP_LIFE_SEC) X(SEGMENT_MM) X(HOME_MM)
-#define MYC_FIELD_INTS(X) X(MAX_AGENTS) X(TOUCH_BLOCK) X(THREADS) X(STYLE) X(MAX_TIPS) X(MAX_SEGMENTS) X(MAX_GENERATION)
+	X(HYPHA_WIDTH_PX) X(HYPHA_MIN_WIDTH_PX) X(TIP_LIFE_SEC) X(SEGMENT_MM) X(HOME_MM) \
+	X(LIQUID_SOURCE_MM_S) X(LIQUID_VISCOSITY) X(LIQUID_PRESENCE_MM) X(HYPHA_TOUCH_BOOST)
+#define MYC_FIELD_INTS(X) X(MAX_AGENTS) X(TOUCH_BLOCK) X(THREADS) X(STYLE) X(MAX_TIPS) X(MAX_SEGMENTS) X(MAX_GENERATION) X(LIQUID_SUBSTEPS)
 #define MYC_DISPLAY_FLOATS(X) \
 	X(PATCH_SCALE_MM) X(PATCH_FLOW) X(PATCH_CONTRAST) X(PATCH_BRIGHTNESS) X(EDGE_COOL) X(RIM_GAIN) X(WARM_GAIN) \
 	X(HYPHA_BRIGHTNESS) X(GLOW_RADIUS_PX) X(GLOW_STRENGTH) \
+	X(WARP) X(STREAK) X(BANDS) X(RIDGE_WIDTH) X(FLOW_CYCLE) X(V_MAX) X(H_MAX) X(BUMP) X(SPEC_GAIN) X(SHININESS) \
 	X(GAMMA) X(CORE_GAIN) X(DETAIL) X(GLOW_RADIUS) X(PHYS_GLOW_STRENGTH) X(BRIGHTNESS) \
 	X(BASE_WEIGHT) X(WET_LO) X(WET_HI) X(CORE_MIX)
 
@@ -589,6 +627,7 @@ bool MycorrhizaRenderer::savePreset()
 		s.appendChild("STOP_POS" + ofToString(i)).set(STOP_POS[i]);
 		saveColor(s, "STOP_COLOR" + ofToString(i), STOP_COLOR[i]);
 	}
+	saveColor(s, "TROUGH_COLOR", TROUGH_COLOR);
 	saveColor(s, "HYPHA_PALE", HYPHA_PALE);
 	saveColor(s, "HYPHA_WARM", HYPHA_WARM);
 	for (int i = 0; i < 5; i++)
@@ -618,6 +657,7 @@ bool MycorrhizaRenderer::loadPreset()
 		if (s.getChild("STOP_POS" + ofToString(i))) STOP_POS[i] = s.getChild("STOP_POS" + ofToString(i)).getFloatValue();
 		loadColor(s, "STOP_COLOR" + ofToString(i), STOP_COLOR[i]);
 	}
+	loadColor(s, "TROUGH_COLOR", TROUGH_COLOR);
 	loadColor(s, "HYPHA_PALE", HYPHA_PALE);
 	loadColor(s, "HYPHA_WARM", HYPHA_WARM);
 	for (int i = 0; i < 5; i++)
@@ -688,7 +728,12 @@ void MycorrhizaRenderer::drawGui()
 	if (F::STYLE == F::STYLE_PATCHES_HYPHAE) {
 		if (ImGui::CollapsingHeader("Patches", ImGuiTreeNodeFlags_DefaultOpen)) {
 			ImGui::SliderFloat("Patch mark (mm)", &F::PATCH_CELL_MM, 1.0f, 10.0f);
-			ImGui::SliderFloat("Patch rise (s)", &F::PATCH_RISE_SEC, 0.05f, 2.0f);
+			ImGui::Text("Light-liquid: reshaped sand pours it in; it flows downhill and fills basins.");
+			ImGui::SliderFloat("Pour rate (mm/s)", &F::LIQUID_SOURCE_MM_S, 0.0f, 30.0f);
+			ImGui::SliderFloat("Viscosity factor", &F::LIQUID_VISCOSITY, 0.0f, 10.0f);
+			ImGui::Text("(flux ~ factor x depth^3 x slope: higher flows faster)");
+			ImGui::SliderFloat("Fully lit at depth (mm)", &F::LIQUID_PRESENCE_MM, 0.1f, 10.0f);
+			ImGui::SliderInt("Liquid substeps", &F::LIQUID_SUBSTEPS, 1, 8);
 			ImGui::SliderFloat("Maturity ease (s)", &F::MATURITY_EASE_SEC, 0.2f, 20.0f);
 			ImGui::SliderFloat("Maturity time weight", &F::MATURITY_TIME_WEIGHT, 0.0f, 1.0f);
 			ImGui::Text("(0: colour is purely the model's recovery of the ground)");
@@ -696,6 +741,15 @@ void MycorrhizaRenderer::drawGui()
 			ImGui::SliderFloat("Texture scale (mm)", &PATCH_SCALE_MM, 4.0f, 80.0f);
 			ImGui::SliderFloat("Flow speed", &PATCH_FLOW, 0.0f, 1.0f);
 			ImGui::SliderFloat("Contrast", &PATCH_CONTRAST, 0.5f, 4.0f);
+			ImGui::SliderFloat("Warp", &WARP, 0.0f, 6.0f);
+			ImGui::SliderFloat("Marbling bands", &BANDS, 1.0f, 20.0f);
+			ImGui::SliderFloat("Ridge width", &RIDGE_WIDTH, 0.05f, 1.0f);
+			ImGui::SliderFloat("Streak length", &STREAK, 0.0f, 1.5f);
+			ImGui::SliderFloat("Flow-map cycle (s)", &FLOW_CYCLE, 0.5f, 8.0f);
+			ImGui::SliderFloat("Gloss relief", &BUMP, 0.0f, 10.0f);
+			ImGui::SliderFloat("Highlight strength", &SPEC_GAIN, 0.0f, 2.0f);
+			ImGui::SliderFloat("Highlight tightness", &SHININESS, 2.0f, 128.0f);
+			ImGui::ColorEdit3("Trough colour", &TROUGH_COLOR.r);
 			ImGui::SliderFloat("Patch brightness", &PATCH_BRIGHTNESS, 0.2f, 3.0f);
 			ImGui::SliderFloat("Edge cooling", &EDGE_COOL, 0.0f, 1.0f);
 			ImGui::SliderFloat("Rim", &RIM_GAIN, 0.0f, 1.5f);
@@ -710,6 +764,7 @@ void MycorrhizaRenderer::drawGui()
 		}
 		if (ImGui::CollapsingHeader("Hyphae", ImGuiTreeNodeFlags_DefaultOpen)) {
 			ImGui::SliderFloat("Spawn (per mm edge per s)", &F::HYPHA_SPAWN_PER_SEC, 0.0f, 0.05f, "%.4f");
+			ImGui::SliderFloat("Spawn boost while touched", &F::HYPHA_TOUCH_BOOST, 0.0f, 20.0f);
 			ImGui::SliderInt("Max tips", &F::MAX_TIPS, 100, 10000);
 			ImGui::SliderInt("Max segments", &F::MAX_SEGMENTS, 5000, 200000);
 			ImGui::SliderFloat("Hypha speed (mm/s)", &F::HYPHA_SPEED_MM_S, 0.5f, 40.0f);

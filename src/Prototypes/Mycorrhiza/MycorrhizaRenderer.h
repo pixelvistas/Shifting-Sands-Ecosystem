@@ -9,8 +9,9 @@ KinectProjector::kinectCoordToProjCoord on a coarse lookup grid (read-only
 use of the calibration).
 
 Network style (MycorrhizaField::STYLE):
-- "Patches and hyphae" (default): the lit ground (patches.frag: swirling
-  domain-warped noise inside the presence mask, colour by maturity) and the
+- "Patches and hyphae" (default): the lit ground, a light-liquid that pools
+  in basins (patches.frag: marbled swirl moved along the liquid's velocity
+  with a flow map, lit as a glossy surface, colour by maturity) and the
   threads (hypha.vert/.frag: anti-aliased line quads, held in a GPU ring
   buffer that only receives newly grown segments; brightness fades in the
   shader), drawn into their own FBO with GL_MAX blending and added over the
@@ -79,6 +80,12 @@ public:
 	static float HYPHA_BRIGHTNESS;
 	static float GLOW_RADIUS_PX;
 	static float GLOW_STRENGTH;
+	// Liquid look: marbling, flow map along the liquid's velocity, gloss.
+	static float WARP, STREAK, BANDS, RIDGE_WIDTH;
+	static float FLOW_CYCLE;          // s, flow-map phase length
+	static float V_MAX, H_MAX;        // encoding ranges of the flow texture (mm/s, mm)
+	static float BUMP, SPEC_GAIN, SHININESS;
+	static ofFloatColor TROUGH_COLOR;
 
 	// "Physarum (previous)" display.
 	static float GAMMA;
@@ -122,8 +129,8 @@ private:
 	std::vector<unsigned char> waterMask;
 	bool hasFrame = false;
 	// Patches and hyphae.
-	ofTexture patchTex, warmTex;
-	ofPixels patchPix, warmPix;
+	ofTexture patchTex, warmTex, flowTex;
+	ofPixels patchPix, warmPix, flowPix;
 	ofVbo ringVbo;
 	std::vector<glm::vec3> ringPos, ringNorm;
 	std::vector<glm::vec2> ringTex;

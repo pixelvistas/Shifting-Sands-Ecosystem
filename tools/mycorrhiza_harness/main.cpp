@@ -81,9 +81,9 @@ static SM::RoleParams PRESET[3];
 
 // ------------------------------------------------------------ display (CPU copy of patches.frag / hypha.frag / glow.frag)
 // Defaults of MycorrhizaRenderer.
-static float PATCH_SCALE_MM = 16.0f;     // texture scale
+static float PATCH_SCALE_MM = 40.0f;     // texture scale
 static float PATCH_FLOW = 0.15f;         // flow speed
-static float PATCH_CONTRAST = 2.0f;
+static float PATCH_CONTRAST = 1.5f;
 static float PATCH_BRIGHTNESS = 1.1f;
 static float EDGE_COOL = 0.7f;
 static float RIM_GAIN = 0.35f;
@@ -98,7 +98,14 @@ static float HYPHA_WARM[3] = { 0xFF / 255.f, 0xE2 / 255.f, 0xB8 / 255.f };
 static float WARM_GAIN = 4.0f;           // warmth (blurred presence x maturity) -> 0..1
 static float HYPHA_BRIGHTNESS = 0.85f;
 static float GLOW_RADIUS_PX = 2.0f;
-static float GLOW_STRENGTH = 0.5f;
+static float GLOW_STRENGTH = 0.7f;
+static float TROUGH[3] = { 0x0A / 255.f, 0x2A / 255.f, 0x6E / 255.f }; // deep blue in the swirl's troughs
+static float BUMP = 3.0f;               // swirl height for the normals, in px of relief
+static float SPEC_GAIN = 0.55f;
+static float SHININESS = 28.0f;
+static float FLOW_CYCLE = 2.0f;         // s, flow-map phase length
+static float V_MAX = 30.0f;             // mm/s, velocity texture range
+static float H_MAX = 12.0f;             // mm, depth texture range
 static float TIME = 0.0f;
 
 static float fractf(float x) { return x - std::floor(x); }
@@ -125,20 +132,38 @@ static float fbm(float x, float y)
 	for (int o = 0; o < 4; o++) { v += amp * vnoise(x, y); x = x * 2.02f + 1.7f; y = y * 2.02f + 9.2f; amp *= 0.5f; }
 	return v;
 }
+// Two octaves, normalised to 0..1 (smooth: for the marbling ridges).
+static float fbm2(float x, float y)
+{
+	return (0.5f * vnoise(x, y) + 0.25f * vnoise(x * 2.02f + 1.7f, y * 2.02f + 9.2f)) / 0.75f;
+}
 // Swirl texture 0..1 at grid cell coordinate (cx, cy): curl-advected, two-level domain warp.
-static float swirl(float cx, float cy)
+static float WARP = 2.5f;          // domain-warp strength
+static float BANDS = 6.0f;         // marbling ridges per unit of the warped field
+static float RIDGE_WIDTH = 0.35f;  // ridge width (fraction of a band)
+static float STREAK = 0.45f;       // tap spacing along the curl direction (streaks)
+static float swirl(float cx, float cy, float k = 0.0f)
 {
 	const float t = TIME * PATCH_FLOW;
-	const float bx = cx * MM / PATCH_SCALE_MM, by = cy * MM / PATCH_SCALE_MM;
+	const float bx = cx * MM / PATCH_SCALE_MM + 17.3f * k, by = cy * MM / PATCH_SCALE_MM + 9.1f * k;
 	const float e = 0.1f, cpx = bx * 0.5f + 3.1f + 0.05f * t, cpy = by * 0.5f + 7.7f;
 	const float curlX = (vnoise(cpx, cpy + e) - vnoise(cpx, cpy - e)) / (2 * e);
 	const float curlY = -(vnoise(cpx + e, cpy) - vnoise(cpx - e, cpy)) / (2 * e);
 	const float px = bx + 0.5f * curlX, py = by + 0.5f * curlY;
 	const float qx = fbm(px + 0.10f * t, py), qy = fbm(px + 5.2f, py + 1.3f - 0.08f * t);
-	const float rx = fbm(px + 4 * qx + 1.7f + 0.12f * t, py + 4 * qy + 9.2f);
-	const float ry = fbm(px + 4 * qx + 8.3f, py + 4 * qy + 2.8f - 0.10f * t);
-	const float v = fbm(px + 4 * rx, py + 4 * ry);
-	return std::min(1.0f, std::max(0.0f, 0.5f + PATCH_CONTRAST * (v - 0.5f)));
+	const float rx = fbm(px + WARP * qx + 1.7f + 0.12f * t, py + WARP * qy + 9.2f);
+	const float ry = fbm(px + WARP * qx + 8.3f, py + WARP * qy + 2.8f - 0.10f * t);
+	float dl = std::sqrt(curlX * curlX + curlY * curlY);
+	const float dx = dl > 1e-4f ? curlX / dl : 1.0f, dy = dl > 1e-4f ? curlY / dl : 0.0f;
+	const float ux = px + WARP * rx, uy = py + WARP * ry;
+	// Body: the warped 4-octave field. Ridges: bright lines along the iso-contours of a smooth
+	// 2-octave field, averaged along the curl direction (streaks) - marbling.
+	const float v = fbm(ux, uy);
+	const float vr = (fbm2(ux - dx * STREAK, uy - dy * STREAK) + fbm2(ux, uy) + fbm2(ux + dx * STREAK, uy + dy * STREAK)) / 3.0f;
+	const float body = std::min(1.0f, std::max(0.0f, 0.5f + PATCH_CONTRAST * (v - 0.5f)));
+	const float tri = 1.0f - std::fabs(2.0f * fractf(vr * BANDS) - 1.0f);
+	const float ridge = smoothstepf(1.0f - RIDGE_WIDTH, 1.0f, tri);
+	return std::min(1.0f, 0.3f + 0.4f * body + 0.45f * ridge);
 }
 static void ramp4(float m, float out[3])
 {
@@ -159,11 +184,47 @@ static float bilin(const float * f, float x, float y)
 	return (at(x0, y0) * (1 - tx) + at(x0 + 1, y0) * tx) * (1 - ty) + (at(x0, y0 + 1) * (1 - tx) + at(x0 + 1, y0 + 1) * tx) * ty;
 }
 
-// Patch layer, additive on black (patches.frag).
+// Half-resolution liquid fields as uploaded (8 bit), sampled bilinearly at half-grid coordinate (lx, ly).
+static float bilinHalf(const std::vector<float> & f, int LW, int LH, float lx, float ly)
+{
+	lx -= 0.5f; ly -= 0.5f;
+	int x0 = (int)std::floor(lx), y0 = (int)std::floor(ly);
+	float tx = lx - x0, ty = ly - y0;
+	auto at = [&](int xi, int yi) { xi = std::max(0, std::min(LW - 1, xi)); yi = std::max(0, std::min(LH - 1, yi)); return f[(size_t)yi * LW + xi]; };
+	return (at(x0, y0) * (1 - tx) + at(x0 + 1, y0) * tx) * (1 - ty) + (at(x0, y0 + 1) * (1 - tx) + at(x0 + 1, y0 + 1) * tx) * ty;
+}
+// Patch layer over black (patches.frag): swirl advected along the liquid's
+// velocity (flow map: two phases, cross-faded), lit with normals from the
+// pixel derivatives of the swirl height (dFdx/dFdy), diffuse + specular;
+// colour by maturity, warmer where the liquid is deep, cooler at edges,
+// thin rim; brightness proportional to presence.
 static void drawPatches(const MF & f, std::vector<float> & rgb)
 {
 	const float * P = f.presence();
 	const float * M = f.maturity();
+	const int LW = f.getLiquidCols(), LH = f.getLiquidRows();
+	std::vector<float> vxq((size_t)LW * LH), vyq(vxq.size()), dq(vxq.size());
+	for (size_t l = 0; l < vxq.size(); l++) { // as the renderer encodes them
+		vxq[l] = (q8(0.5f + f.liquidVelX()[l] / (2 * V_MAX)) - 0.5f) * 2 * V_MAX;
+		vyq[l] = (q8(0.5f + f.liquidVelY()[l] / (2 * V_MAX)) - 0.5f) * 2 * V_MAX;
+		dq[l] = q8(f.liquidDepth()[l] / H_MAX) * H_MAX;
+	}
+	const float ph0 = fractf(TIME / FLOW_CYCLE), ph1 = fractf(TIME / FLOW_CYCLE + 0.5f), blend = std::fabs(1.0f - 2.0f * ph0);
+	std::vector<float> texBuf((size_t)FW * FH, -1.0f), pBuf((size_t)FW * FH, 0.0f);
+	auto texAt = [&](int x, int y) -> float {
+		float & t = texBuf[(size_t)y * FW + x];
+		if (t >= 0.0f) return t;
+		const float cx = (x + 0.5f) / PX, cy = (y + 0.5f) / PX;
+		const float vx = bilinHalf(vxq, LW, LH, cx * 0.5f, cy * 0.5f) / MM, vy = bilinHalf(vyq, LW, LH, cx * 0.5f, cy * 0.5f) / MM;
+		const float s0 = swirl(cx - vx * ph0 * FLOW_CYCLE, cy - vy * ph0 * FLOW_CYCLE, 0.0f);
+		const float s1 = swirl(cx - vx * ph1 * FLOW_CYCLE, cy - vy * ph1 * FLOW_CYCLE, 1.0f);
+		t = s0 + (s1 - s0) * blend;
+		return t;
+	};
+	const float Lx = -0.4f, Ly = -0.5f, Lz = 0.77f; // light, normalised below
+	const float ll = std::sqrt(Lx * Lx + Ly * Ly + Lz * Lz);
+	const float lx = Lx / ll, ly = Ly / ll, lz = Lz / ll;
+	float hx = lx, hy = ly, hz = lz + 1.0f; { float hl = std::sqrt(hx * hx + hy * hy + hz * hz); hx /= hl; hy /= hl; hz /= hl; }
 	for (int y = 0; y < FH; y++)
 		for (int x = 0; x < FW; x++) {
 			const float cx = (x + 0.5f) / PX, cy = (y + 0.5f) / PX;
@@ -172,14 +233,24 @@ static void drawPatches(const MF & f, std::vector<float> & rgb)
 			const float m = bilin(M, cx, cy);
 			const float gx = bilin(P, cx + 1, cy) - bilin(P, cx - 1, cy), gy = bilin(P, cx, cy + 1) - bilin(P, cx, cy - 1);
 			const float edge = smoothstepf(0.02f, 0.15f, 0.5f * std::sqrt(gx * gx + gy * gy));
-			const float tex = swirl(cx, cy);
-			const float mEff = std::min(1.0f, std::max(0.0f, m * (1.0f - EDGE_COOL * edge) * (0.25f + 1.0f * tex)));
+			const float tex = texAt(x, y);
+			// normals from the screen-space derivatives of the height (as dFdx / dFdy)
+			const float H0 = tex * BUMP;
+			const float ddx = (x + 1 < FW ? texAt(x + 1, y) : tex) * BUMP - H0, ddy = (y + 1 < FH ? texAt(x, y + 1) : tex) * BUMP - H0;
+			float nx = -ddx, ny = -ddy, nz = 1.0f; { float nl = std::sqrt(nx * nx + ny * ny + nz * nz); nx /= nl; ny /= nl; nz /= nl; }
+			const float diff = 0.6f + 0.4f * std::max(0.0f, nx * lx + ny * ly + nz * lz);
+			const float spec = SPEC_GAIN * std::pow(std::max(0.0f, nx * hx + ny * hy + nz * hz), SHININESS);
+			const float depth = bilinHalf(dq, LW, LH, cx * 0.5f, cy * 0.5f);
+			const float deep = 0.75f + 0.45f * smoothstepf(0.0f, 0.5f * H_MAX, depth);
+			const float mEff = std::min(1.0f, std::max(0.0f, m * (1.0f - EDGE_COOL * edge) * (0.35f + 0.9f * tex) * deep));
 			float c[3]; ramp4(mEff, c);
-			const float bright = 0.45f + 0.75f * tex;
+			const float tr = smoothstepf(0.15f, 0.6f, tex);
+			for (int k = 0; k < 3; k++) c[k] = TROUGH[k] + (c[k] - TROUGH[k]) * tr;
+			const float bright = 0.35f + 0.85f * tex;
 			const float rim = RIM_GAIN * std::exp(-((p - 0.5f) / 0.12f) * ((p - 0.5f) / 0.12f));
 			const float a = std::min(1.0f, p * 1.2f) * PATCH_BRIGHTNESS;
 			float * o = &rgb[((size_t)y * FW + x) * 3];
-			for (int k = 0; k < 3; k++) o[k] += (c[k] * bright + rim * STOP_COL[1][k]) * a;
+			for (int k = 0; k < 3; k++) o[k] += (c[k] * bright * diff + (spec + rim) * STOP_COL[1][k]) * a;
 		}
 }
 // Hyphae: each segment (and each growing tip's partial segment) as a quad
@@ -480,6 +551,9 @@ static void story(bool quick)
 	bool blackBefore = true;
 	long long tipsBefore = 0;
 	std::vector<float> dugBefore = w.dug;
+	std::vector<int> flooded;
+	const float floodProbe[4] = { 0.0f, 10.0f, 30.0f, 60.0f };
+	float floodLit[4] = { -1, -1, -1, -1 };
 	Region reg[4];
 	const float marks[4] = { WARM + 2.5f, WARM + 7.5f, WARM + 62.0f, WARM + 65.0f };
 	const float probes[5] = { 5, 10, 20, 40, 60 };
@@ -512,7 +586,15 @@ static void story(bool quick)
 				for (int r = 0; r < 3; r++) m.coverMutable(r)[i] = 0.0f;
 			}
 		}
+		if (s == (int)std::lround((WARM + 5.5f) / DT)) { // test set-up: the water table fills A's deepest part (dug > 10 mm)
+			for (int i = 0; i < GW * GH; i++) if (w.dug[i] > 10.0f && std::fabs(i / GW - yA) < 40) { w.water[i] = 1; flooded.push_back(i); }
+		}
 		f.step(World::mfInputs(w, &m));
+		for (int p = 0; p < 4; p++)
+			if (!flooded.empty() && s == (int)std::lround((WARM + 5.5f + floodProbe[p]) / DT)) {
+				int lit = 0; for (int i : flooded) lit += f.presence()[i] > 0.5f;
+				floodLit[p] = (float)lit / flooded.size();
+			}
 		if (t < WARM) tipsBefore = f.hyphaTipsSpawned();
 		if (t >= WARM) for (int p = 0; p < 4; p++) stepMs[p].push_back(p < 3 ? f.getPhaseMs(p + 1) : f.getLastStepMs());
 		for (int k = 0; k < 4; k++)
@@ -580,6 +662,8 @@ static void story(bool quick)
 			nm[k], reg[k].cells.size(), Mo, So, mat[k][0], mat[k][1], mat[k][2], mat[k][3], mat[k][4],
 			half[k] < 0 ? "(not within the run)" : (std::to_string((int)std::lround(half[k])) + " s").c_str());
 	}
+	printf("story: A's deepest part turned to water at +5.5 s (%zu cells): lit (presence > 0.5) at +0/+10/+30/+60 s: %.0f%% %.0f%% %.0f%% %.0f%%\n",
+		flooded.size(), 100 * floodLit[0], 100 * floodLit[1], 100 * floodLit[2], 100 * floodLit[3]);
 	printf("story: hyphae: tips spawned %lld, fusions %lld, connections to another patch %lld, segments now %zu\n",
 		f.hyphaTipsSpawned(), f.hyphaFusions(), f.hyphaPatchConnections(), f.segments().size());
 	double onWater = 0;
@@ -603,7 +687,7 @@ static bool setParam(const std::string & kv)
 	if (e == std::string::npos) return false;
 	std::string k = kv.substr(0, e); float v = (float)atof(kv.c_str() + e + 1);
 	struct F { const char * n; float * p; } fs[] = {
-		{"PATCH_CELL_MM",&MF::PATCH_CELL_MM},{"PATCH_RISE_SEC",&MF::PATCH_RISE_SEC},{"MATURITY_EASE_SEC",&MF::MATURITY_EASE_SEC},
+		{"PATCH_CELL_MM",&MF::PATCH_CELL_MM},{"LIQUID_SOURCE_MM_S",&MF::LIQUID_SOURCE_MM_S},{"LIQUID_VISCOSITY",&MF::LIQUID_VISCOSITY},{"LIQUID_PRESENCE_MM",&MF::LIQUID_PRESENCE_MM},{"HYPHA_TOUCH_BOOST",&MF::HYPHA_TOUCH_BOOST},{"BUMP",&BUMP},{"WARP",&WARP},{"BANDS",&BANDS},{"RIDGE_WIDTH",&RIDGE_WIDTH},{"STREAK",&STREAK},{"SPEC_GAIN",&SPEC_GAIN},{"SHININESS",&SHININESS},{"FLOW_CYCLE",&FLOW_CYCLE},{"V_MAX",&V_MAX},{"H_MAX",&H_MAX},{"MATURITY_EASE_SEC",&MF::MATURITY_EASE_SEC},
 		{"MATURITY_TIME_WEIGHT",&MF::MATURITY_TIME_WEIGHT},{"HYPHA_SPAWN_PER_SEC",&MF::HYPHA_SPAWN_PER_SEC},
 		{"HYPHA_SPEED_MM_S",&MF::HYPHA_SPEED_MM_S},{"TURN_NOISE_DEG",&MF::TURN_NOISE_DEG},{"ATTRACT_WEIGHT",&MF::ATTRACT_WEIGHT},
 		{"ATTRACT_PLANT",&MF::ATTRACT_PLANT},{"BRANCH_PER_MM",&MF::BRANCH_PER_MM},{"TIP_LIFE_SEC",&MF::TIP_LIFE_SEC},
