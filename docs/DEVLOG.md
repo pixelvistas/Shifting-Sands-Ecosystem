@@ -4470,4 +4470,13 @@ Physarum network between patches over unlit sand. Proposed to the user (not
 yet decided): patches as food sources, agents leaving from patch edges,
 short-sensor network, colour by age. This commit keeps the intermediate pass;
 its full harness recheck (noise, identity, timing) was still running when
-committed. Not compiled with openFrameworks, not hardware-tested.
+committed. Recheck results with these defaults (completed afterwards):
+- Noise: 0 agents in 10 min of +-2 mm noise (largest block change 0.84 mm).
+- Succession model bit-identical over 2,000 steps (hash 9572c1b1484e9b36).
+- One step at 100,000 agents: THREADS 1 mean 5.28 ms (p95 6.90); THREADS 4
+  mean 2.71 ms, median 2.59, p95 3.62, worst 6.88 (site map adds ~0.4 ms
+  single-threaded to trace + maps).
+- Story: stroke 1 lit cells 5,470 / 11,336 / 26,645 at end / +10 s / +30 s;
+  peak 96,651 agents, step mean 2.04 ms; contour alignment 0.899; no trace
+  on water; brightness +2 min 47 %, +5 min 12 %, +10 min 1 %.
+Not compiled with openFrameworks, not hardware-tested.
