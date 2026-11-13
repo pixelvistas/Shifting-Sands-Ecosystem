@@ -12,7 +12,9 @@ resolution.
 
 In "Mycorrhiza" display mode ofApp draws only this module's FBO (opaque:
 black plus the network). "Overlay on sandbox" (debug, default off) adds
-the network over the normal Sandbox view instead.
+the network over the normal Sandbox view instead. Strand brightness comes
+from the trace; hue from the ground under the strand (moisture, plant
+cover or soil, height; MycorrhizaField::site()).
 
 Nothing else in the app depends on this module: removing it means
 deleting src/Prototypes/Mycorrhiza, bin/data/shaders/mycorrhiza, the two
@@ -58,11 +60,18 @@ public:
 	static bool OVERLAY_ON_SANDBOX;   // debug only, default off
 	static float GAMMA;
 	static float CORE_GAIN;
+	static float DETAIL;              // local contrast (0 off): thinner strands, darker gaps
 	static float GLOW_RADIUS;         // texels (grid cells)
 	static float GLOW_STRENGTH;
 	static float BRIGHTNESS;          // "Mycorrhiza brightness"
-	static float RAMP_POS[5];
-	static ofFloatColor RAMP_COLOR[5];
+	// Hue from the site under a strand: COLOR[0] base, [1] wet (moisture
+	// between WET_LO and WET_HI), [2] living (cover or soil), [3] high and
+	// dry (MycorrhizaField::HEIGHT_*_MM), [4] pale highlight at the
+	// strongest strands (CORE_MIX).
+	static ofFloatColor COLOR[5];
+	static float BASE_WEIGHT;
+	static float WET_LO, WET_HI;
+	static float CORE_MIX;
 
 private:
 	void gatherInputs(MycorrhizaField::Inputs & in);
@@ -78,7 +87,7 @@ private:
 	ofFbo fbo;
 	ofShader shader;
 	bool shaderLoaded = false;
-	ofTexture traceTex;
+	ofTexture traceTex, siteTex;
 	ofPixels tracePix;
 	ofVboMesh mesh;
 	int meshCols = 0, meshRows = 0;

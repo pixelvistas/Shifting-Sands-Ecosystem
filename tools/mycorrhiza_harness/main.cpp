@@ -77,30 +77,32 @@ static bool readPreset(const std::string & path, SM::RoleParams out[3])
 static SM::RoleParams PRESET[3];
 
 // ------------------------------------------------------------ display (copy of mycorrhiza.frag)
-// Defaults of MycorrhizaRenderer.
-static float RAMP_POS[5] = { 0.0f, 0.35f, 0.65f, 0.9f, 1.0f };
-static const float RAMP[5][3] = {
-	{ 0.10f, 0.04f, 0.32f },  // deep indigo
-	{ 0.42f, 0.14f, 0.78f },  // violet
-	{ 0.88f, 0.22f, 0.78f },  // magenta
-	{ 0.30f, 0.86f, 1.00f },  // cyan
-	{ 1.00f, 0.80f, 0.50f } };// warm highlight
-static float GLOW_RADIUS = 2.0f;   // texels
-static float GLOW_STRENGTH = 0.25f;
-static const float BRIGHTNESS = 1.0f;
-static float CORE_GAIN = 1.5f;
-static float GAMMA = 0.9f;       // display gamma on the normalised trace
+// Defaults of MycorrhizaRenderer. Brightness from the trace; hue from the
+// site (field's site map): wet = cyan, living = magenta, high and dry =
+// warm orange, over a violet base; the brightest cores lean to pale.
+static float COL[5][3] = {
+	{ 0.38f, 0.16f, 0.80f },  // base violet
+	{ 0.20f, 0.85f, 1.00f },  // wet: cyan
+	{ 0.95f, 0.25f, 0.80f },  // living: magenta
+	{ 1.00f, 0.55f, 0.15f },  // high, dry: warm orange
+	{ 1.00f, 0.95f, 0.90f } };// core highlight
+static float BASE_WEIGHT = 0.35f;
+static float WET_LO = 0.1f, WET_HI = 0.4f;
+static float CORE_MIX = 0.5f;      // pale highlight at the strongest strands, x i^4
+static float GLOW_RADIUS = 1.5f;   // texels
+static float GLOW_STRENGTH = 0.15f;
+static float BRIGHTNESS = 1.0f;
+static float CORE_GAIN = 2.0f;
+static float GAMMA = 1.1f;         // display gamma on the normalised trace
+static float DETAIL = 0.7f;        // local contrast: subtract DETAIL x ring average, rescale
 
-static void ramp(float t, float out[3])
+static float smoothstep(float a, float b, float x) { float t = std::min(1.0f, std::max(0.0f, (x - a) / (b - a))); return t * t * (3 - 2 * t); }
+static void siteHue(const unsigned char * site, float out[3])
 {
-	t = std::min(1.0f, std::max(0.0f, t));
-	for (int s = 0; s < 4; s++)
-		if (t <= RAMP_POS[s + 1] || s == 3) {
-			float u = (t - RAMP_POS[s]) / std::max(1e-4f, RAMP_POS[s + 1] - RAMP_POS[s]);
-			u = std::min(1.0f, std::max(0.0f, u));
-			for (int k = 0; k < 3; k++) out[k] = RAMP[s][k] + (RAMP[s + 1][k] - RAMP[s][k]) * u;
-			return;
-		}
+	const float M = site[0] / 255.0f, life = site[1] / 255.0f, h = site[2] / 255.0f;
+	const float wWet = smoothstep(WET_LO, WET_HI, M), wLife = life, wHigh = h * (1.0f - M);
+	const float sum = BASE_WEIGHT + wWet + wLife + wHigh;
+	for (int k = 0; k < 3; k++) out[k] = (COL[0][k] * BASE_WEIGHT + COL[1][k] * wWet + COL[2][k] * wLife + COL[3][k] * wHigh) / sum;
 }
 
 // 8-bit texture, as MycorrhizaRenderer uploads it: round(sqrt(clamp(trace / level)) x 255).
@@ -137,9 +139,11 @@ static std::vector<unsigned char> renderFrame(const MF & f)
 				g += 0.5f * sampleDecoded(tex, cx + DIRS[d][0] * 2.0f * GLOW_RADIUS, cy + DIRS[d][1] * 2.0f * GLOW_RADIUS);
 			}
 			g /= 12.0f;
-			float rc[3], rg[3]; ramp(core, rc); ramp(g, rg);
+			if (DETAIL > 0.0f) core = std::max(0.0f, core - DETAIL * g) / (1.0f - std::min(0.95f, DETAIL));
+			float hue[3]; siteHue(f.site() + 4 * ((size_t)y * GW + x), hue);
+			const float c = std::min(1.0f, core * CORE_GAIN), hi = CORE_MIX * core * core * core * core;
 			for (int k = 0; k < 3; k++) {
-				float v = (rc[k] * std::min(1.0f, core * CORE_GAIN) + GLOW_STRENGTH * rg[k] * g) * BRIGHTNESS;
+				float v = ((hue[k] + (COL[4][k] - hue[k]) * hi) * c + GLOW_STRENGTH * hue[k] * g) * BRIGHTNESS;
 				img[((size_t)y * GW + x) * 3 + k] = (unsigned char)std::lround(std::min(1.0f, v) * 255.0f);
 			}
 		}
@@ -464,7 +468,7 @@ static bool setParam(const std::string & kv)
 		{"TRAIL_DECAY",&MF::TRAIL_DECAY},{"TRACE_MEMORY_MIN",&MF::TRACE_MEMORY_MIN},{"AGENT_LIFE_SEC",&MF::AGENT_LIFE_SEC},
 		{"LEVEL_PERCENTILE",&MF::LEVEL_PERCENTILE},{"LEVEL_FLOOR",&MF::LEVEL_FLOOR},
 		{"CORE_GAIN",&CORE_GAIN},{"GAMMA",&GAMMA},{"GLOW_STRENGTH",&GLOW_STRENGTH},{"GLOW_RADIUS",&GLOW_RADIUS},
-		{"RAMP1",&RAMP_POS[1]},{"RAMP2",&RAMP_POS[2]},{"RAMP3",&RAMP_POS[3]} };
+		{"DETAIL",&DETAIL},{"BASE_WEIGHT",&BASE_WEIGHT},{"CORE_MIX",&CORE_MIX},{"BRIGHTNESS",&BRIGHTNESS},{"WET_LO",&WET_LO},{"WET_HI",&WET_HI},{"HEIGHT_HIGH_MM",&MF::HEIGHT_HIGH_MM},{"CURL_PERIOD_SEC",&MF::CURL_PERIOD_SEC} };
 	for (F & f : fs) if (k == f.n) { *f.p = v; printf("set %s = %g\n", f.n, v); return true; }
 	if (k == "MAX_AGENTS") { MF::MAX_AGENTS = (int)v; return true; }
 	if (k == "THREADS") { MF::THREADS = (int)v; return true; }

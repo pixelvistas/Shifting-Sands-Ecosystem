@@ -20,7 +20,7 @@ float MycorrhizaField::TOUCH_RISE_PER_SEC = 4.0f;
 float MycorrhizaField::TOUCH_MEMORY_SEC = 10.0f;
 float MycorrhizaField::OCCLUSION_DROP = 0.3f;
 float MycorrhizaField::SETTLE_SEC = 2.0f;
-float MycorrhizaField::SPAWN_PER_TOUCH = 8.0f;
+float MycorrhizaField::SPAWN_PER_TOUCH = 30.0f;
 float MycorrhizaField::SENSOR_ANGLE_DEG = 45.0f;
 float MycorrhizaField::SENSOR_DIST_MM = 18.0f;
 float MycorrhizaField::ROTATE_DEG = 20.0f;
@@ -32,19 +32,21 @@ float MycorrhizaField::CURL_SHARE = 0.8f;
 float MycorrhizaField::CURL_SCALE_MM = 120.0f;
 float MycorrhizaField::CURL_PERIOD_SEC = 40.0f;
 float MycorrhizaField::AGENT_DEPOSIT = 2.0f;
-float MycorrhizaField::TRACE_DEPOSIT = 0.2f;
+float MycorrhizaField::TRACE_DEPOSIT = 0.08f;
 float MycorrhizaField::TRACE_SENSE = 0.1f;
 float MycorrhizaField::TRACE_SATURATION = 120.0f;
 float MycorrhizaField::FOOD_DEPOSIT = 0.3f;
 float MycorrhizaField::TOUCH_DEPOSIT = 0.02f;
 float MycorrhizaField::TRAIL_DECAY = 0.8f;
 float MycorrhizaField::TRACE_MEMORY_MIN = 5.0f;
-float MycorrhizaField::AGENT_LIFE_SEC = 20.0f;
+float MycorrhizaField::AGENT_LIFE_SEC = 30.0f;
 float MycorrhizaField::LEVEL_PERCENTILE = 0.98f;
 float MycorrhizaField::LEVEL_FALL_SEC = 1200.0f;
 float MycorrhizaField::LEVEL_FLOOR = 8.0f;
 
 int MycorrhizaField::THREADS = 4;
+float MycorrhizaField::HEIGHT_LOW_MM = 0.0f;
+float MycorrhizaField::HEIGHT_HIGH_MM = 60.0f;
 
 static const float NOMINAL_STEPS_PER_SEC = 40.0f;
 static const float REPEL = -1.0e6f;          // sensed value of water and the grid edge
@@ -141,7 +143,7 @@ void MycorrhizaField::resize(int c, int r)
 	fastMean.assign(nb, 0.0f); slowMean.assign(nb, 0.0f);
 	fastValid.assign(nb, 0.0f); slowValid.assign(nb, 0.0f); touch.assign(nb, 0.0f);
 	combField.assign(nb * 4, 0.0f);
-	senseMap.assign(n, 0.0f); mobilityMap.assign(n, 0.0f);
+	senseMap.assign(n, 0.0f); mobilityMap.assign(n, 0.0f); siteMap.assign(n * 4, 0);
 	clear();
 }
 
@@ -461,12 +463,26 @@ void MycorrhizaField::updateTrace(const Inputs & in, float dt)
 	const float minMob = std::min(1.0f, std::max(0.0f, MIN_MOBILITY));
 	const bool ground = in.soil || in.moisture;
 	const size_t n = traceMap.size();
+	const float hLo = HEIGHT_LOW_MM, hInv = 1.0f / std::max(1.0f, HEIGHT_HIGH_MM - HEIGHT_LOW_MM);
+	unsigned char * site = siteMap.data();
+	auto byte = [](float v) { return (unsigned char)(std::min(1.0f, std::max(0.0f, v)) * 255.0f + 0.5f); };
 	float * t = traceMap.data();
 	const float * trail = trailMap.data();
 	float * sm = senseMap.data();
 	float * mob = mobilityMap.data();
 	parallel(n, [&](size_t i0, size_t i1, int) {
 	for (size_t i = i0; i < i1; i++) {
+		// Site for colour: R moisture, G life (max(total cover, soil)), B height.
+		{
+			float c = 0.0f;
+			for (int r = 0; r < 3; r++) if (in.cover[r]) c += in.cover[r][i];
+			const float life = std::max(std::min(1.0f, c), in.soil ? in.soil[i] : 0.0f);
+			const float e = in.elevationMM[i];
+			site[4 * i + 0] = byte(in.moisture ? in.moisture[i] : 0.0f);
+			site[4 * i + 1] = byte(life);
+			if (std::isfinite(e)) site[4 * i + 2] = byte((e - hLo) * hInv);
+			site[4 * i + 3] = 255;
+		}
 		if (in.water && in.water[i]) {
 			t[i] *= fw;
 			sm[i] = REPEL;

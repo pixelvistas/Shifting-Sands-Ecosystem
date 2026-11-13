@@ -90,6 +90,9 @@ public:
 	int getRows() const { return rows; }
 	const float * trace() const { return traceMap.data(); }
 	const float * trail() const { return trailMap.data(); }
+	// Per cell, RGBA8, for colour: R moisture M, G life = max(total cover, S),
+	// B height (HEIGHT_LOW_MM .. HEIGHT_HIGH_MM -> 0..1), A 255.
+	const unsigned char * site() const { return siteMap.data(); }
 	const float * touchBlocks() const { return touch.data(); }
 	int getBlockCols() const { return bw; }
 	int getBlockRows() const { return bh; }
@@ -141,6 +144,8 @@ public:
 	static float LEVEL_PERCENTILE;
 	static float LEVEL_FALL_SEC;
 	static float LEVEL_FLOOR;
+	static float HEIGHT_LOW_MM;        // site height 0 (colour only)
+	static float HEIGHT_HIGH_MM;       // site height 1 (colour only)
 	static int THREADS;                // worker parts for the per-cell and agent loops (1 = single thread)
 
 private:
@@ -169,6 +174,7 @@ private:
 	std::vector<float> combField;
 	// Per cell, built at the end of each step for the next one's agents.
 	std::vector<float> senseMap, mobilityMap;
+	std::vector<unsigned char> siteMap;
 	// Agents (structure of arrays).
 	std::vector<float> ax, ay, hx, hy, age;
 	std::vector<float> sx, sy, shx, shy, sage; // sort scratch

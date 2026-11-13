@@ -4443,3 +4443,31 @@ mycelium; it is not a simulation of fungi, and the thesis says so.
 6. Note fps in each mode (Display mode window), and the touch threshold,
    agent cap, trace memory and colour values that look best; then "Save
    preset" and record the values here.
+
+## 2026-11-13 - Prototype 2: density, crisper strands, colour from the site (intermediate)
+
+After the user judged the harness images unlike the two reference stills:
+- Density: SPAWN_PER_TOUCH 8 -> 30, AGENT_LIFE_SEC 20 -> 30, TRACE_DEPOSIT
+  0.2 -> 0.08 (peak ~97,000 agents in the quick story, step ~3.2 ms mean
+  with 4 threads, this container).
+- Crisper strands: new "Detail" (local contrast, 0.7: the value minus 0.7 x
+  the glow ring's average, rescaled); gamma 1.1, core gain 2, glow radius
+  1.5, glow strength 0.15.
+- Colour (the brief's one colour round): hue from the ground under a strand,
+  via `MycorrhizaField::site()` (R moisture, G max(cover, soil), B height
+  HEIGHT_LOW_MM..HEIGHT_HIGH_MM = 0..60 mm): violet base, cyan wet (M 0.1..0.4),
+  magenta living, warm orange high and dry, pale at the strongest strands.
+  No green. Uploaded as a second rectangle texture (`siteTex`).
+- Rejected on the quick story: short sensors (6-9 mm, wide turns) give a
+  looped network but agents stay at the stroke (lit area +3 % from +10 s to
+  +30 s, fails "keeps growing").
+
+Superseded in direction the same day: the user added a reference video
+(`main:mycorrhiza_reference/Screen_Recording_20261112_195226_Instagram.mp4`).
+It shows two layers: a marbled fill inside the dug footprint (cyan when
+fresh, amber after ~5-10 s) and thin white-cyan veins forming a looped
+Physarum network between patches over unlit sand. Proposed to the user (not
+yet decided): patches as food sources, agents leaving from patch edges,
+short-sensor network, colour by age. This commit keeps the intermediate pass;
+its full harness recheck (noise, identity, timing) was still running when
+committed. Not compiled with openFrameworks, not hardware-tested.
