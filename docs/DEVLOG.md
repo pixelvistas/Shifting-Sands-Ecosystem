@@ -4297,3 +4297,149 @@ now also renders band fill on: colour map + soil tint + grain at brightness
   seeds only" off: mean 0.18 ms, p99 1.51 ms, one frame 2.93 ms (a window
   close with three full pools in that worst case).
 Not compiled with openFrameworks, not hardware-tested.
+
+## 2026-11-12 - Prototype 2 "Mycorrhiza": touch-grown network display (branch `prototype/2-mycorrhiza`, from `ss/plant-grain`)
+
+A separate display module: a Physarum-style agent network (Jones 2010)
+that starts from nothing, grows out of the places where participants
+touch the sand, spreads through the succession model's moisture, soil and
+plants, stops at water and stays behind as a slowly fading trace. Drawn as
+a glowing fibrous network on black; in this mode nothing else is drawn.
+Succession model, hydrology, water and seed particles, grain dither, lines,
+colour map and `heightMapShader.*` are unchanged.
+
+**Structure.** `src/Prototypes/Mycorrhiza/`: `MycorrhizaField` (plain C++,
+no openFrameworks) and `MycorrhizaRenderer` (owns the field, reads
+`VegetationField::getElevationGrid`/`isWaterCell`/`getMmPerCell`/
+`getGridOrigin`/`getGridStep` and `getSuccession()` cover/S/M, all
+read-only; maps the trace onto the sand through
+`KinectProjector::kinectCoordToProjCoord` on a 4-cell lookup mesh into its
+own FBO). Own shaders `bin/data/shaders/mycorrhiza/GL2|GL3/mycorrhiza.*`
+(no code from `heightMapShader`). Both files added to `.vcxproj` and
+`.vcxproj.filters`. `ofApp`: a "Display mode" window (Sandbox, default /
+Mycorrhiza); in Mycorrhiza mode only `MycorrhizaRenderer` is drawn
+(projector and main window), everything else still updates. The module is
+stepped only while shown (mode, or the debug "Overlay on sandbox", default
+off) and is cleared whenever it is (re)entered and at start-up. Sandbox
+mode makes exactly the same draw calls in the same order as before.
+Removal: delete the two folders, the project entries and the guarded
+blocks in `ofApp`.
+
+**Decisions that differ from the brief (all live in the Mycorrhiza panel):**
+- Touch is not the literal per-frame elevation change. At 40 fps a hand
+  moving sand at 50 mm/s changes a cell by ~1.25 mm per frame, below a 4 mm
+  threshold. Instead: elevation averaged over 4 x 4 cell blocks, a fast
+  (0.15 s) and a slow (1.5 s) running mean per block, touch where they
+  differ by more than `TOUCH_MM` (4 mm). Blocks that newly lose valid depth
+  samples (a hand rejected by the Kinect pipeline) also count; persistent
+  gaps do not. For `SETTLE_SEC` (2 s) after a (re)start, or after the Kinect
+  image was not stabilised, changes are adopted, never touch.
+- Two maps instead of one trail map: a short-lived attractant trail
+  (Jones: deposit, 3 x 3 diffusion, decay per step) that agents sense, and
+  the drawn trace (no diffusion, decays to 10 % over "Trace memory (min)",
+  cleared within ~0.5 s on water). Diffusing one map for minutes blurs the
+  network into haze. Trace deposit saturates at `TRACE_SATURATION`, and
+  agents also sense `TRACE_SENSE` x trace, so new growth joins the old
+  network.
+- Display normalisation: the 98th percentile of the drawn trace (sampled
+  every 13th cell), rising in 2 s, falling over 20 min, floor 8. Uploaded as
+  8 bit sqrt(trace / level), decoded (e^2)^gamma in the shader.
+- Starting values from the brief (sensor angle 30, rotate 25, comb weight
+  0.15) collapsed into one or two thick ropes on the harness. Defaults
+  chosen on the harness: sensor angle 45, rotate 20, comb weight 0.6,
+  curl share 0.8.
+- Rates are per step at a nominal 40 steps/s and scaled by dt x 40.
+- Threads: one step at 100,000 agents took 4.6 ms single-threaded (agent
+  loop bound by cache misses). Fixes: one combined sense map and one
+  mobility map per frame, a counting sort of agents by 4-row band every 8th
+  step, and a small persistent worker pool (`THREADS`, default 4) for the
+  agent, trail and trace loops. Neighbouring parts can collide on a cell's
+  deposit at a part boundary (rare, as agents are sorted); a lost increment
+  changes one cell's brightness only. The module never writes model state.
+
+**Defaults ("Prototype 2: Mycorrhiza", `bin/data/settings/mycorrhizaPreset.xml`,
+loaded at start-up when present; "Save preset" overwrites it):**
+
+| Group | Setting | Value |
+|---|---|---|
+| Touch | TOUCH_MM / fast / slow mean | 4 mm / 0.15 s / 1.5 s |
+| | TOUCH_RISE_PER_SEC / TOUCH_MEMORY_SEC | 4 / 10 s |
+| | OCCLUSION_DROP / SETTLE_SEC / TOUCH_BLOCK | 0.3 / 2 s / 4 cells |
+| Agents | MAX_AGENTS / SPAWN_PER_TOUCH | 100,000 / 8 per s per block at touch 1 |
+| | SENSOR_ANGLE_DEG / SENSOR_DIST_MM / ROTATE_DEG | 45 / 18 / 20 |
+| | STEP_MM / MIN_MOBILITY / AGENT_LIFE_SEC | 1.0 / 0.2 / 20 s |
+| | COMB_WEIGHT / COMB_SLOPE_SAT | 0.6 / 0.15 mm/mm |
+| | CURL_SHARE / CURL_SCALE_MM / CURL_PERIOD_SEC | 0.8 / 120 / 40 s |
+| Trail | AGENT_DEPOSIT / TRAIL_DECAY | 2 / 0.8 kept per step |
+| | FOOD_DEPOSIT (x total cover) / TOUCH_DEPOSIT (x touch) | 0.3 / 0.02 |
+| Trace | TRACE_DEPOSIT / TRACE_SATURATION / TRACE_SENSE | 0.2 / 120 / 0.1 |
+| | TRACE_MEMORY_MIN | 5 (to ~10 %) |
+| Display | LEVEL_PERCENTILE / LEVEL_FALL_SEC / LEVEL_FLOOR | 0.98 / 1200 s / 8 |
+| | gamma / core gain / glow radius / glow strength / brightness | 0.9 / 1.5 / 2 cells / 0.25 / 1.0 |
+| | ramp (position: colour) | 0: #1A0A52 indigo, 0.35: #6B24C7 violet, 0.65: #E038C7 magenta, 0.9: #4DDBFF cyan, 1.0: #FFCC80 warm |
+
+No saturated green in the ramp, so no red-green adjacency.
+
+**Headless checks** (`tools/mycorrhiza_harness/`, `./build.sh`, then
+`./mycorrhiza_harness <out> ../.. [noise|ident|bench|story|quick] [KEY=value ...]`;
+`make_gif.py <out>` for the GIF, `make_gif.py <out> --compare <ref.jpg>...`
+for the side-by-side; real `SuccessionModel.cpp` and `MycorrhizaField.cpp`,
+519 x 295 grid, 1.9 mm/cell, 40 steps/s):
+- Noise: flat sand, +-2 mm uniform per cell per frame, 10 min: 0 agents
+  spawned, 0 touched blocks; largest block change 0.84 mm (threshold 4 mm).
+  Real Kinect noise is spatially correlated and quantised, so the margin on
+  the sandbox will be smaller: check the panel's "largest block change".
+- Succession model unchanged: two runs from bare over 2,000 steps with the
+  same inputs (mound, channel, two strokes), one with the module stepping
+  on its outputs: cover, M and S bit-identical at every 100-step check and
+  by final memcmp (hash 9572c1b1484e9b36 in both).
+- Cost, one `MycorrhizaField` step at 100,000 agents (module only, this
+  container, -O2): THREADS 1: mean 4.62 ms, p95 6.66 ms; THREADS 4: mean
+  3.35 ms, median 3.31, p95 4.49, worst 7.62 (agents 1.39, trail 0.93,
+  trace + maps 0.27, rest < 0.3 each). The renderer adds the 8-bit encode
+  and upload and the lookup mesh (timed in the panel, not here). In the
+  story run (peak 23,155 agents) the step averaged 1.80 ms.
+- Story (mound with a water channel, bare start; 240 s untouched, then four
+  3 s hand strokes - a moving 20 mm disc digging up to 10 mm, depth
+  samples under a 35 mm hand rejected - at 0, 40, 90, 150 s, then an 11 min
+  pause): every frame black before the first touch, 0 agents; stroke 1 lit
+  cells (> 5 % of level) 5,337 at the end of the stroke, 10,668 at +10 s,
+  20,497 at +30 s; strand/contour alignment on sloping ground 0.887
+  (isotropic 0.637); trace on water 0; displayed brightness 30 s after the
+  last stroke 100 %, +2 min 48 %, +5 min 15 %, +10 min 2 %.
+- Evidence in `docs/prototype2_mycorrhiza/`: `story.gif` (390 x 222; frames
+  1 s apart for 200 s after the first touch, then 10 s apart; the grey ring
+  is the simulated hand, an annotation only), `still.png`,
+  `still_annotated.png` (water in dark grey), `still_vs_reference.png`
+  (both reference images from `main:mycorrhiza_reference/`, then the still).
+- Visual gap to the reference: the references are much denser, a surface
+  of fine wavy filaments; the harness network is fibrous and combed along
+  the contours but forms fewer, broader bands around the strokes. Denser
+  variants (spawn 14 per s, curl size 45 mm, sensors 10 mm) blew out the
+  highlights without looking closer, so they were not adopted. On the sand,
+  "Spawn per touch", "Curl size" and "Sensor distance" are the first levers.
+
+Not compiled with openFrameworks, not hardware-tested. `MycorrhizaRenderer.cpp`
+was only syntax-checked against hand-written stubs of the oF/ImGui calls it
+uses; both GLSL variants were read line by line, not compiled.
+
+**Placard and thesis wording.** May claim: mycorrhizal fungi partner with
+plant roots and help plants establish. Must not claim that plants share
+resources or communicate through the network (Karst, Jones & Hoeksema,
+2023). The network is a trace of the participants' activity, growing
+through the model's moisture, soil and plants in the visual language of
+mycelium; it is not a simulation of fungi, and the thesis says so.
+
+**Hardware checklist (for the user):**
+1. "Sandbox" mode: identical to the grain prototype (`ss/plant-grain`).
+2. "Mycorrhiza" mode, untouched sand for 60 s: nothing projected; panel
+   "Agents 0", "largest block change" well below "Touch threshold".
+3. Sculpt a stroke: strands grow out of it and keep growing for several
+   seconds after the hands leave.
+4. Strands follow sculpted slopes, spread faster through damp low ground and
+   stop at the (invisible) water's edge.
+5. Several rounds of interaction: the trace accumulates; after a long pause
+   it fades slowly.
+6. Note fps in each mode (Display mode window), and the touch threshold,
+   agent cap, trace memory and colour values that look best; then "Save
+   preset" and record the values here.

@@ -37,6 +37,7 @@ deer/human population.
 #include "Games/CritterController.h"
 #include "Games/VegetationField.h"
 #include "Games/WaterFlowField.h"
+#include "Prototypes/Mycorrhiza/MycorrhizaRenderer.h"
 
 class ofApp : public ofBaseApp {
 
@@ -78,6 +79,17 @@ private:
 	// against vegetationField, same ownership convention as
 	// critterController.
 	WaterFlowField waterFlowField;
+
+	// Display mode (top-level setting). Sandbox: everything as before.
+	// Mycorrhiza (Prototype 2): only MycorrhizaRenderer's output on black;
+	// the water and succession simulations keep running underneath. The
+	// module is self-contained (src/Prototypes/Mycorrhiza); this enum, the
+	// member below and the guarded blocks in ofApp.cpp are its only hooks.
+	enum DisplayMode { DISPLAY_SANDBOX = 0, DISPLAY_MYCORRHIZA = 1 };
+	int displayMode = DISPLAY_SANDBOX;
+	MycorrhizaRenderer mycorrhiza;
+	bool mycorrhizaActive = false; // stepped last frame (mode, or the debug overlay)
+	void drawDisplayModeGui();
 
 	// Main window ROI
 	ofRectangle mainWindowROI;

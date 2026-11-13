@@ -81,6 +81,11 @@ void ofApp::setup() {
 
 	lastKinectROI = kinectROI;
 
+	// Prototype 2 (Mycorrhiza): read-only against kinectProjector and
+	// vegetationField; starts empty.
+	mycorrhiza.setup(kinectProjector, &vegetationField);
+	mycorrhiza.setProjectorRes(projRes);
+
 	imgui.setup();
 
 }
@@ -137,6 +142,15 @@ void ofApp::update() {
 	vegetationField.update();
 	critterController.update();
 	waterFlowField.update();
+
+	// Prototype 2: stepped only while shown; empty whenever it is (re)entered.
+	const bool running = kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING;
+	const bool showMycorrhiza = running && (displayMode == DISPLAY_MYCORRHIZA || MycorrhizaRenderer::OVERLAY_ON_SANDBOX);
+	if (showMycorrhiza && !mycorrhizaActive)
+		mycorrhiza.clear();
+	mycorrhizaActive = showMycorrhiza;
+	if (showMycorrhiza)
+		mycorrhiza.update();
 }
 
 
@@ -153,10 +167,16 @@ void ofApp::draw()
 		// patches blended on top (see heightMapShader.frag and
 		// VegetationField.h), plus the ELF deer/human population - see
 		// ofApp.h's header note on what has been removed from this branch.
-		sandSurfaceRenderer->drawMainWindow(x, y, w, h);
-		vegetationField.drawSeedsMainWindow(x, y, w, h);
-		waterFlowField.drawMainWindow(x, y, w, h);
-		critterController.drawMainWindow(x, y, w, h);
+		if (displayMode == DISPLAY_MYCORRHIZA) {
+			mycorrhiza.drawMainWindow(x, y, w, h);
+		} else {
+			sandSurfaceRenderer->drawMainWindow(x, y, w, h);
+			vegetationField.drawSeedsMainWindow(x, y, w, h);
+			waterFlowField.drawMainWindow(x, y, w, h);
+			critterController.drawMainWindow(x, y, w, h);
+			if (MycorrhizaRenderer::OVERLAY_ON_SANDBOX)
+				mycorrhiza.drawOverlayMainWindow(x, y, w, h);
+		}
 	}
 
 	kinectProjector->drawMainWindow(x, y, w, h);
@@ -164,6 +184,8 @@ void ofApp::draw()
 	imgui.begin();
 		kinectProjector->drawGui();
 		if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING) {
+			drawDisplayModeGui();
+			mycorrhiza.drawGui();
 			sandSurfaceRenderer->drawGui();
 			critterController.drawGui();
 			vegetationField.drawGui();
@@ -177,12 +199,29 @@ void ofApp::drawProjWindow(ofEventArgs &args)
 {
 	if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING)
 	{
-		sandSurfaceRenderer->drawProjectorWindow();
-		vegetationField.drawSeedsProjectorWindow();
-		waterFlowField.drawProjectorWindow();
-		critterController.drawProjectorWindow();
+		if (displayMode == DISPLAY_MYCORRHIZA) {
+			mycorrhiza.drawProjectorWindow();
+		} else {
+			sandSurfaceRenderer->drawProjectorWindow();
+			vegetationField.drawSeedsProjectorWindow();
+			waterFlowField.drawProjectorWindow();
+			critterController.drawProjectorWindow();
+			if (MycorrhizaRenderer::OVERLAY_ON_SANDBOX)
+				mycorrhiza.drawOverlayProjectorWindow();
+		}
 	}
 	kinectProjector->drawProjectorWindow();
+}
+
+void ofApp::drawDisplayModeGui()
+{
+	ImGui::Begin("Display mode");
+	static const char * modes[] = { "Sandbox", "Mycorrhiza" };
+	ImGui::Combo("Display mode", &displayMode, modes, 2);
+	ImGui::Text("fps %.1f", ofGetFrameRate());
+	if (displayMode == DISPLAY_MYCORRHIZA)
+		ImGui::Text("Projector: the Mycorrhiza network only; water and succession run unseen.");
+	ImGui::End();
 }
 
 void ofApp::exit()

@@ -14,18 +14,18 @@ Sand, ported to openFrameworks 0.12.1 with an ofxImGui GUI (`README.md`,
 
 ## Branches
 
-- `ss/plant-grain` (current work): grain-dither plants and seed particles
-  (display only), on `ss/land-lines`.
-- `ss/land-lines`: land lines, band fill, flat fade, Kinect driver stack; on `ss/water-lines`.
-- `ss/water-lines` (water lines) on `ss/succession-feedback` (succession) on `ss/dewitz-flow`.
-- `ss/dewitz-flow`: flow particles, water table. Fallback `ss/ecosim-model-visuals-kiqw12`.
+- `prototype/2-mycorrhiza` (current, on `ss/plant-grain`): "Display mode" Sandbox (unchanged) /
+  Mycorrhiza (`src/Prototypes/Mycorrhiza/`, own shaders, reads the model only, preset
+  `settings/mycorrhizaPreset.xml`, `tools/mycorrhiza_harness/`, DEVLOG 2026-11-12; not a fungus simulation).
+- `ss/plant-grain` (grain dither, seeds) on `ss/land-lines` (land lines, band fill, flat fade, Kinect drivers)
+  on `ss/water-lines` on `ss/succession-feedback` on `ss/dewitz-flow` (flow particles, water table; fallback `ss/ecosim-model-visuals-kiqw12`).
 
 ## Frame order (`src/ofApp.cpp`)
 
 `kinectProjector->update()`, `sandSurfaceRenderer->update()`,
-`vegetationField.update()` (vegetation, then `stepFlow()`),
-`critterController.update()`, `waterFlowField.update()`. Drawing:
-sand surface (shader), flow particles, agents, then the ImGui panels.
+`vegetationField.update()` (vegetation, then `stepFlow()`), `critterController.update()`,
+`waterFlowField.update()`, `mycorrhiza.update()` (only while shown). Drawing: sand surface
+(shader), flow particles, agents, ImGui; in Mycorrhiza mode only `mycorrhiza`.
 
 ## Classes
 

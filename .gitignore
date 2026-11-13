@@ -30,6 +30,8 @@ bin/data/settings/*.xml
 # state like the rest of bin/data/settings/*.xml - track them.
 !bin/data/settings/ecologyParamsDesigner.xml
 !bin/data/settings/ecologyParamsPublished.xml
+# Prototype 2 preset "Prototype 2: Mycorrhiza" (shipped; Save preset overwrites it).
+!bin/data/settings/mycorrhizaPreset.xml
 **.DS_Store
 **scores.xml
 

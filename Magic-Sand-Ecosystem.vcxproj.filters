@@ -28,6 +28,12 @@
 		<ClCompile Include="src\Games\SeedParticles.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
+		<ClCompile Include="src\Prototypes\Mycorrhiza\MycorrhizaField.cpp">
+			<Filter>src\Prototypes\Mycorrhiza</Filter>
+		</ClCompile>
+		<ClCompile Include="src\Prototypes\Mycorrhiza\MycorrhizaRenderer.cpp">
+			<Filter>src\Prototypes\Mycorrhiza</Filter>
+		</ClCompile>
 		<ClCompile Include="src\Games\SeedLayer.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
@@ -206,6 +212,12 @@
 	<ItemGroup>
 		<Filter Include="src">
 			<UniqueIdentifier>{d8376475-7454-4a24-b08a-aac121d3ad6f}</UniqueIdentifier>
+		</Filter>
+		<Filter Include="src\Prototypes">
+			<UniqueIdentifier>{6D3F2A41-8C1B-4E7A-9F25-3B7C1D2E4A01}</UniqueIdentifier>
+		</Filter>
+		<Filter Include="src\Prototypes\Mycorrhiza">
+			<UniqueIdentifier>{6D3F2A41-8C1B-4E7A-9F25-3B7C1D2E4A02}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="src\Games">
 			<UniqueIdentifier>{AA87C14C--613-5-48-6B-9-17E-2F1A2F71D5FB}</UniqueIdentifier>
@@ -763,6 +775,12 @@
 		</ClInclude>
 		<ClInclude Include="src\Games\SeedParticles.h">
 			<Filter>src\Games</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Prototypes\Mycorrhiza\MycorrhizaField.h">
+			<Filter>src\Prototypes\Mycorrhiza</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Prototypes\Mycorrhiza\MycorrhizaRenderer.h">
+			<Filter>src\Prototypes\Mycorrhiza</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Games\SeedLayer.h">
 			<Filter>src\Games</Filter>
