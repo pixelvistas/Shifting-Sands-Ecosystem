@@ -14,9 +14,9 @@ Sand, ported to openFrameworks 0.12.1 with an ofxImGui GUI (`README.md`,
 
 ## Branches
 
-- `prototype/2-mycorrhiza` (current, on `ss/plant-grain`): "Display mode" Sandbox (unchanged) /
-  Mycorrhiza (`src/Prototypes/Mycorrhiza/`, own shaders, reads the model only, preset
-  `settings/mycorrhizaPreset.xml`, `tools/mycorrhiza_harness/`, DEVLOG 2026-11-12; not a fungus simulation).
+- `prototype/2-mycorrhiza` (current, on `ss/plant-grain`): "Display mode" Sandbox (unchanged) / Mycorrhiza (`src/Prototypes/Mycorrhiza/`,
+  own shaders, reads the model only; "Network style" Patches and hyphae (default) / Physarum (previous); DEVLOG 2026-11-13; not a fungus
+  simulation). Reference video: only `git show origin/main:mycorrhiza_reference/...`; never merge main or commit it.
 - `ss/plant-grain` (grain dither, seeds) on `ss/land-lines` (land lines, band fill, flat fade, Kinect drivers)
   on `ss/water-lines` on `ss/succession-feedback` on `ss/dewitz-flow` (flow particles, water table; fallback `ss/ecosim-model-visuals-kiqw12`).
 

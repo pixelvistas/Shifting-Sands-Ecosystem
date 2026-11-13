@@ -255,6 +255,7 @@
     <ClCompile Include="src\Games\SeedParticles.cpp" />
     <ClCompile Include="src\Games\SeedLayer.cpp" />
     <ClCompile Include="src\Prototypes\Mycorrhiza\MycorrhizaField.cpp" />
+    <ClCompile Include="src\Prototypes\Mycorrhiza\MycorrhizaFieldLayers.cpp" />
     <ClCompile Include="src\Prototypes\Mycorrhiza\MycorrhizaRenderer.cpp" />
     <ClCompile Include="src\Games\WaterFlowField.cpp" />
     <ClCompile Include="src\Games\LatticeFlow.cpp" />

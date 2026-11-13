@@ -45,6 +45,7 @@ float MycorrhizaField::LEVEL_FALL_SEC = 1200.0f;
 float MycorrhizaField::LEVEL_FLOOR = 8.0f;
 
 int MycorrhizaField::THREADS = 4;
+int MycorrhizaField::STYLE = MycorrhizaField::STYLE_PATCHES_HYPHAE;
 float MycorrhizaField::HEIGHT_LOW_MM = 0.0f;
 float MycorrhizaField::HEIGHT_HIGH_MM = 60.0f;
 
@@ -124,6 +125,7 @@ void MycorrhizaField::clear()
 	settleLeft = SETTLE_SEC;
 	displayLevel = 0.0f;
 	spawned = 0;
+	clearLayers();
 }
 
 void MycorrhizaField::restartTouch()
@@ -144,6 +146,11 @@ void MycorrhizaField::resize(int c, int r)
 	fastValid.assign(nb, 0.0f); slowValid.assign(nb, 0.0f); touch.assign(nb, 0.0f);
 	combField.assign(nb * 4, 0.0f);
 	senseMap.assign(n, 0.0f); mobilityMap.assign(n, 0.0f); siteMap.assign(n * 4, 0);
+	cellFast.assign(n, 0.0f); cellSlow.assign(n, 0.0f); presenceMap.assign(n, 0.0f); maturityMap.assign(n, 0.0f);
+	markTime.assign(n, 0.0f); footprint.assign(n, 0.0f); mark.assign(n, 0); markTmp.assign(n, 0);
+	attractBlocks.assign(nb, 0.0f); warmBlocks.assign(nb, 0.0f); blurTmp.assign(nb, 0.0f); blockLabel.assign(nb, 0);
+	ow = (cols + 1) / 2; oh = (rows + 1) / 2;
+	occThread.assign((size_t)ow * oh, 0); occTime.assign((size_t)ow * oh, -1e9f);
 	clear();
 }
 
@@ -162,15 +169,26 @@ void MycorrhizaField::step(const Inputs & in)
 	time += dt;
 
 	auto lap = [&](int slot) { auto now = std::chrono::steady_clock::now(); phaseMs[slot] = std::chrono::duration<float, std::milli>(now - t0).count(); t0 = now; };
+	const bool adopting = !touchInit || settleLeft > 0.0f; // this frame's changes are not touch
 	detectTouch(in, dt); lap(0);
-	updateCombField(in); lap(1);
-	spawn(in, dt);
-	if ((++stepCount & 7) == 0) sortAgents();
-	lap(2);
-	moveAgents(in, k, dt); lap(3);
-	updateTrail(in, k); lap(4);
-	updateTrace(in, dt); lap(5);
-	updateDisplayLevel(dt); lap(6);
+	if (STYLE == STYLE_PHYSARUM) {
+		for (int i = 1; i < PHASE_COUNT; i++) phaseMs[i] = 0.0f;
+		updateCombField(in); lap(1);
+		spawn(in, dt);
+		if ((++stepCount & 7) == 0) sortAgents();
+		lap(2);
+		moveAgents(in, k, dt); lap(3);
+		updateTrail(in, k); lap(4);
+		updateTrace(in, dt); lap(5);
+		updateDisplayLevel(dt); lap(6);
+	} else {
+		for (int i = 1; i < PHASE_COUNT; i++) phaseMs[i] = 0.0f;
+		updatePatches(in, dt, adopting); lap(1);
+		updateAttractant(in); lap(2);
+		spawnTips(in, dt);
+		growTips(in, dt);
+		pruneSegments(in); lap(3);
+	}
 
 	lastStepMs = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - tStart).count();
 }

@@ -4480,3 +4480,133 @@ committed. Recheck results with these defaults (completed afterwards):
   peak 96,651 agents, step mean 2.04 ms; contour alignment 0.899; no trace
   on water; brightness +2 min 47 %, +5 min 12 %, +10 min 1 %.
 Not compiled with openFrameworks, not hardware-tested.
+
+## 2026-11-13 - Prototype 2 revised: "Patches and hyphae" (branch `prototype/2-mycorrhiza`)
+
+Brief "Updated acceptance criteria (P2)": the sand starts blank; where it is
+shaped, the ground lights up in the shape of the mark, and fine threads grow
+out from those places to find each other, staying behind as a trace.
+
+**Reference material.** The brief asked to merge `main` for
+`mycorrhiza_reference/`. `main` has no history in common with this branch
+(the upstream Magic Sand line), so a merge would have touched ~175 files.
+At the user's instruction nothing from `main` is merged or committed: the
+video and stills were read with `git show origin/main:...` into `/tmp`, and
+frames were extracted with ffmpeg. Confirmed from the frames: the swept area
+lights up at once with a dense swirling fill, cyan first, warming through
+blue-white to amber and orange within roughly 5-10 s, with cooler edges;
+pale, branching, root-like threads (warm near amber patches) grow from the
+edges across dark sand, fuse into loops and join lit areas.
+
+**Structure.** "Network style" in the Mycorrhiza panel: "Patches and
+hyphae" (default) / "Physarum (previous)" (the 2026-11-13 intermediate
+pass, unchanged). Touch detection, `clear()`/`restartTouch()`, the site map,
+the Display mode switch and the module boundary are as before. New plain-C++
+code in `src/Prototypes/Mycorrhiza/MycorrhizaFieldLayers.cpp` (same class,
+added to both `.vcxproj` files); new shaders `patches`, `hypha`, `glow`
+(GL2 and GL3) in `bin/data/shaders/mycorrhiza/`.
+
+**Patches** (per cell): fast and slow running means of each cell's own
+elevation; inside touched blocks a cell is marked where they differ by more
+than `PATCH_CELL_MM` (3 mm); cells without depth (a hand) keep their means
+and are not marked until the sand is seen again. The mark is closed (3 x 3
+dilate then erode) and blurred (3 x 3) into a footprint; only inside the
+touched blocks' bounding box (cost). Presence rises to 1 over
+`PATCH_RISE_SEC` (0.3 s), otherwise fades to 10 % over `TRACE_MEMORY_MIN`,
+and clears in ~0.5 s under water. Maturity: a new mark resets it to 0; it
+then eases up (`MATURITY_EASE_SEC`, 3 s) toward life = max(total cover, S),
+never decreasing until the next mark. **With `MATURITY_TIME_WEIGHT` = 0 (the
+default) the colour is purely the model's recovery of that ground**; above 0
+it is blended with time since the mark (1 after `MATURE_SEC`, 30 s).
+Shader: curl-advected, two-level domain-warped fbm (hash12 value noise,
+4 octaves), maturity ramp `#3FD8FF` / `#CFEFFF` / `#FFB347` / `#F07A2A`
+(stops 0, 0.33, 0.66, 1), the swirl modulating maturity so troughs stay cool
+and ridges warm, cooler at edges (presence gradient), a thin rim at presence
+0.5, brightness proportional to presence.
+
+**Hyphae** (tip growth): tips born on patch boundary cells (presence >= 0.5
+next to < 0.5, not water), `HYPHA_SPAWN_PER_SEC` per mm of boundary x
+presence, outward along the presence gradient +-25 deg, cap `MAX_TIPS`
+2,000. Speed `HYPHA_SPEED_MM_S` (6) x mix(MIN_MOBILITY, 1, max(S, M));
+heading a persistent random walk (`TURN_NOISE_DEG` 12 per sqrt(mm)) plus,
+after `HOME_MM` (15 mm), a pull up the gradient of an attractant (blurred
+presence + `ATTRACT_PLANT` x cover, touch-block resolution, two box blurs of
+3 blocks). Steers away from water (probe 4 mm, +-35 deg), stops if both
+sides are water. Branching `BRANCH_PER_MM` per mm, children +-30..60 deg,
+width from `HYPHA_WIDTH_PX` 1.6 down to 0.7 by generation, up to
+`MAX_GENERATION`. Fusing: a 2 x 2-cell occupancy grid remembers the thread
+that first passed; after 6 mm of its own growth a tip stops on a cell
+another thread (not its parent) passed more than 1 s earlier. A tip that has
+left its home patch and enters another patch stops there (connection);
+re-entering its home patch turns it back; a tip that has not left home
+within 5 mm stops. Also stops at the grid edge and after `TIP_LIFE_SEC`
+(15 s). Segments every `SEGMENT_MM` (2 mm), oldest dropped beyond
+`MAX_SEGMENTS` (60,000), fade with the trace memory, removed under water.
+Renderer: segments as two anti-aliased quads each, in a GPU ring buffer
+(slot = id % cap; only new segments uploaded; water-removed ones zeroed;
+fading in the shader from birth time); growing tips as a small per-frame
+mesh; drawn into their own FBO with `GL_MAX` blending (joints do not double
+up); pale `#E6F7FF`, warmer `#FFE2B8` near mature patches (warmth texture);
+one glow pass (ring blur, radius 2 px, strength 0.5) added over the patches.
+
+**Departures from the brief's defaults, chosen on the harness:**
+- `HYPHA_SPAWN_PER_SEC` 0.006 per mm per s (no default given; 0.02 made a
+  dense fur of short hairs that fused at once).
+- `BRANCH_PER_MM` 0.02 (brief 0.05) plus `MAX_GENERATION` 4 (new): 0.05 with
+  unbounded generations grew 8,000 tips in 110 s and hit the segment cap.
+- Fusion needs the other thread to be > 1 s old: at a branch point parent
+  and child share an occupancy cell, so without it every parent "fused" into
+  its own child (958 of 1,014 tips in one run).
+- Display: texture scale 16 mm, contrast 2, flow 0.15, edge cooling 0.7,
+  rim 0.35, patch brightness 1.1, thread brightness 0.85, warmth gain 4.
+
+**Headless results** (`tools/mycorrhiza_harness/`, `./build.sh`, then
+`./mycorrhiza_harness <out> ../.. [noise|ident|bench|story|quick]`; real
+`SuccessionModel`, 519 x 295, 1.9 mm/cell; bare sand beside a water channel;
+palm-sized sweeps, 35 mm radius, 14 mm deep; frames at 2 px per cell):
+- Noise, both styles: +-2 mm per cell per frame for 10 min: 0 touched
+  blocks, 0 tips, 0 agents, presence 0 (largest block change 0.84 mm).
+- Succession model bit-identical with the module on or off over 2,000 steps
+  with two sweeps (hash d1cfe157a1d99389 both).
+- Cost (this container, -O2), 12 sweeps then 65 s of growth: patches
+  1.80 ms mean (p95 2.93), attractant 0.75, hyphae 0.22, touch 0.16, whole
+  step 2.93 ms mean (p95 4.12) with 4 threads; one 37 ms outlier (hyphae
+  phase) in that run, not reproduced elsewhere. In the story the whole step
+  averaged 1.92 ms. Previous style at 100,000 agents: 2.77 ms (4 threads).
+  The renderer's uploads and ring writes are timed in the panel only.
+- Story (120 s untouched warm-up; A damp near water at 0 s, B dry on a
+  +30 mm plateau at 5 s, ~60 mm from A; at +60 s C re-digs "old" ground
+  (soil 0.8 and cover seeded in the test set-up) and D new fill (soil and
+  cover set to 0 at the sweep, standing for sand without history)):
+  black and no tips before touch; sweep A lit as it ended, IoU of lit vs
+  dug cells 0.94; maturity reaches 0.5 after 5 s (A, damp) vs 103 s (B, dry)
+  and 5 s (C, old ground) vs 10 s (D, new fill); 1,114 tips, 939 fusions,
+  3 connections to another patch; nothing on water; lit amount after the
+  last sweep: +2 min 66 %, +5 min 16 %, +7.5 min 5 %.
+- Evidence: `docs/prototype2_mycorrhiza/p2_patches_hyphae.gif` (690 x 392;
+  grey ring = simulated hand, annotation only), `p2_still_24s.png`,
+  `p2_still_80s.png`. The side-by-side with a reference frame was made but
+  not committed (no reference material in the repository).
+- Gap to the reference, stated plainly: the structure matches (lit marks,
+  swirling fill warming cyan to amber, pale branching threads with loops),
+  but the reference's threads are longer and form a dense looped network
+  between marks, while here most threads stay 10-25 mm fringes with few
+  connections; mature fill reads flatter orange than the reference's glossy
+  amber-and-white streaks. First levers on the sand: "Hypha speed", "Tip
+  life", "Attraction", "Spawn", "Contrast", "Texture scale".
+
+GLSL: all 16 module shaders compiled with glslangValidator 15.1 and each
+vert/frag pair linked (GL2 `#version 120`, GL3 `#version 150`), and read
+line by line. `MycorrhizaRenderer.cpp` syntax-checked against stubs of the
+oF/ImGui calls it uses (with real glm). Not compiled with openFrameworks,
+not hardware-tested.
+
+**Hardware checklist (for the user):**
+1. "Sandbox" mode unchanged. "Mycorrhiza" mode: blank until touched.
+2. A sweep lights up in its own shape within about a second.
+3. Threads grow out, branch and connect lit areas; they stop at water.
+4. Colour warms as the ground recovers; faster near water.
+5. Several minutes of interaction, then a pause: the trace accumulates and
+   fades slowly.
+6. Note fps, texture scale, flow speed, hypha speed, branching and glow values
+   that look best; "Save preset" and record them here.

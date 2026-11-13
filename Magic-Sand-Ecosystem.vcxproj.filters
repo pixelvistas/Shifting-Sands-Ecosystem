@@ -28,6 +28,9 @@
 		<ClCompile Include="src\Games\SeedParticles.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
+		<ClCompile Include="src\Prototypes\Mycorrhiza\MycorrhizaFieldLayers.cpp">
+			<Filter>src\Prototypes\Mycorrhiza</Filter>
+		</ClCompile>
 		<ClCompile Include="src\Prototypes\Mycorrhiza\MycorrhizaField.cpp">
 			<Filter>src\Prototypes\Mycorrhiza</Filter>
 		</ClCompile>

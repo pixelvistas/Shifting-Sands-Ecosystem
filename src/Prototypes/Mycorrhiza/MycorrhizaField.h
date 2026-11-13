@@ -1,5 +1,12 @@
 /***********************************************************************
-MycorrhizaField - Prototype 2 ("Mycorrhiza"): a Physarum-style agent
+MycorrhizaField - Prototype 2 ("Mycorrhiza").
+
+Two network styles (STYLE):
+- STYLE_PATCHES_HYPHAE (default, 2026-11-13; MycorrhizaFieldLayers.cpp):
+  the touched ground itself lights up (patch presence and maturity per
+  cell) and thin hyphae grow from patch edges by tip growth, branch, fuse
+  with other threads and reach other patches. Described in the .cpp.
+- STYLE_PHYSARUM ("Physarum (previous)"), below: a Physarum-style agent
 network (Jones 2010, "Characteristics of pattern formation and evolution
 in approximations of Physarum transport networks") that grows out of the
 places where participants touch the sand and stays behind as a slowly
@@ -55,6 +62,7 @@ deleting src/Prototypes/Mycorrhiza and the "Display mode" entry in ofApp.
 
 #pragma once
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -78,6 +86,9 @@ public:
 		float dt = 1.0f / 40.0f;               // seconds
 	};
 
+	enum { STYLE_PATCHES_HYPHAE = 0, STYLE_PHYSARUM = 1 };
+	static int STYLE;
+
 	void step(const Inputs & in);
 	// Empty network: no agents, zero trail/trace/touch; the touch
 	// detector re-initialises from the next frame (that frame is never a touch).
@@ -95,11 +106,50 @@ public:
 	const unsigned char * site() const { return siteMap.data(); }
 	const float * touchBlocks() const { return touch.data(); }
 	int getBlockCols() const { return bw; }
+	int getBlockSize() const { return blockSize; }
 	int getBlockRows() const { return bh; }
 	// Normalisation for display: trace / getDisplayLevel() in 0..1 (clamp).
 	// A high percentile of the drawn trace, rising in ~2 s and falling
 	// over LEVEL_FALL_SEC, never below LEVEL_FLOOR.
 	float getDisplayLevel() const { return displayLevel; }
+
+	// ---- Patches and hyphae (STYLE_PATCHES_HYPHAE) ----
+	// Per cell, 0..1: presence (how lit the ground is) and maturity (colour:
+	// 0 fresh cyan .. 1 amber; follows the model's recovery of the ground).
+	const float * presence() const { return presenceMap.data(); }
+	const float * maturity() const { return maturityMap.data(); }
+	// Per touch block: blurred presence x maturity, for warming threads near mature patches.
+	const float * warmthBlocks() const { return warmBlocks.data(); }
+	struct Segment {
+		float x0, y0, x1, y1;   // grid cells
+		float width;            // projector px; 0 = removed (water)
+		float birth;            // field time, s
+		uint64_t id;            // running number (0, 1, 2, ... in order of creation)
+	};
+	struct Tip {
+		float x, y, hx, hy;     // grid cells, unit heading
+		float sx, sy;           // start of the segment being grown
+		float bx, by;           // birth position (home patch)
+		float age;              // s
+		float grown;            // mm since leaving the home patch's tip line (inherited by branches)
+		float run;              // mm grown by this tip itself
+		float width;            // projector px
+		int gen;
+		uint32_t id, parent;
+		bool outside;           // has left the patch it was born on
+	};
+	// Oldest first; ids are consecutive. Segments removed this step for
+	// water are listed by id (width set to 0).
+	const std::deque<Segment> & segments() const { return segs; }
+	const std::vector<Tip> & tips() const { return tipList; }
+	const std::vector<uint64_t> & segmentsRemovedThisStep() const { return removedIds; }
+	double getTime() const { return time; }
+	// Brightness of something born at field time b (fades to 10 % over TRACE_MEMORY_MIN).
+	float fadeAt(float birth) const;
+	int boundaryCellCount() const { return boundaryCount; }
+	long long hyphaTipsSpawned() const { return tipsSpawned; }
+	long long hyphaFusions() const { return fusions; }
+	long long hyphaPatchConnections() const { return connections; }
 
 	// Readouts.
 	int agentCount() const { return (int)ax.size(); }
@@ -107,7 +157,8 @@ public:
 	int touchedBlocks() const { return touchedLastStep; }
 	float maxTouchChangeMM() const { return maxChangeLastStep; }
 	float getLastStepMs() const { return lastStepMs; }
-	// Last step by phase: touch, comb field, spawn+sort, agents, trail, trace+maps, display level.
+	// Last step by phase. Physarum: touch, comb field, spawn+sort, agents, trail,
+	// trace+maps, display level. Patches and hyphae: touch, patches, attractant, hyphae.
 	enum { PHASE_COUNT = 7 };
 	float getPhaseMs(int p) const { return (p >= 0 && p < PHASE_COUNT) ? phaseMs[p] : 0.0f; }
 
@@ -147,12 +198,41 @@ public:
 	static float HEIGHT_LOW_MM;        // site height 0 (colour only)
 	static float HEIGHT_HIGH_MM;       // site height 1 (colour only)
 	static int THREADS;                // worker parts for the per-cell and agent loops (1 = single thread)
+	// Patches.
+	static float PATCH_CELL_MM;        // a cell in a touched block whose fast mean departs from its slow mean by this is marked
+	static float PATCH_RISE_SEC;       // presence rises to 1 over this where marked
+	static float MATURITY_EASE_SEC;    // maturity eases up toward the ground's life over this
+	static float MATURITY_TIME_WEIGHT; // 0: colour is purely the model's recovery; > 0 blends in time since the mark
+	static float MATURE_SEC;           // time since the mark at which the time term reaches 1
+	// Hyphae.
+	static float HYPHA_SPAWN_PER_SEC;  // tips per second per mm of patch boundary (x presence)
+	static int MAX_TIPS;
+	static int MAX_SEGMENTS;
+	static float HYPHA_SPEED_MM_S;     // x mix(MIN_MOBILITY, 1, max(S, M))
+	static float TURN_NOISE_DEG;       // heading random walk, degrees per sqrt(mm)
+	static float ATTRACT_WEIGHT;       // pull toward other patches and plant cover, per mm grown
+	static float ATTRACT_PLANT;        // plant cover in the attractant, relative to patch presence
+	static float BRANCH_PER_MM;
+	static int MAX_GENERATION;         // no branching beyond this generation
+	static float HYPHA_WIDTH_PX;       // generation 0
+	static float HYPHA_MIN_WIDTH_PX;   // deep generations
+	static float TIP_LIFE_SEC;
+	static float SEGMENT_MM;           // a segment is stored every this many mm
+	static float HOME_MM;              // no pull and no patch stop within this much growth
 
 private:
 	struct Pool;
 	std::unique_ptr<Pool> pool;
 	void parallel(size_t n, const std::function<void(size_t, size_t, int)> & f);
 	void resize(int c, int r);
+	void updatePatches(const Inputs & in, float dt, bool adopting);
+	void updateAttractant(const Inputs & in);
+	void labelPatchBlocks();
+	void spawnTips(const Inputs & in, float dt);
+	void growTips(const Inputs & in, float dt);
+	void pruneSegments(const Inputs & in);
+	void clearLayers();
+	float sampleBlocks(const std::vector<float> & f, float gx, float gy) const;
 	void detectTouch(const Inputs & in, float dt);
 	void updateCombField(const Inputs & in);
 	void spawn(const Inputs & in, float dt);
@@ -189,4 +269,25 @@ private:
 	float lastStepMs = 0.0f;
 	float phaseMs[PHASE_COUNT] = { 0, 0, 0, 0, 0, 0, 0 };
 	std::vector<float> levelSample;
+
+	// Patches.
+	std::vector<float> cellFast, cellSlow, presenceMap, maturityMap, markTime, footprint;
+	std::vector<unsigned char> mark, markTmp;
+	// Per block: attractant (blurred presence + plant cover), warmth, patch labels, blur scratch.
+	std::vector<float> attractBlocks, warmBlocks, blurTmp;
+	std::vector<int> blockLabel, labelQueue;
+	// Hyphae.
+	std::deque<Segment> segs;
+	std::vector<Tip> tipList;
+	std::vector<uint64_t> removedIds;
+	uint64_t nextSegmentId = 0;
+	uint32_t nextTipId = 1;
+	std::vector<uint32_t> occThread; // coarse occupancy (2 x 2 cells): thread of the last segment
+	std::vector<float> occTime;
+	int ow = 0, oh = 0;
+	int boundaryCount = 0;
+	long long tipsSpawned = 0, fusions = 0, connections = 0;
+	inline float gauss() { // approx. N(0, 1) from 4 uniforms
+		return (rnd01() + rnd01() + rnd01() + rnd01() - 2.0f) * 1.7320508f;
+	}
 };
