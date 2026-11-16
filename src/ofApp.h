@@ -37,6 +37,7 @@ deer/human population.
 #include "Games/CritterController.h"
 #include "Games/VegetationField.h"
 #include "Games/WaterFlowField.h"
+#include "Prototypes/Ascii/AsciiRenderer.h"
 
 class ofApp : public ofBaseApp {
 
@@ -78,6 +79,18 @@ private:
 	// against vegetationField, same ownership convention as
 	// critterController.
 	WaterFlowField waterFlowField;
+
+	// Display mode (top-level setting). Sandbox: everything as before.
+	// ASCII (Prototype 3): only AsciiRenderer's output on black; the water
+	// and succession simulations keep running underneath. The module is
+	// self-contained (src/Prototypes/Ascii); this enum, the member below
+	// and the guarded blocks in ofApp.cpp are its only hooks. Value 1 is
+	// reserved for Mycorrhiza (Prototype 2, branch prototype/2-mycorrhiza),
+	// so the two branches combine without renumbering.
+	enum DisplayMode { DISPLAY_SANDBOX = 0, DISPLAY_ASCII = 2 };
+	int displayMode = DISPLAY_SANDBOX;
+	AsciiRenderer ascii;
+	void drawDisplayModeGui();
 
 	// Main window ROI
 	ofRectangle mainWindowROI;
