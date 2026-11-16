@@ -4468,7 +4468,13 @@ model in a later step.
   images (`compare`). All eight shader files pass glslangValidator and were
   read line by line (GL2 differs only in version/extension, varying,
   texture2DRect, gl_FragColor).
-- Noise test (60 s, now also counting band and contour-index changes): see the follow-up line below.
+- Noise test (`noise-test`, defaults, 60 s at 60 fps, flat sand, +-1 mm
+  per frame, now counting any change of held glyph level, band or contour
+  index): 0 changes in all 44 runs (ranges +-80 and +-40 mm; independent and
+  whole-frame noise; flat at 9 mm, four heights within fractions of a mm of
+  a glyph boundary, two within fractions of a mm of a band boundary, 0.05 mm
+  either side of the 15 mm contour level, -20 and 40 mm). Control (no
+  smoothing, no hysteresis, 5 s): 260,120 changes in 2,780 cells. PASS.
 Not compiled with openFrameworks, not hardware-tested.
 
 Hardware checklist additions:
