@@ -119,7 +119,7 @@ void MycorrhizaField::clearLayers()
 }
 
 // ------------------------------------------------------------ patches
-void MycorrhizaField::updatePatches(const Inputs & in, float dt, bool adopting)
+void MycorrhizaField::updatePatches(const Inputs & in, float dt, bool adopting, bool withLiquid)
 {
 	const int W = cols, H = rows, B = blockSize;
 	const float aF = 1.0f - std::exp(-dt / std::max(1e-3f, TOUCH_FAST_SEC));
@@ -205,7 +205,8 @@ void MycorrhizaField::updatePatches(const Inputs & in, float dt, bool adopting)
 				fp[(size_t)y * W + x] = sum / 9.0f;
 			}
 	});
-	updateLiquid(in, dt);
+	if (withLiquid)
+		updateLiquid(in, dt);
 }
 
 // ------------------------------------------------------------ light-liquid (half resolution)

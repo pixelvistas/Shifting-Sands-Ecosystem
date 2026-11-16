@@ -9,7 +9,15 @@ KinectProjector::kinectCoordToProjCoord on a coarse lookup grid (read-only
 use of the calibration).
 
 Network style (MycorrhizaField::STYLE):
-- "Patches and hyphae" (default): the lit ground, a light-liquid that pools
+- "Mycelium" (default, 2026-11-14; MycorrhizaRendererMycelium.cpp): the port
+  of tools/mycelium_lookdev/index.html. MyceliumSim (CPU) supplies the lit
+  mask, the liquid's velocity and the hyphae; here the page's passes run on
+  the GPU in a grid-space image (MyceliumSim::FIB_PX px per grid cell, ~1 px
+  per mm, the page's unit): swirl directions and line integral convolution
+  (rebuilt when MyceliumSim says so), fibre advection, threads into a mask,
+  shading, two-level bloom, tone map; the result is mapped onto the sand
+  through the calibration mesh (myc_present).
+- "Patches and hyphae": the lit ground, a light-liquid that pools
   in basins (patches.frag: marbled swirl moved along the liquid's velocity
   with a flow map, lit as a glossy surface, colour by maturity) and the
   threads (hypha.vert/.frag: anti-aliased line quads, held in a GPU ring
@@ -38,6 +46,7 @@ mycelium (see docs/DEVLOG.md for what a placard may claim).
 #pragma once
 #include "ofMain.h"
 #include "MycorrhizaField.h"
+#include <functional>
 
 class KinectProjector;
 class VegetationField;
@@ -87,6 +96,25 @@ public:
 	static float BUMP, SPEC_GAIN, SHININESS;
 	static ofFloatColor TROUGH_COLOR;
 
+	// "Mycelium" display (page settings, page names in comments).
+	static float M_FIBRE_LEN;         // fibreLen, Streak length, px
+	static float M_FIBRE;             // fibre, Fibre width, px
+	static float M_SWIRL_SCALE;       // swirlScale, Swirl size
+	static float M_STROKE_W;          // strokeW, Streaks follow the stroke
+	static float M_STREAK_FLOW;       // streakFlow, Streak flow, px/s
+	static float M_TEX_SLOPE;         // texSlope, Streaks follow the slopes
+	static float M_CARRY;             // carry, Carried by the liquid
+	static float M_RELAX;             // relax, Settling
+	static float M_MATURE;            // mature, Warm-up time, s
+	static float M_EDGE_COOL;         // edgeCool, Cool edges
+	static float M_EXPOSURE, M_CONTRAST, M_GAMMA, M_BASE, M_LIGHT_COL, M_SHEEN, M_RELIEF, M_FIB_RELIEF, M_SHINE, M_RIM,
+		M_BLOOM, M_BLOOM_THRESH, M_SAND;
+	static float M_THREAD_BRIGHT, M_PULSE_GAIN, M_PULSE_SPEED, M_PULSE_LEN, M_PULSE_SHARP;
+	static float M_MIN_THREAD_PX;     // minimum drawn thread width, projector px
+	static ofFloatColor M_C0, M_C1, M_C2, M_C3, M_TROUGH, M_THREAD_COL;
+	static float M_BRUSH, M_CARVE, M_PILE; // the page's simulated hand; used only by the headless harness
+	static void applyPalette(int which); // 0 Cyan and amber, 1 Blue and gold, 2 Violet
+
 	// "Physarum (previous)" display.
 	static float GAMMA;
 	static float CORE_GAIN;
@@ -116,6 +144,15 @@ private:
 	void uploadTrace();
 	void renderPhysarum();
 	void composite(float x, float y, float w, float h, bool additive);
+	// Mycelium.
+	void myceliumAllocate();
+	void myceliumUpload();
+	void myceliumSyncThreads();
+	void myceliumWriteSegment(size_t slot, const MyceliumSim::Segment & s);
+	void myceliumRender();
+	void myceliumGui();
+	void quadPass(ofFbo & dst, ofShader & sh, const std::function<void(ofShader &)> & setup);
+	float projPxPerFibPx() const;
 
 	std::shared_ptr<KinectProjector> kinectProjector;
 	const VegetationField * vegetation = nullptr;
@@ -137,6 +174,20 @@ private:
 	size_t ringCap = 0;               // segments
 	uint64_t ringNextId = 0;          // next segment id not yet written
 	ofVboMesh tipMesh;
+	// Mycelium.
+	ofShader mCurl, mLic, mFib, mShade, mBright, mBlur, mFinal, mPresent, mThread;
+	bool myceliumShadersLoaded = false;
+	int mFW = 0, mFH = 0;                       // grid-space image size
+	ofFbo mSwirl, mBase, mFibA, mFibB, mThreads, mShadeFbo, mB1a, mB1b, mB2a, mB2b, mFinalFbo;
+	bool mFibCurrentA = true, mFibValid = false;
+	ofTexture mMaskTex, mAuxTex, mLiqTex, mNoiseTex;
+	std::vector<float> mMaskBuf, mAuxBuf, mLiqBuf;
+	ofVbo mRing;
+	std::vector<glm::vec3> mRingPos, mRingNorm;
+	std::vector<glm::vec2> mRingTex;
+	size_t mRingCap = 0;
+	uint64_t mRingNext = 0;
+	float mUploadMs = 0, mThreadMs = 0;
 	// Physarum.
 	ofTexture traceTex, siteTex;
 	ofPixels tracePix;

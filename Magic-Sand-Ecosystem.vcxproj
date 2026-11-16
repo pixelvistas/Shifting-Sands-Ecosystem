@@ -256,6 +256,8 @@
     <ClCompile Include="src\Games\SeedLayer.cpp" />
     <ClCompile Include="src\Prototypes\Mycorrhiza\MycorrhizaField.cpp" />
     <ClCompile Include="src\Prototypes\Mycorrhiza\MycorrhizaFieldLayers.cpp" />
+    <ClCompile Include="src\Prototypes\Mycorrhiza\MyceliumSim.cpp" />
+    <ClCompile Include="src\Prototypes\Mycorrhiza\MycorrhizaRendererMycelium.cpp" />
     <ClCompile Include="src\Prototypes\Mycorrhiza\MycorrhizaRenderer.cpp" />
     <ClCompile Include="src\Games\WaterFlowField.cpp" />
     <ClCompile Include="src\Games\LatticeFlow.cpp" />
@@ -326,6 +328,7 @@
     <ClInclude Include="src\Games\SeedParticles.h" />
     <ClInclude Include="src\Games\SeedLayer.h" />
     <ClInclude Include="src\Prototypes\Mycorrhiza\MycorrhizaField.h" />
+    <ClInclude Include="src\Prototypes\Mycorrhiza\MyceliumSim.h" />
     <ClInclude Include="src\Prototypes\Mycorrhiza\MycorrhizaRenderer.h" />
     <ClInclude Include="src\Games\WaterFlowField.h" />
     <ClInclude Include="src\Games\LatticeFlow.h" />

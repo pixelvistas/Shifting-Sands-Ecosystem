@@ -2,7 +2,11 @@
 MycorrhizaField - Prototype 2 ("Mycorrhiza").
 
 Two network styles (STYLE):
-- STYLE_PATCHES_HYPHAE (default, 2026-11-13; MycorrhizaFieldLayers.cpp):
+- STYLE_MYCELIUM (default, 2026-11-14; MyceliumSim.h): the port of
+  tools/mycelium_lookdev/index.html; this class supplies its touch
+  footprint (detectTouch + the per-cell marks of updatePatches, without the
+  light-liquid) and the settled sand (cellSlow).
+- STYLE_PATCHES_HYPHAE (2026-11-13; MycorrhizaFieldLayers.cpp):
   the touched ground itself lights up (patch presence and maturity per
   cell) and thin hyphae grow from patch edges by tip growth, branch, fuse
   with other threads and reach other patches. Described in the .cpp.
@@ -66,6 +70,7 @@ deleting src/Prototypes/Mycorrhiza and the "Display mode" entry in ofApp.
 #include <functional>
 #include <memory>
 #include <vector>
+#include "MyceliumSim.h"
 
 class MycorrhizaField
 {
@@ -86,7 +91,7 @@ public:
 		float dt = 1.0f / 40.0f;               // seconds
 	};
 
-	enum { STYLE_PATCHES_HYPHAE = 0, STYLE_PHYSARUM = 1 };
+	enum { STYLE_PATCHES_HYPHAE = 0, STYLE_PHYSARUM = 1, STYLE_MYCELIUM = 2 };
 	static int STYLE;
 
 	void step(const Inputs & in);
@@ -150,6 +155,9 @@ public:
 	const std::vector<Tip> & tips() const { return tipList; }
 	const std::vector<uint64_t> & segmentsRemovedThisStep() const { return removedIds; }
 	double getTime() const { return time; }
+	// Style "Mycelium" (MyceliumSim.h).
+	const MyceliumSim & getMycelium() const { return mycelium; }
+	MyceliumSim & getMycelium() { return mycelium; }
 	// Brightness of something born at field time b (fades to 10 % over TRACE_MEMORY_MIN).
 	float fadeAt(float birth) const;
 	int boundaryCellCount() const { return boundaryCount; }
@@ -236,7 +244,7 @@ private:
 	std::unique_ptr<Pool> pool;
 	void parallel(size_t n, const std::function<void(size_t, size_t, int)> & f);
 	void resize(int c, int r);
-	void updatePatches(const Inputs & in, float dt, bool adopting);
+	void updatePatches(const Inputs & in, float dt, bool adopting, bool withLiquid = true);
 	void updateAttractant(const Inputs & in);
 	void updateLiquid(const Inputs & in, float dt);
 	void labelPatchBlocks();
@@ -281,6 +289,7 @@ private:
 	float lastStepMs = 0.0f;
 	float phaseMs[PHASE_COUNT] = { 0, 0, 0, 0, 0, 0, 0 };
 	std::vector<float> levelSample;
+	MyceliumSim mycelium;
 
 	// Patches.
 	std::vector<float> cellFast, cellSlow, presenceMap, maturityMap, markTime, footprint;

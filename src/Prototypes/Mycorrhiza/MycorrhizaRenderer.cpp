@@ -76,6 +76,14 @@ void MycorrhizaRenderer::loadShaders()
 	const std::string dir = ofIsGLProgrammableRenderer() ? "shaders/mycorrhiza/GL3/" : "shaders/mycorrhiza/GL2/";
 	shaderLoaded = loadPair(shader, dir, "mycorrhiza");
 	layerShadersLoaded = loadPair(patchShader, dir, "patches") && loadPair(hyphaShader, dir, "hypha") && loadPair(glowShader, dir, "glow");
+	myceliumShadersLoaded = true;
+	for (std::pair<ofShader *, const char *> p : { std::make_pair(&mCurl, "myc_curl"), std::make_pair(&mLic, "myc_lic"),
+			std::make_pair(&mFib, "myc_fib"), std::make_pair(&mShade, "myc_shade"), std::make_pair(&mBright, "myc_bright"),
+			std::make_pair(&mBlur, "myc_blur"), std::make_pair(&mFinal, "myc_final"), std::make_pair(&mPresent, "myc_present") })
+		myceliumShadersLoaded = p.first->load(dir + "myc_quad.vert", dir + p.second + ".frag") && myceliumShadersLoaded;
+	myceliumShadersLoaded = mThread.load(dir + "myc_thread.vert", dir + "myc_thread.frag") && myceliumShadersLoaded;
+	if (!myceliumShadersLoaded)
+		ofLogError("MycorrhizaRenderer") << "setup(): could not load the Mycelium shaders (shaders/mycorrhiza/.../myc_*)";
 #endif
 	if (!shaderLoaded || !layerShadersLoaded)
 		ofLogError("MycorrhizaRenderer") << "setup(): could not load shaders/mycorrhiza (physarum " << shaderLoaded
@@ -112,6 +120,9 @@ void MycorrhizaRenderer::clear()
 	ringCap = 0;       // the ring is reallocated (empty) on the next update
 	ringNextId = 0;
 	tipMesh.clear();
+	mFibValid = false;   // Mycelium: the fibre field restarts from the base pattern
+	mRingCap = 0;
+	mRingNext = 0;
 	for (ofFbo * f : { &fbo, &hyphaFbo })
 		if (f->isAllocated()) {
 			f->begin();
@@ -162,7 +173,11 @@ void MycorrhizaRenderer::update()
 		return;
 	field.step(in);
 	rebuildMesh();
-	if (MF::STYLE == MF::STYLE_PHYSARUM) {
+	if (MF::STYLE == MF::STYLE_MYCELIUM) {
+		myceliumUpload();
+		myceliumSyncThreads();
+		myceliumRender();
+	} else if (MF::STYLE == MF::STYLE_PHYSARUM) {
 		uploadTrace();
 		renderPhysarum();
 	} else {
@@ -588,6 +603,15 @@ void MycorrhizaRenderer::drawOverlayProjectorWindow() { composite(0, 0, projRes.
 	X(HYPHA_WIDTH_PX) X(HYPHA_MIN_WIDTH_PX) X(TIP_LIFE_SEC) X(SEGMENT_MM) X(HOME_MM) \
 	X(LIQUID_SOURCE_MM_S) X(LIQUID_VISCOSITY) X(LIQUID_PRESENCE_MM) X(HYPHA_TOUCH_BOOST)
 #define MYC_FIELD_INTS(X) X(MAX_AGENTS) X(TOUCH_BLOCK) X(THREADS) X(STYLE) X(MAX_TIPS) X(MAX_SEGMENTS) X(MAX_GENERATION) X(LIQUID_SUBSTEPS)
+#define MYC_SIM_FLOATS(X) X(POUR) X(PIPE_K) X(VISC) X(YIELD) X(EVAP_MEM) X(TRACE_MEM) X(SPAWN) X(SPEED) X(CURVE) X(CORR) \
+	X(BRANCH) X(TIP_LIFE) X(WIDTH) X(SLOPE) X(DIR_WINDOW_SEC) X(MODEL_EASE_SEC) X(SEGMENT_MM)
+#define MYC_SIM_INTS(X) X(MAX_THREADS) X(FIB_PX) X(DIR_RADIUS_CELLS) X(MAX_SEGMENTS) X(COARSE_CELLS)
+#define MYC_SIM_BOOLS(X) X(THREADS_ON) X(WARM_FROM_MODEL)
+#define MYC_M_FLOATS(X) X(M_FIBRE_LEN) X(M_FIBRE) X(M_SWIRL_SCALE) X(M_STROKE_W) X(M_STREAK_FLOW) X(M_TEX_SLOPE) X(M_CARRY) \
+	X(M_RELAX) X(M_MATURE) X(M_EDGE_COOL) X(M_EXPOSURE) X(M_CONTRAST) X(M_GAMMA) X(M_BASE) X(M_LIGHT_COL) X(M_SHEEN) \
+	X(M_RELIEF) X(M_FIB_RELIEF) X(M_SHINE) X(M_RIM) X(M_BLOOM) X(M_BLOOM_THRESH) X(M_SAND) X(M_THREAD_BRIGHT) X(M_PULSE_GAIN) \
+	X(M_PULSE_SPEED) X(M_PULSE_LEN) X(M_PULSE_SHARP) X(M_MIN_THREAD_PX) X(M_BRUSH) X(M_CARVE) X(M_PILE)
+#define MYC_M_COLORS(X) X(M_C0) X(M_C1) X(M_C2) X(M_C3) X(M_TROUGH) X(M_THREAD_COL)
 #define MYC_DISPLAY_FLOATS(X) \
 	X(PATCH_SCALE_MM) X(PATCH_FLOW) X(PATCH_CONTRAST) X(PATCH_BRIGHTNESS) X(EDGE_COOL) X(RIM_GAIN) X(WARM_GAIN) \
 	X(HYPHA_BRIGHTNESS) X(GLOW_RADIUS_PX) X(GLOW_STRENGTH) \
@@ -632,6 +656,17 @@ bool MycorrhizaRenderer::savePreset()
 	saveColor(s, "HYPHA_WARM", HYPHA_WARM);
 	for (int i = 0; i < 5; i++)
 		saveColor(s, "color" + ofToString(i), COLOR[i]);
+#define SAVE_S(n) s.appendChild("MYC_" #n).set(MyceliumSim::n);
+#define SAVE_M(n) s.appendChild(#n).set(n);
+#define SAVE_C(n) saveColor(s, #n, n);
+	MYC_SIM_FLOATS(SAVE_S)
+	MYC_SIM_INTS(SAVE_S)
+	MYC_SIM_BOOLS(SAVE_S)
+	MYC_M_FLOATS(SAVE_M)
+	MYC_M_COLORS(SAVE_C)
+#undef SAVE_S
+#undef SAVE_M
+#undef SAVE_C
 	bool ok = xml.save(PRESET_FILE);
 	presetStatus = ok ? std::string("saved \"") + PRESET_NAME + "\"" : "save failed";
 	return ok;
@@ -662,7 +697,22 @@ bool MycorrhizaRenderer::loadPreset()
 	loadColor(s, "HYPHA_WARM", HYPHA_WARM);
 	for (int i = 0; i < 5; i++)
 		loadColor(s, "color" + ofToString(i), COLOR[i]);
-	MF::STYLE = std::min(1, std::max(0, MF::STYLE));
+#define LOAD_SF(n) if (s.getChild("MYC_" #n)) MyceliumSim::n = s.getChild("MYC_" #n).getFloatValue();
+#define LOAD_SI(n) if (s.getChild("MYC_" #n)) MyceliumSim::n = s.getChild("MYC_" #n).getIntValue();
+#define LOAD_SB(n) if (s.getChild("MYC_" #n)) MyceliumSim::n = s.getChild("MYC_" #n).getBoolValue();
+#define LOAD_M(n) if (s.getChild(#n)) n = s.getChild(#n).getFloatValue();
+#define LOAD_C(n) loadColor(s, #n, n);
+	MYC_SIM_FLOATS(LOAD_SF)
+	MYC_SIM_INTS(LOAD_SI)
+	MYC_SIM_BOOLS(LOAD_SB)
+	MYC_M_FLOATS(LOAD_M)
+	MYC_M_COLORS(LOAD_C)
+#undef LOAD_SF
+#undef LOAD_SI
+#undef LOAD_SB
+#undef LOAD_M
+#undef LOAD_C
+	MF::STYLE = std::min(2, std::max(0, MF::STYLE));
 	presetStatus = std::string("loaded \"") + s.getChild("name").getValue() + "\"";
 	return true;
 }
@@ -675,10 +725,13 @@ void MycorrhizaRenderer::drawGui()
 	ImGui::Text("Prototype 2: a trace of touch. Display only:");
 	ImGui::Text("reads the succession model, never writes it.");
 	{
-		static const char * styles[] = { "Patches and hyphae", "Physarum (previous)" };
-		int style = F::STYLE;
-		if (ImGui::Combo("Network style", &style, styles, 2) && style != F::STYLE) {
-			F::STYLE = style;
+		// Listed in this order; values are MycorrhizaField's STYLE_* constants.
+		static const char * styles[] = { "Mycelium", "Patches and hyphae", "Physarum (previous)" };
+		static const int values[] = { F::STYLE_MYCELIUM, F::STYLE_PATCHES_HYPHAE, F::STYLE_PHYSARUM };
+		int item = 0;
+		for (int i = 0; i < 3; i++) if (values[i] == F::STYLE) item = i;
+		if (ImGui::Combo("Network style", &item, styles, 3) && values[item] != F::STYLE) {
+			F::STYLE = values[item];
 			clear();
 		}
 	}
@@ -698,7 +751,9 @@ void MycorrhizaRenderer::drawGui()
 	ImGui::Text("fps %.1f (note the fps in each display mode)", ofGetFrameRate());
 	ImGui::Text("Touched blocks %d; largest block change %.2f mm", field.touchedBlocks(), field.maxTouchChangeMM());
 	ImGui::Text("(on untouched sand this must stay below the touch threshold)");
-	if (F::STYLE == F::STYLE_PATCHES_HYPHAE) {
+	if (F::STYLE == F::STYLE_MYCELIUM) {
+		// readouts in myceliumGui()
+	} else if (F::STYLE == F::STYLE_PATCHES_HYPHAE) {
 		ImGui::Text("Step %.2f ms: touch %.2f, patches %.2f, attractant %.2f, hyphae %.2f", field.getLastStepMs(),
 			field.getPhaseMs(0), field.getPhaseMs(1), field.getPhaseMs(2), field.getPhaseMs(3));
 		ImGui::Text("Upload %.2f ms, mesh %.2f ms, threads %.2f ms", lastUploadMs, lastMeshMs, lastRingMs);
@@ -720,14 +775,18 @@ void MycorrhizaRenderer::drawGui()
 		ImGui::SliderFloat("Touch rise (/s)", &F::TOUCH_RISE_PER_SEC, 0.5f, 20.0f);
 		ImGui::SliderFloat("Hand occlusion drop", &F::OCCLUSION_DROP, 0.05f, 1.0f);
 		ImGui::SliderInt("Touch block (cells)", &F::TOUCH_BLOCK, 2, 8);
-		ImGui::SliderFloat("Trace memory (min)", &F::TRACE_MEMORY_MIN, 0.5f, 30.0f);
-		ImGui::Text("(fades to about 10 %% in this many minutes)");
-		ImGui::SliderFloat("Min mobility (dry, bare)", &F::MIN_MOBILITY, 0.0f, 1.0f);
+		ImGui::SliderFloat("Patch mark (mm)", &F::PATCH_CELL_MM, 1.0f, 10.0f);
+		if (F::STYLE != F::STYLE_MYCELIUM) {
+			ImGui::SliderFloat("Trace memory (min)", &F::TRACE_MEMORY_MIN, 0.5f, 30.0f);
+			ImGui::Text("(fades to about 10 %% in this many minutes)");
+			ImGui::SliderFloat("Min mobility (dry, bare)", &F::MIN_MOBILITY, 0.0f, 1.0f);
+		}
 		ImGui::SliderInt("Threads", &F::THREADS, 1, 8);
 	}
-	if (F::STYLE == F::STYLE_PATCHES_HYPHAE) {
+	if (F::STYLE == F::STYLE_MYCELIUM) {
+		myceliumGui();
+	} else if (F::STYLE == F::STYLE_PATCHES_HYPHAE) {
 		if (ImGui::CollapsingHeader("Patches", ImGuiTreeNodeFlags_DefaultOpen)) {
-			ImGui::SliderFloat("Patch mark (mm)", &F::PATCH_CELL_MM, 1.0f, 10.0f);
 			ImGui::Text("Light-liquid: reshaped sand pours it in; it flows downhill and fills basins.");
 			ImGui::SliderFloat("Pour rate (mm/s)", &F::LIQUID_SOURCE_MM_S, 0.0f, 30.0f);
 			ImGui::SliderFloat("Viscosity factor", &F::LIQUID_VISCOSITY, 0.0f, 10.0f);

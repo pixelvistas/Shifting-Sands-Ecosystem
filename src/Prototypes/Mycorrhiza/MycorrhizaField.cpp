@@ -45,7 +45,7 @@ float MycorrhizaField::LEVEL_FALL_SEC = 1200.0f;
 float MycorrhizaField::LEVEL_FLOOR = 8.0f;
 
 int MycorrhizaField::THREADS = 4;
-int MycorrhizaField::STYLE = MycorrhizaField::STYLE_PATCHES_HYPHAE;
+int MycorrhizaField::STYLE = MycorrhizaField::STYLE_MYCELIUM;
 float MycorrhizaField::HEIGHT_LOW_MM = 0.0f;
 float MycorrhizaField::HEIGHT_HIGH_MM = 60.0f;
 
@@ -126,6 +126,7 @@ void MycorrhizaField::clear()
 	displayLevel = 0.0f;
 	spawned = 0;
 	clearLayers();
+	mycelium.clear();
 }
 
 void MycorrhizaField::restartTouch()
@@ -184,6 +185,21 @@ void MycorrhizaField::step(const Inputs & in)
 		updateTrail(in, k); lap(4);
 		updateTrace(in, dt); lap(5);
 		updateDisplayLevel(dt); lap(6);
+	} else if (STYLE == STYLE_MYCELIUM) {
+		// Phases: touch, marks + footprint, mask, liquid motion, threads.
+		for (int i = 1; i < PHASE_COUNT; i++) phaseMs[i] = 0.0f;
+		updatePatches(in, dt, adopting, false); lap(1);
+		MyceliumSim::Inputs mi;
+		mi.footprint = footprint.data();
+		mi.sand = cellSlow.data();
+		mi.water = in.water;
+		for (int r = 0; r < 3; r++) mi.cover[r] = in.cover[r];
+		mi.soil = in.soil;
+		mi.cols = cols; mi.rows = rows; mi.mmPerCell = in.mmPerCell; mi.dt = dt;
+		mi.adopting = adopting;
+		mycelium.step(mi);
+		phaseMs[2] = mycelium.partMs(0); phaseMs[3] = mycelium.partMs(1); phaseMs[4] = mycelium.partMs(2);
+		t0 = std::chrono::steady_clock::now();
 	} else {
 		for (int i = 1; i < PHASE_COUNT; i++) phaseMs[i] = 0.0f;
 		updatePatches(in, dt, adopting); lap(1);

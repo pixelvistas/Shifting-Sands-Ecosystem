@@ -31,6 +31,12 @@
 		<ClCompile Include="src\Prototypes\Mycorrhiza\MycorrhizaFieldLayers.cpp">
 			<Filter>src\Prototypes\Mycorrhiza</Filter>
 		</ClCompile>
+		<ClCompile Include="src\Prototypes\Mycorrhiza\MyceliumSim.cpp">
+			<Filter>src\Prototypes\Mycorrhiza</Filter>
+		</ClCompile>
+		<ClCompile Include="src\Prototypes\Mycorrhiza\MycorrhizaRendererMycelium.cpp">
+			<Filter>src\Prototypes\Mycorrhiza</Filter>
+		</ClCompile>
 		<ClCompile Include="src\Prototypes\Mycorrhiza\MycorrhizaField.cpp">
 			<Filter>src\Prototypes\Mycorrhiza</Filter>
 		</ClCompile>
@@ -778,6 +784,9 @@
 		</ClInclude>
 		<ClInclude Include="src\Games\SeedParticles.h">
 			<Filter>src\Games</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Prototypes\Mycorrhiza\MyceliumSim.h">
+			<Filter>src\Prototypes\Mycorrhiza</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Prototypes\Mycorrhiza\MycorrhizaField.h">
 			<Filter>src\Prototypes\Mycorrhiza</Filter>

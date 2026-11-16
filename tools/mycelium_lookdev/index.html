@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mycorrhiza Look-Dev</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Single visual world: a dark room with projected light on sand. Stage left, controls right. */
+  --bg: #0b0c0f;
+  --panel: #14161b;
+  --line: #262a33;
+  --text: #e4e7ec;
+  --muted: #8b93a3;
+  --accent: #5fd3f3;
+  --warm: #ffb347;
+  --font-body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.45 var(--font-body); }
+.app { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; padding: 16px; min-height: 100%; }
+@media (max-width: 960px) { .app { grid-template-columns: minmax(0, 1fr); } }
+.left { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+header h1 { font-size: 20px; font-weight: 600; margin: 0; text-wrap: balance; letter-spacing: 0.01em; }
+header p { margin: 4px 0 0; color: var(--muted); max-width: 70ch; }
+.stage { position: relative; width: 100%; aspect-ratio: 16 / 10; background: #000; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; touch-action: none; cursor: crosshair; }
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+button { font: 500 13px var(--font-body); color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 6px 12px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.on { border-color: var(--accent); color: var(--accent); }
+.readout { margin-left: auto; font: 12px var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.note { color: var(--muted); font-size: 12.5px; max-width: 75ch; }
+.note strong { color: var(--text); font-weight: 600; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px; display: flex; flex-direction: column; gap: 16px; align-self: start; max-height: calc(100vh - 32px); overflow-y: auto; }
+@media (max-width: 960px) { .panel { max-height: none; } }
+.group { display: flex; flex-direction: column; gap: 9px; }
+.group h2 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); margin: 0; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.ctl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: center; }
+.ctl label { font-size: 13px; }
+.ctl .val { font: 12px var(--font-mono); color: var(--accent); font-variant-numeric: tabular-nums; }
+.ctl input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); margin: 0; }
+.ctl .help { grid-column: 1 / -1; font-size: 11.5px; color: var(--muted); }
+.check { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+.colors { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+.colors label { display: flex; gap: 8px; align-items: center; font-size: 12.5px; }
+.colors input { width: 34px; height: 24px; border: 1px solid var(--line); background: none; padding: 0; border-radius: 4px; }
+textarea { width: 100%; min-height: 120px; font: 11.5px/1.4 var(--font-mono); color: var(--text); background: #0d0f13; border: 1px solid var(--line); border-radius: 5px; padding: 8px; resize: vertical; }
+.err { color: var(--warm); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="left">
+    <header>
+      <h1>Mycorrhiza Look-Dev</h1>
+      <p>Drag across the field to sweep the sand. Wherever you sweep lights up at once, with streaks running along your stroke; fresh light is cyan and warms to amber within seconds, and it stays. Over time a fine mesh of pale hyphae grows across the dark sand between the lit areas, with light pulsing along it.</p>
+    </header>
+    <div class="stage" id="stage">
+      <canvas id="gl" width="1024" height="640"></canvas>
+    </div>
+    <div class="bar">
+      <button id="btnPlay" type="button">Pause</button>
+      <button id="btnDemo" type="button" class="on">Demo strokes: on</button>
+      <button id="btnClear" type="button">Clear the light</button>
+      <button id="btnSand" type="button">Reset the sand</button>
+      <span class="readout" id="readout">–</span>
+    </div>
+    <p class="note"><strong>What is stand-in here:</strong> the sand is generated, your pointer plays the role of a hand seen by the Kinect, and the colour warms with time since the ground was touched. In the sandbox, warming follows the succession model's recovery of that ground instead. About 1 px is 1 mm of sand.</p>
+    <p class="note err" id="glError" hidden></p>
+  </div>
+
+  <aside class="panel" id="panel" aria-label="Look controls">
+    <div class="group">
+      <h2>Settings for Claude Code</h2>
+      <div class="bar">
+        <button id="btnCopy" type="button">Copy settings</button>
+        <button id="btnDefaults" type="button">Restore defaults</button>
+      </div>
+      <textarea id="settingsOut" readonly aria-label="Current settings as JSON"></textarea>
+    </div>
+  </aside>
+</div>
+
+<script id="vs" type="x-shader">#version 300 es
+in vec2 aPos;
+out vec2 vUv;
+void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }
+</script>
+
+<script id="common" type="x-shader">
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = p - i;
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  float a = hash12(i), b = hash12(i + vec2(1.0, 0.0));
+  float c = hash12(i + vec2(0.0, 1.0)), d = hash12(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+</script>
+
+<!-- Sand: the hand lowers it (positive depth) or piles it up (negative depth) -->
+<script id="fsCarve" type="x-shader">#version 300 es
+precision highp float;
+uniform sampler2D uTarget;
+uniform float uAspect, uRadius, uDepth;
+uniform vec2 uPoint;
+in vec2 vUv;
+out vec4 o;
+void main() {
+  vec2 p = vUv - uPoint; p.x *= uAspect;
+  vec4 t = texture(uTarget, vUv);
+  t.r -= uDepth * exp(-dot(p, p) / uRadius);
+  o = t;
+}
+</script>
+
+<!-- Light-liquid state: R depth (mm), G seconds since touched. A touch adds a little liquid and marks the ground fresh. -->
+<script id="fsPour" type="x-shader">#version 300 es
+precision highp float;
+uniform sampler2D uTarget;
+uniform float uAspect, uRadius, uAmount, uBuild, uBuildMax;
+uniform vec2 uPoint;
+in vec2 vUv;
+out vec4 o;
+void main() {
+  vec2 p = vUv - uPoint; p.x *= uAspect;
+  float f = exp(-dot(p, p) / uRadius);
+  vec4 l = texture(uTarget, vUv);
+  l.r += uAmount * f;
+  l.b = min(uBuildMax, l.b + uBuild * f);
+  if (f > 0.4) l.g = 0.0;
+  o = l;
+}
+</script>
+
+<!-- Where the light is. R: lit footprint (appears at full strength under the hand), G: seconds since touched, BA: direction of the stroke -->
+<script id="fsMaskTouch" type="x-shader">#version 300 es
+precision highp float;
+uniform sampler2D uTarget;
+uniform float uAspect, uRadius;
+uniform vec2 uPoint, uDir;
+in vec2 vUv;
+out vec4 o;
+void main() {
+  vec2 p = vUv - uPoint; p.x *= uAspect;
+  float f = exp(-dot(p, p) / uRadius);
+  vec4 m = texture(uTarget, vUv);
+  m.r = max(m.r, smoothstep(0.25, 0.55, f));
+  if (f > 0.3) m.g = 0.0;
+  if (length(uDir) > 0.0 && f > 0.15) m.ba = normalize(mix(m.ba, uDir, clamp(f * 1.5, 0.0, 1.0)) + vec2(1e-5));
+  o = m;
+}
+</script>
+<script id="fsMaskAge" type="x-shader">#version 300 es
+precision highp float;
+uniform sampler2D uTarget;
+uniform float uDt, uFade;
+in vec2 vUv;
+out vec4 o;
+void main() {
+  vec4 m = texture(uTarget, vUv);
+  o = vec4(m.r * exp(-uDt * uFade), min(m.g + uDt, 9000.0), m.ba);
+}
+</script>
+
+<!-- Virtual-pipe shallow water (Mei, Decaudin and Hu 2007), as in the sandbox's water: outflow to the four neighbours, damped for viscosity -->
+<script id="fsFlux" type="x-shader">#version 300 es
+precision highp float;
+uniform sampler2D uLiq, uFlux, uTerr;
+uniform vec2 uTexel;
+uniform float uDt, uK, uVisc, uYield;
+in vec2 vUv;
+out vec4 o;
+float S(vec2 uv) { return texture(uTerr, uv).r + texture(uLiq, uv).r; }
+void main() {
+  vec2 e = uTexel;
+  float h = texture(uLiq, vUv).r;
+  float s = texture(uTerr, vUv).r + h;
+  vec4 f = texture(uFlux, vUv) * exp(-uDt * uVisc);
+  vec4 d = vec4(s - S(vUv - vec2(e.x, 0.0)), s - S(vUv + vec2(e.x, 0.0)), s - S(vUv + vec2(0.0, e.y)), s - S(vUv - vec2(0.0, e.y)));
+  d = sign(d) * max(abs(d) - uYield, 0.0);   // yield: like lava, a thin layer stops flowing instead of spreading away
+  f = max(vec4(0.0), f + uDt * uK * d);
+  if (vUv.x - e.x < 0.0) f.x = 0.0;
+  if (vUv.x + e.x > 1.0) f.y = 0.0;
+  if (vUv.y + e.y > 1.0) f.z = 0.0;
+  if (vUv.y - e.y < 0.0) f.w = 0.0;
+  float tot = (f.x + f.y + f.z + f.w) * uDt;
+  f *= tot > 1e-6 ? min(1.0, h / tot) : 0.0;
+  o = f;
+}
+</script>
+<script id="fsDepth" type="x-shader">#version 300 es
+precision highp float;
+uniform sampler2D uLiq, uFlux;
+uniform vec2 uTexel;
+uniform float uDt, uEvap, uDepthFull;
+in vec2 vUv;
+out vec4 o;
+void main() {
+  vec2 e = uTexel;
+  vec4 fc = texture(uFlux, vUv);
+  float inL = vUv.x - e.x < 0.0 ? 0.0 : texture(uFlux, vUv - vec2(e.x, 0.0)).y;
+  float inR = vUv.x + e.x > 1.0 ? 0.0 : texture(uFlux, vUv + vec2(e.x, 0.0)).x;
+  float inT = vUv.y + e.y > 1.0 ? 0.0 : texture(uFlux, vUv + vec2(0.0, e.y)).w;
+  float inB = vUv.y - e.y < 0.0 ? 0.0 : texture(uFlux, vUv - vec2(0.0, e.y)).z;
+  vec4 l = texture(uLiq, vUv);
+  float h = l.r + uDt * ((inL + inR + inT + inB) - (fc.x + fc.y + fc.z + fc.w));
+  h = max(h, 0.0) * exp(-uDt * uEvap);
+  // B remembers ground the liquid has lit, fading only with the trace memory
+  float lit = max(l.b * exp(-uDt * uEvap), smoothstep(0.0, uDepthFull, h));
+  o = vec4(h, min(l.g + uDt, 9000.0), lit, 1.0);
+}
+</script>
+<script id="fsVelL" type="x-shader">#version 300 es
+precision highp float;
+uniform sampler2D uLiq, uFlux;
+uniform vec2 uTexel;
+in vec2 vUv;
+out vec4 o;
+void main() {
+  vec2 e = uTexel;
+  vec4 fc = texture(uFlux, vUv);
+  float inL = vUv.x - e.x < 0.0 ? 0.0 : texture(uFlux, vUv - vec2(e.x, 0.0)).y;
+  float inR = vUv.x + e.x > 1.0 ? 0.0 : texture(uFlux, vUv + vec2(e.x, 0.0)).x;
+  float inT = vUv.y + e.y > 1.0 ? 0.0 : texture(uFlux, vUv + vec2(0.0, e.y)).w;
+  float inB = vUv.y - e.y < 0.0 ? 0.0 : texture(uFlux, vUv - vec2(0.0, e.y)).z;
+  float h = max(texture(uLiq, vUv).r, 0.3);
+  vec2 v = 0.5 * vec2((inL - fc.x) + (fc.y - inR), (inB - fc.w) + (fc.z - inT)) / h;
+  float m = length(v);
+  if (m > 40.0) v *= 40.0 / m;
+  o = vec4(v, 0.0, 1.0);
+}
+</script>
+
+<!-- A still field of swirls, used once to make the thread-like base texture -->
+<script id="fsCurlField" type="x-shader">#version 300 es
+precision highp float;
+uniform sampler2D uTerr, uMask;
+uniform vec2 uRes, uTerrTexel;
+uniform float uScale, uSlopeW, uStrokeW;
+out vec4 o;
+//COMMON
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec2 cp = gl_FragCoord.xy / uRes.y * uScale;
+  float h = 0.01;
+  vec2 c = vec2(vnoise(cp + vec2(0.0, h)) - vnoise(cp - vec2(0.0, h)), -(vnoise(cp + vec2(h, 0.0)) - vnoise(cp - vec2(h, 0.0)))) / (2.0 * h);
+  c += 0.5 * vec2(vnoise(cp * 2.7 + vec2(3.0, 0.0)) - 0.5, vnoise(cp * 2.7 + vec2(0.0, 5.0)) - 0.5);
+  vec2 g = 0.5 * vec2(texture(uTerr, uv + vec2(uTerrTexel.x, 0.0)).r - texture(uTerr, uv - vec2(uTerrTexel.x, 0.0)).r,
+                      texture(uTerr, uv + vec2(0.0, uTerrTexel.y)).r - texture(uTerr, uv - vec2(0.0, uTerrTexel.y)).r);
+  float sl = length(g);
+  vec2 dir = mix(c / (length(c) + 1e-4), -g / (sl + 1e-4), uSlopeW * smoothstep(0.05, 0.6, sl));
+  vec4 m = texture(uMask, uv);
+  float ml = length(m.ba);
+  if (ml > 1e-3) dir = mix(dir, m.ba / ml, uStrokeW * smoothstep(0.1, 0.5, m.r));
+  o = vec4(dir, 0.0, 1.0);
+}
+</script>
+<!-- Line integral convolution: soft noise averaged along the swirls gives fine combed fibres -->
+<script id="fsLic" type="x-shader">#version 300 es
+precision highp float;
+uniform sampler2D uVel, uNoise;
+uniform vec2 uRes;
+uniform float uLen, uFibre;
+out vec4 o;
+float nz(vec2 p) { return texture(uNoise, p / (256.0 * uFibre)).r; }
+void main() {
+  vec2 p0 = gl_FragCoord.xy;
+  const int NMAX = 48;
+  float ds = max(0.7 * uFibre, uLen / float(NMAX));
+  float acc = 0.5 * nz(p0), ws = 0.5;
+  for (int dir = -1; dir <= 1; dir += 2) {
+    vec2 p = p0;
+    for (int i = 0; i < NMAX; i++) {
+      if (float(i + 1) * ds > uLen) break;
+      vec2 v = texture(uVel, p / uRes).xy;
+      float l = length(v);
+      if (l < 1e-4) break;
+      p += float(dir) * v / l * ds;
+      float w = 1.0 - float(i + 1) * ds / uLen;
+      acc += w * nz(p);
+      ws += w;
+    }
+  }
+  o = vec4(acc / ws, 0.0, 0.0, 1.0);
+}
+</script>
+<!-- The texture rides on the liquid: carried by its velocity, then slowly settling back toward the base pattern -->
+<script id="fsFib" type="x-shader">#version 300 es
+precision highp float;
+uniform sampler2D uFib, uBase, uVelL, uMask;
+uniform vec2 uLiqRes, uRes;
+uniform float uDt, uRelax, uCarry, uStreakFlow;
+in vec2 vUv;
+out vec4 o;
+void main() {
+  vec2 v = uCarry * texture(uVelL, vUv).xy / uLiqRes;
+  vec4 m = texture(uMask, vUv);
+  float ml = length(m.ba);
+  if (ml > 1e-3) v += uStreakFlow * m.r * (m.ba / ml) / uRes;
+  float f = texture(uFib, vUv - uDt * v).r;
+  float b = texture(uBase, vUv).r;
+  o = vec4(mix(f, b, 1.0 - exp(-uDt * uRelax)), 0.0, 0.0, 1.0);
+}
+</script>
+
+<!-- Shade the liquid: fibre texture, colour from age (stand-in for the model), sheen and rim from the surface -->
+<script id="fsShade" type="x-shader">#version 300 es
+precision highp float;
+uniform sampler2D uLiq, uFib, uTerr;
+uniform vec2 uLiqTexel, uTerrTexel;
+uniform sampler2D uThreads, uMask;
+uniform vec2 uMaskTexel;
+uniform vec3 uThreadCol;
+uniform float uEdgeCool;
+uniform float uDepthFull, uContrast, uGamma, uBase, uMature, uExposure, uSheen, uRelief, uShine, uRim, uSand, uFibRelief, uLightCol, uThreadBright, uPulseGain;
+uniform vec2 uFibTexel;
+uniform vec3 uC0, uC1, uC2, uC3, uTrough;
+in vec2 vUv;
+out vec4 o;
+vec3 ramp(float m) {
+  m = clamp(m, 0.0, 1.0) * 3.0;
+  if (m < 1.0) return mix(uC0, uC1, m);
+  if (m < 2.0) return mix(uC1, uC2, m - 1.0);
+  return mix(uC2, uC3, m - 2.0);
+}
+float surf(vec2 uv) { return texture(uTerr, uv).r + texture(uLiq, uv).r; }
+void main() {
+  vec4 l = texture(uLiq, vUv);
+  vec4 mk = texture(uMask, vUv);
+  float P = smoothstep(0.05, 0.6, mk.r);
+  float edge = smoothstep(0.02, 0.2, length(vec2(texture(uMask, vUv + vec2(uMaskTexel.x, 0.0)).r - texture(uMask, vUv - vec2(uMaskTexel.x, 0.0)).r,
+                                                   texture(uMask, vUv + vec2(0.0, uMaskTexel.y)).r - texture(uMask, vUv - vec2(0.0, uMaskTexel.y)).r)));
+  float fraw = texture(uFib, vUv).r;
+  float fib = pow(clamp((fraw - 0.5) * uContrast + 0.5, 0.0, 1.0), uGamma);
+  vec2 fg = vec2(texture(uFib, vUv + vec2(uFibTexel.x, 0.0)).r - texture(uFib, vUv - vec2(uFibTexel.x, 0.0)).r,
+                 texture(uFib, vUv + vec2(0.0, uFibTexel.y)).r - texture(uFib, vUv - vec2(0.0, uFibTexel.y)).r);
+  float m = (1.0 - exp(-mk.g / max(uMature, 0.1))) * (1.0 - uEdgeCool * edge);
+  vec2 e = uLiqTexel;
+  vec2 g = vec2(surf(vUv + vec2(e.x, 0.0)) - surf(vUv - vec2(e.x, 0.0)), surf(vUv + vec2(0.0, e.y)) - surf(vUv - vec2(0.0, e.y)));
+  vec3 n = normalize(vec3(-g * uRelief - fg * uFibRelief * uContrast, 1.0));
+  vec3 Ld = normalize(vec3(-0.5, 0.55, 0.65));
+  float diff = max(dot(n, Ld), 0.0);
+  float spec = pow(max(dot(n, normalize(Ld + vec3(0.0, 0.0, 1.0))), 0.0), uShine) * uSheen;
+  float lightKey = clamp(0.85 * diff + 0.35 * fib - 0.2, 0.0, 1.0);
+  float key = mix(m * (0.55 + 0.45 * fib), lightKey, uLightCol);
+  vec3 col = mix(uTrough, ramp(key), smoothstep(0.0, 0.6, fib)) * (uBase + fib) * (0.75 + 0.35 * diff) * P * uExposure;
+  col += spec * mix(uC1, uC2, uLightCol) * P + uRim * edge * uC1 * P;
+  // threads: the same material in thin strands. Same colour key, lighting and fibre texture; pulses push the colour warmer and brighter.
+  vec2 th = texture(uThreads, vUv).rg;
+  float T = min(th.r, 1.0), Pu = min(th.g, 1.0);
+  vec3 tcol = uThreadCol * uThreadBright + ramp(0.55 + 0.45 * Pu) * Pu * uPulseGain;
+  col += tcol * T * uExposure;
+  vec2 tg = vec2(texture(uTerr, vUv + vec2(uTerrTexel.x, 0.0)).r - texture(uTerr, vUv - vec2(uTerrTexel.x, 0.0)).r,
+                 texture(uTerr, vUv + vec2(0.0, uTerrTexel.y)).r - texture(uTerr, vUv - vec2(0.0, uTerrTexel.y)).r);
+  vec3 sn = normalize(vec3(-tg * 0.35, 1.0));
+  float shade = max(0.0, dot(sn, normalize(vec3(-0.5, 0.6, 0.65))));
+  col += vec3(0.36, 0.32, 0.27) * (0.35 + 0.65 * shade) * uSand * (1.0 - P);
+  o = vec4(col, 1.0);
+}
+</script>
+
+<!-- Threads: thin pale lines with light pulsing outward along them, drawn into the same image before bloom -->
+<script id="vsThread" type="x-shader">#version 300 es
+in vec2 aPos;
+in float aSide;
+in float aS;
+in float aPhase;
+in float aBirth;
+in float aHue;
+out float vSide;
+out float vS;
+out float vPhase;
+out float vBirth;
+out float vHue;
+void main() { vSide = aSide; vS = aS; vPhase = aPhase; vBirth = aBirth; vHue = aHue; gl_Position = vec4(aPos, 0.0, 1.0); }
+</script>
+<script id="fsThread" type="x-shader">#version 300 es
+precision highp float;
+uniform float uTime, uFade, uPulseSpeed, uPulseLen, uPulseSharp, uBright, uPulseGain;
+uniform vec3 uBaseCol, uC0, uC1, uC2, uC3;
+in float vSide;
+in float vS;
+in float vPhase;
+in float vBirth;
+in float vHue;
+out vec4 o;
+vec3 ramp(float m) {
+  m = clamp(m, 0.0, 1.0) * 3.0;
+  if (m < 1.0) return mix(uC0, uC1, m);
+  if (m < 2.0) return mix(uC1, uC2, m - 1.0);
+  return mix(uC2, uC3, m - 2.0);
+}
+void main() {
+  float core = exp(-vSide * vSide * 2.5);
+  float fade = exp(-max(uTime - vBirth, 0.0) * uFade);
+  float pulse = pow(0.5 + 0.5 * cos(6.2831853 * (vS / uPulseLen - uTime * uPulseSpeed + vPhase)), uPulseSharp);
+  o = vec4(core * fade, core * fade * pulse, 0.0, 1.0);   // R: thread, G: pulse; coloured later with the liquid
+}
+</script>
+
+<script id="fsBright" type="x-shader">#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+uniform float uThresh;
+in vec2 vUv;
+out vec4 o;
+void main() {
+  vec3 c = texture(uSrc, vUv).rgb;
+  float br = max(c.r, max(c.g, c.b));
+  o = vec4(c * max(br - uThresh, 0.0) / max(br, 1e-4), 1.0);
+}
+</script>
+<script id="fsBlur" type="x-shader">#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+uniform vec2 uStep;
+in vec2 vUv;
+out vec4 o;
+void main() {
+  vec3 c = texture(uSrc, vUv).rgb * 0.2270270;
+  c += (texture(uSrc, vUv + uStep * 1.3846154).rgb + texture(uSrc, vUv - uStep * 1.3846154).rgb) * 0.3162162;
+  c += (texture(uSrc, vUv + uStep * 3.2307692).rgb + texture(uSrc, vUv - uStep * 3.2307692).rgb) * 0.0702703;
+  o = vec4(c, 1.0);
+}
+</script>
+<script id="fsFinal" type="x-shader">#version 300 es
+precision highp float;
+uniform sampler2D uShade, uBloomA, uBloomB;
+uniform float uBloom;
+in vec2 vUv;
+out vec4 o;
+void main() {
+  vec3 c = texture(uShade, vUv).rgb + uBloom * (texture(uBloomA, vUv).rgb + 0.6 * texture(uBloomB, vUv).rgb);
+  c = vec3(1.0) - exp(-c * 1.35);
+  o = vec4(pow(c, vec3(0.95)), 1.0);
+}
+</script>
+<script id="fsPack" type="x-shader">#version 300 es
+precision highp float;
+uniform sampler2D uMask, uTerr;
+in vec2 vUv;
+out vec4 o;
+void main() {
+  o = vec4(clamp(texture(uMask, vUv).r, 0.0, 1.0), clamp((texture(uTerr, vUv).r + 50.0) / 150.0, 0.0, 1.0), 0.0, 1.0);
+}
+</script>
+
+<script>
+(function () {
+"use strict";
+
+// ---------- settings ----------
+const PALETTES = {
+  blueGold: { c0: "#0E2A7A", c1: "#4F8FD6", c2: "#FFB347", c3: "#FF7A1A", trough: "#050A1E" },
+  cyanAmber: { c0: "#3FD8FF", c1: "#CFEFFF", c2: "#FFB347", c3: "#F07A2A", trough: "#0A2A6E" },
+  violet: { c0: "#3FD8FF", c1: "#7A3FD1", c2: "#E040C8", c3: "#FFA640", trough: "#1A0F3A" }
+};
+const DEFAULTS = Object.assign({
+  brush: 34, carve: 10, pile: 0.6, pour: 2,
+  pipeK: 30, visc: 6, yield: 0.4, depthFull: 1.5, evapMem: 900,
+  fibreLen: 50, fibre: 1.2, swirlScale: 6, strokeW: 0.9, streakFlow: 25, texSlope: 0, carry: 0.6, relax: 0.3,
+  traceMem: 1800, mature: 4, edgeCool: 0.6,
+  exposure: 1.4, contrast: 3.2, gamma: 1.3, base: 0.14, sheen: 0.4, relief: 0.6, fibRelief: 2, shine: 30, lightCol: 0, rim: 0.3, bloom: 0.5, bloomThresh: 0.6, sand: 0.12,
+  threadsOn: true, spawn: 0.3, speed: 8, curve: 40, corr: 14, branch: 6, tipLife: 20, width: 0.9, slope: 0, maxThreads: 500, threadCol: "#CFF4FF",
+  threadBright: 0.45, pulseGain: 0.8, pulseSpeed: 0.6, pulseLen: 45, pulseSharp: 3
+}, PALETTES.cyanAmber);
+const S = JSON.parse(JSON.stringify(DEFAULTS));
+
+const GROUPS = [
+  ["Touch", [
+    ["brush", "Hand size", 8, 80, 1, "mm"],
+    ["carve", "Dig rate", 0, 40, 0.5, "mm/s", "How fast dragging lowers the sand."],
+    ["pile", "Sand pushed ahead", 0, 1.5, 0.05, "", "Share of the dug sand piled in front of the hand; it makes the liquid slosh."],
+    ["pour", "Liquid per touch", 0, 6, 0.05, "mm/s", "Liquid that moves the texture. The light itself appears wherever the sand is touched."]
+  ]],
+  ["Liquid motion (same model as the sandbox water)", [
+    ["pipeK", "Flow speed", 2, 120, 1, ""],
+    ["visc", "Thickness", 0, 30, 0.5, "", "Higher is slower and more like lava."],
+    ["yield", "Stickiness", 0, 5, 0.05, "mm", "Liquid stops flowing once nearly level."]
+  ]],
+  ["Texture in the light", [
+    ["strokeW", "Streaks follow the stroke", 0, 1, 0.01, "", "1: streaks run along the hand's sweep, like flames. 0: free swirls."],
+    ["streakFlow", "Streak flow", 0, 120, 1, "px/s", "How fast the streaks run along the stroke."],
+    ["fibreLen", "Streak length", 6, 140, 1, "px"],
+    ["fibre", "Fibre width", 0.6, 6, 0.1, "px"],
+    ["swirlScale", "Swirl size", 1, 20, 0.5, ""],
+    ["texSlope", "Streaks follow the slopes", 0, 1, 0.01, ""],
+    ["carry", "Carried by the liquid", 0, 3, 0.05, "", "How strongly sloshing liquid drags the streaks."],
+    ["relax", "Settling", 0, 2, 0.01, ""]
+  ]],
+  ["Memory and warming", [
+    ["traceMem", "Trace memory", 10, 1800, 10, "s", "Time for light and threads to fade to about 10 %. At the maximum they never fade."],
+    ["mature", "Warm-up time", 0.5, 60, 0.5, "s", "Fresh light is cyan and warms to amber (stand-in for the model)."],
+    ["edgeCool", "Cool edges", 0, 1, 0.01, "", "Edges stay blue as the middle warms."]
+  ]],
+  ["Light and colour", [
+    ["exposure", "Exposure", 0.2, 5, 0.05, ""],
+    ["contrast", "Texture contrast", 1, 10, 0.1, ""],
+    ["gamma", "Darkness", 0.4, 4, 0.05, ""],
+    ["base", "Base glow", 0, 1, 0.01, "", "Light under the streaks across the whole lit area."],
+    ["lightCol", "Colour from lighting", 0, 1, 0.01, "", "0: colour from age. 1: blue in shade, gold where lit."],
+    ["sheen", "Sheen", 0, 3, 0.02, ""],
+    ["relief", "Sand relief", 0, 4, 0.05, ""],
+    ["fibRelief", "Texture relief", 0, 10, 0.1, ""],
+    ["shine", "Sheen sharpness", 2, 120, 1, ""],
+    ["rim", "Edge glow", 0, 2, 0.02, ""],
+    ["bloom", "Bloom", 0, 3, 0.05, ""],
+    ["bloomThresh", "Bloom threshold", 0, 1.5, 0.02, ""],
+    ["sand", "Sand visibility", 0, 0.5, 0.01, "", "Room light on the unlit sand (0 is a dark room)."],
+    ["colors", "colors"]
+  ]],
+  ["Threads", [
+    ["threadsOn", "Threads on", "check"],
+    ["spawn", "Spawn rate", 0, 30, 0.5, "per s per 100 mm of edge"],
+    ["speed", "Growth speed", 2, 60, 1, "mm/s"],
+    ["curve", "Curve amount", 0, 120, 1, "°/cm"],
+    ["corr", "Curve smoothness", 3, 80, 1, "mm"],
+    ["branch", "Branching", 0, 20, 0.5, "per 100 mm", "With fusing, more branching gives a denser looping mesh."],
+    ["tipLife", "Tip lifetime", 1, 60, 0.5, "s"],
+    ["slope", "Follow the slopes", 0, 1, 0.02, ""],
+    ["width", "Width", 0.4, 4, 0.1, "px"],
+    ["threadBright", "Thread brightness", 0, 3, 0.05, ""],
+    ["pulseGain", "Pulse brightness", 0, 4, 0.05, ""],
+    ["pulseSpeed", "Pulse speed", 0, 3, 0.05, ""],
+    ["pulseLen", "Pulse spacing", 5, 200, 1, "px"],
+    ["pulseSharp", "Pulse sharpness", 1, 12, 0.5, ""],
+    ["maxThreads", "Thread cap", 50, 3000, 50, ""]
+  ]]
+];
+const COLORS = [["c0", "Fresh"], ["c1", "Next"], ["c2", "Warm"], ["c3", "Oldest"], ["trough", "Troughs"], ["threadCol", "Threads"]];
+
+// ---------- UI ----------
+const panel = document.getElementById("panel");
+const out = document.getElementById("settingsOut");
+const inputs = {};
+let baseDirty = true;
+function fmt(v, step) { const d = step < 0.01 ? 3 : step < 0.1 ? 2 : step < 1 ? 1 : 0; return Number(v).toFixed(d); }
+function buildUI() {
+  const first = panel.firstElementChild;
+  for (const [title, items] of GROUPS) {
+    const g = document.createElement("div"); g.className = "group";
+    const h = document.createElement("h2"); h.textContent = title; g.appendChild(h);
+    for (const it of items) {
+      if (it[1] === "colors") {
+        const bar = document.createElement("div"); bar.className = "bar";
+        for (const [name, label] of [["cyanAmber", "Cyan and amber"], ["blueGold", "Blue and gold"], ["violet", "Violet"]]) {
+          const b = document.createElement("button"); b.type = "button"; b.textContent = label;
+          b.addEventListener("click", () => { Object.assign(S, PALETTES[name]); syncUI(); });
+          bar.appendChild(b);
+        }
+        g.appendChild(bar);
+        const c = document.createElement("div"); c.className = "colors";
+        for (const [k, name] of COLORS) {
+          const lab = document.createElement("label");
+          const inp = document.createElement("input"); inp.type = "color"; inp.id = "ctl-" + k; inp.value = S[k];
+          inp.addEventListener("input", () => { S[k] = inp.value.toUpperCase(); refreshOut(); });
+          lab.appendChild(inp); lab.appendChild(document.createTextNode(name)); c.appendChild(lab); inputs[k] = inp;
+        }
+        g.appendChild(c); continue;
+      }
+      const [k, label, a, b, step, unit, help] = it;
+      if (a === "check") {
+        const lab = document.createElement("label"); lab.className = "check";
+        const inp = document.createElement("input"); inp.type = "checkbox"; inp.id = "ctl-" + k; inp.checked = S[k];
+        inp.addEventListener("change", () => { S[k] = inp.checked; refreshOut(); });
+        lab.appendChild(inp); lab.appendChild(document.createTextNode(label)); g.appendChild(lab); inputs[k] = inp; continue;
+      }
+      const row = document.createElement("div"); row.className = "ctl";
+      const lab = document.createElement("label"); lab.htmlFor = "ctl-" + k; lab.textContent = label;
+      const val = document.createElement("span"); val.className = "val";
+      const inp = document.createElement("input"); inp.type = "range"; inp.id = "ctl-" + k; inp.min = a; inp.max = b; inp.step = step; inp.value = S[k];
+      const show = () => { val.textContent = fmt(S[k], step) + (unit ? " " + unit : ""); };
+      inp.addEventListener("input", () => { S[k] = parseFloat(inp.value); show(); refreshOut(); if (["fibreLen", "fibre", "swirlScale", "texSlope", "strokeW"].includes(k)) baseDirty = true; });
+      row.appendChild(lab); row.appendChild(val); row.appendChild(inp);
+      if (help) { const p = document.createElement("span"); p.className = "help"; p.textContent = help; row.appendChild(p); }
+      g.appendChild(row); inputs[k] = inp; inputs[k]._show = show; show();
+    }
+    panel.insertBefore(g, first);
+  }
+  refreshOut();
+}
+function syncUI() {
+  for (const k in inputs) {
+    const inp = inputs[k];
+    if (inp.type === "checkbox") inp.checked = S[k]; else inp.value = S[k];
+    if (inp._show) inp._show();
+  }
+  baseDirty = true; refreshOut();
+}
+function refreshOut() {
+  out.value = JSON.stringify({
+    note: "Shifting Sands, Prototype 2 look settings from the browser look-dev page (lit footprints with stroke-aligned flowing streaks, viscous liquid motion, pulsing hyphae mesh). Units: px ~ mm of sand; liquid depth in mm; Trace memory at 1800 means no fading; Warm-up time is a stand-in for the succession model's recovery.",
+    method: "Visibility: a lit-footprint mask that appears at full strength where the sand is touched and persists (fades only with Trace memory), records time since touch (colour warms cyan to amber, edges stay cool) and the stroke direction. Streak texture: line integral convolution along the stroke direction inside lit ground (curl swirl elsewhere), advected along the stroke and by the liquid. Liquid motion: virtual-pipe shallow water on the sand height (Mei, Decaudin and Hu 2007, the same model as the sandbox water) on a 256 x 160 grid, with flux damping for viscosity and a yield threshold (surface differences below Stickiness do not flow, as in a Bingham fluid such as lava); touches add liquid, digging lowers the sand and piles part of it ahead of the hand, so the liquid sloshes. Texture: a line-integral-convolution fibre pattern along the sand's downhill direction mixed with curl noise (rebuilt while the sand is being dug), carried by the liquid's velocity each frame and settling back toward the pattern. Lit ground is remembered (fades only with Trace memory), so continued digging builds the network. Shading: normals from sand, liquid surface and fibres; colour keyed by lighting (shade to lit) and/or time since touched, sheen and edge glow from the liquid surface, two-level bloom, exponential tone map. Threads: tip growth with smoothly varying curvature from the liquid's edges, drawn into a thread mask (presence and outward-travelling pulse) and shaded in the same pass as the liquid, with the same colour key, lighting and fibre texture; pulses shift the colour warmer and brighter. Repeated touches add to a build-up value (up to 3) that makes worked ground denser.",
+    settings: S
+  }, null, 2);
+}
+buildUI();
+
+document.getElementById("btnCopy").addEventListener("click", async (ev) => {
+  const btn = ev.currentTarget;
+  try { await navigator.clipboard.writeText(out.value); btn.textContent = "Copied"; }
+  catch (e) { out.focus(); out.select(); btn.textContent = "Select the text and copy it"; }
+  setTimeout(() => { btn.textContent = "Copy settings"; }, 1800);
+});
+document.getElementById("btnDefaults").addEventListener("click", () => { Object.assign(S, JSON.parse(JSON.stringify(DEFAULTS))); syncUI(); });
+
+// ---------- WebGL ----------
+const W = 1024, H = 640;            // display, ~1 px per mm
+const LW = 256, LH = 160;           // liquid grid, 4 mm cells
+const TW = 320, TH = 200;           // sand grid
+const VW = 256, VH = 160;           // swirl field for the base texture
+const RW = 160, RH = 100;           // read back for the threads
+const ASP = W / H;
+const glc = document.getElementById("gl");
+const gl = glc.getContext("webgl2", { antialias: false, premultipliedAlpha: false });
+const errBox = document.getElementById("glError");
+function fail(msg) { errBox.hidden = false; errBox.textContent = msg; }
+if (!gl) { fail("This browser could not start WebGL 2, which the look-dev page needs. Try a current Chrome, Edge or Firefox."); return; }
+if (!gl.getExtension("EXT_color_buffer_float")) { fail("This browser cannot render to floating-point textures (EXT_color_buffer_float), which the page needs."); return; }
+
+const src = (id) => document.getElementById(id).textContent;
+const common = src("common");
+function compile(type, text) {
+  const sh = gl.createShader(type); gl.shaderSource(sh, text); gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh));
+  return sh;
+}
+const THREAD_ATTRS = ["aPos", "aSide", "aS", "aPhase", "aBirth", "aHue"];
+function program(fsId, vsId) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, src(vsId || "vs")));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, src(fsId).replace("//COMMON", common)));
+  THREAD_ATTRS.forEach((n, i) => gl.bindAttribLocation(p, i, n));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const name = gl.getActiveUniform(p, i).name; u[name] = gl.getUniformLocation(p, name); }
+  return { p, u };
+}
+const PR = {};
+try {
+  for (const id of ["fsCarve", "fsPour", "fsMaskTouch", "fsMaskAge", "fsFlux", "fsDepth", "fsVelL", "fsCurlField", "fsLic", "fsFib", "fsShade", "fsBright", "fsBlur", "fsFinal", "fsPack"]) PR[id] = program(id);
+  PR.fsThread = program("fsThread", "vsThread");
+} catch (e) { fail("A shader failed to compile: " + e.message); return; }
+
+// thread vertex buffer: a ring of segments, 6 vertices each, 7 floats per vertex
+const MAXSEG = 60000, VFL = 7;
+const threadVao = gl.createVertexArray(); gl.bindVertexArray(threadVao);
+const threadBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, threadBuf);
+gl.bufferData(gl.ARRAY_BUFFER, MAXSEG * 6 * VFL * 4, gl.DYNAMIC_DRAW);
+const offs = [0, 2, 3, 4, 5, 6], sizes = [2, 1, 1, 1, 1, 1];
+for (let i = 0; i < 6; i++) { gl.enableVertexAttribArray(i); gl.vertexAttribPointer(i, sizes[i], gl.FLOAT, false, VFL * 4, offs[i] * 4); }
+const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+const vbo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+function target(w, h, data, type) {
+  const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, type || gl.HALF_FLOAT, data || null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  return { t, f, w, h };
+}
+function doubleTarget(w, h, data, type) {
+  const a = target(w, h, data, type), b = target(w, h, data, type);
+  return { w, h, get read() { return a._r ? b : a; }, get write() { return a._r ? a : b; }, swap() { a._r = !a._r; } };
+}
+
+const noiseTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, noiseTex);
+{ const n = new Uint8Array(256 * 256); for (let i = 0; i < n.length; i++) n[i] = (Math.random() * 256) | 0;
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, 256, 256, 0, gl.RED, gl.UNSIGNED_BYTE, n); }
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+
+function hashJ(x, y) { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); }
+function vnoiseJ(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+  const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
+  const a = hashJ(ix, iy), b = hashJ(ix + 1, iy), c = hashJ(ix, iy + 1), d = hashJ(ix + 1, iy + 1);
+  return (a + (b - a) * ux) + ((c + (d - c) * ux) - (a + (b - a) * ux)) * uy;
+}
+function sandData() {
+  const a = new Float32Array(TW * TH * 4);
+  const mounds = [[0.26, 0.62, 0.13, 48], [0.70, 0.34, 0.16, 58], [0.82, 0.78, 0.10, 30], [0.50, 0.18, 0.08, -18]];
+  for (let j = 0; j < TH; j++) for (let i = 0; i < TW; i++) {
+    const u = (i + 0.5) / TW, v = (j + 0.5) / TH;
+    let h = 9;
+    for (const [cx, cy, r, amp] of mounds) { const dx = (u - cx) * 1.6, dy = v - cy; h += amp * Math.exp(-(dx * dx + dy * dy) / (2 * r * r)); }
+    h += 14 * Math.exp(-Math.pow((u - 0.47 - 0.05 * Math.sin(v * 9)) / 0.035, 2)) * (v > 0.45 ? 1 : 0);
+    h += 6 * (vnoiseJ(u * 9, v * 6) - 0.5) + 3 * (vnoiseJ(u * 23, v * 15) - 0.5);
+    a[4 * (j * TW + i)] = h;
+  }
+  return a;
+}
+const liqInit = new Float32Array(LW * LH * 4); for (let i = 0; i < LW * LH; i++) liqInit[4 * i + 1] = 9000;
+
+const terrain = doubleTarget(TW, TH, sandData(), gl.FLOAT);
+const liq = doubleTarget(LW, LH, liqInit, gl.FLOAT), flux = doubleTarget(LW, LH);
+const velL = target(LW, LH);
+const MW = 512, MH = 320;
+const maskInit = new Float32Array(MW * MH * 4); for (let i = 0; i < MW * MH; i++) maskInit[4 * i + 1] = 9000;
+const mask = doubleTarget(MW, MH, maskInit, gl.FLOAT);
+const swirl = target(VW, VH), base = target(W, H), fib = doubleTarget(W, H);
+const shade = target(W, H), threadMask = target(W, H);
+const b1a = target(W / 2, H / 2), b1b = target(W / 2, H / 2), b2a = target(W / 8, H / 8), b2b = target(W / 8, H / 8);
+const packTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, packTex);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, RW, RH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+const packFbo = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, packFbo); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, packTex, 0);
+
+function run(prog, dst, setup) {
+  const p = PR[prog]; gl.useProgram(p.p);
+  if (dst) { gl.bindFramebuffer(gl.FRAMEBUFFER, dst.f); gl.viewport(0, 0, dst.w, dst.h); }
+  else { gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H); }
+  let unit = 0;
+  const api = {
+    tex(name, t) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t.t || t); gl.uniform1i(p.u[name], unit); unit++; },
+    f(name, ...v) { const l = p.u[name]; if (!l) return; if (v.length === 1) gl.uniform1f(l, v[0]); else if (v.length === 2) gl.uniform2f(l, v[0], v[1]); else if (v.length === 3) gl.uniform3f(l, v[0], v[1], v[2]); else gl.uniform4f(l, v[0], v[1], v[2], v[3]); }
+  };
+  setup(api);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+function hexRGB(h) { const n = parseInt(h.slice(1), 16); return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255]; }
+
+function makeBase() {
+  run("fsCurlField", swirl, (a) => { a.tex("uTerr", terrain.read.t); a.tex("uMask", mask.read.t); a.f("uRes", VW, VH); a.f("uTerrTexel", 1 / TW, 1 / TH); a.f("uScale", S.swirlScale); a.f("uSlopeW", S.texSlope); a.f("uStrokeW", S.strokeW); });
+  run("fsLic", base, (a) => { a.tex("uVel", swirl.t); a.tex("uNoise", noiseTex); a.f("uRes", W, H); a.f("uLen", S.fibreLen); a.f("uFibre", S.fibre); });
+  baseDirty = false;
+}
+function resetFib() {
+  for (const t of [fib.read, fib.write]) run("fsFib", t, (a) => { a.tex("uFib", base.t); a.tex("uBase", base.t); a.tex("uVelL", velL.t); a.tex("uMask", mask.read.t); a.f("uLiqRes", LW, LH); a.f("uRes", W, H); a.f("uDt", 0); a.f("uRelax", 0); a.f("uCarry", 0); a.f("uStreakFlow", 0); });
+}
+function resetSand() {
+  for (const t of [terrain.read, terrain.write]) { gl.bindTexture(gl.TEXTURE_2D, t.t); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, TW, TH, 0, gl.RGBA, gl.FLOAT, sandData()); }
+}
+function clearLight() {
+  for (const t of [mask.read, mask.write]) { gl.bindTexture(gl.TEXTURE_2D, t.t); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, MW, MH, 0, gl.RGBA, gl.FLOAT, maskInit); }
+  for (const t of [liq.read, liq.write]) { gl.bindTexture(gl.TEXTURE_2D, t.t); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, LW, LH, 0, gl.RGBA, gl.FLOAT, liqInit); }
+  for (const t of [flux.read, flux.write]) { gl.bindFramebuffer(gl.FRAMEBUFFER, t.f); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); }
+  clearThreads();
+}
+
+// ---------- pointer and demo strokes ----------
+const stage = document.getElementById("stage");
+const ptr = { x: 0, y: 0, down: false };
+let userUntil = 0;
+function toCanvas(ev) { const r = stage.getBoundingClientRect(); return [(ev.clientX - r.left) / r.width * W, (ev.clientY - r.top) / r.height * H]; }
+stage.addEventListener("pointerdown", (ev) => { stage.setPointerCapture(ev.pointerId); [ptr.x, ptr.y] = toCanvas(ev); ptr.down = true; userUntil = performance.now() + 8000; prevHand = null; });
+stage.addEventListener("pointermove", (ev) => { if (ptr.down) { [ptr.x, ptr.y] = toCanvas(ev); userUntil = performance.now() + 8000; } });
+const up = () => { ptr.down = false; };
+stage.addEventListener("pointerup", up); stage.addEventListener("pointercancel", up);
+
+let demoOn = true;
+const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const demo = { phase: "pause", left: 0.3, x: 300, y: 300, a: 0, turn: 0, seed: 11 };
+const HUBS = [[310, 270], [690, 380], [500, 470]];
+function rnd() { demo.seed = (demo.seed * 16807) % 2147483647; return (demo.seed - 1) / 2147483646; }
+function demoStep(dt) {
+  demo.left -= dt;
+  if (demo.left <= 0) {
+    if (demo.phase === "pause") {
+      demo.phase = "stroke"; demo.left = 1.0 + rnd() * 1.2;
+      const hub = HUBS[(rnd() * HUBS.length) | 0];
+      demo.x = hub[0] + (rnd() - 0.5) * 160; demo.y = hub[1] + (rnd() - 0.5) * 120;
+      demo.a = rnd() * Math.PI * 2; demo.turn = (rnd() - 0.5) * 3.0;
+    } else { demo.phase = "pause"; demo.left = 0.8 + rnd() * 1.6; }
+  }
+  if (demo.phase === "stroke") {
+    demo.a += demo.turn * dt; demo.x += Math.cos(demo.a) * 160 * dt; demo.y += Math.sin(demo.a) * 160 * dt;
+    if (demo.x < 70 || demo.x > W - 70 || demo.y < 70 || demo.y > H - 70) demo.a += Math.PI * 0.7;
+    demo.x = Math.min(W - 40, Math.max(40, demo.x)); demo.y = Math.min(H - 40, Math.max(40, demo.y));
+  }
+  return { x: demo.x, y: demo.y, down: demo.phase === "stroke" };
+}
+
+// ---------- simulation ----------
+let simTime = 0, prevHand = null, handActive = false, lastBase = 0;
+function handInput(hand, dt) {
+  handActive = hand.down;
+  if (!hand.down) { prevHand = null; return; }
+  const from = prevHand || hand;
+  const dx = hand.x - from.x, dy = hand.y - from.y, dist = Math.hypot(dx, dy);
+  const n = Math.min(10, Math.max(1, Math.ceil(dist / (S.brush * 0.4))));
+  const rad = Math.pow(S.brush / H, 2);
+  const ux = dist > 0.5 ? dx / dist : 0, uy = dist > 0.5 ? dy / dist : 0;
+  for (let k = 1; k <= n; k++) {
+    const x = from.x + dx * k / n, y = from.y + dy * k / n;
+    const pt = [x / W, 1 - y / H];
+    const dig = S.carve * dt / n;
+    run("fsCarve", terrain.write, (a) => { a.tex("uTarget", terrain.read.t); a.f("uAspect", ASP); a.f("uRadius", rad); a.f("uDepth", dig); a.f("uPoint", pt[0], pt[1]); }); terrain.swap();
+    if (S.pile > 0 && (ux || uy)) {
+      const ax = (x + ux * S.brush * 1.1) / W, ay = 1 - (y + uy * S.brush * 1.1) / H;
+      run("fsCarve", terrain.write, (a) => { a.tex("uTarget", terrain.read.t); a.f("uAspect", ASP); a.f("uRadius", rad * 0.8); a.f("uDepth", -dig * S.pile * 1.25); a.f("uPoint", ax, ay); }); terrain.swap();
+    }
+    run("fsPour", liq.write, (a) => { a.tex("uTarget", liq.read.t); a.f("uAspect", ASP); a.f("uRadius", rad); a.f("uAmount", S.pour * dt / n); a.f("uBuild", 0); a.f("uBuildMax", 3); a.f("uPoint", pt[0], pt[1]); }); liq.swap();
+    run("fsMaskTouch", mask.write, (a) => { a.tex("uTarget", mask.read.t); a.f("uAspect", ASP); a.f("uRadius", rad); a.f("uPoint", pt[0], pt[1]); a.f("uDir", ux, -uy); }); mask.swap();
+  }
+  prevHand = { x: hand.x, y: hand.y };
+}
+function liquidStep(dt) {
+  const lt = [1 / LW, 1 / LH];
+  const sub = 3, h = dt / sub;
+  for (let i = 0; i < sub; i++) {
+    run("fsFlux", flux.write, (a) => { a.tex("uLiq", liq.read.t); a.tex("uFlux", flux.read.t); a.tex("uTerr", terrain.read.t); a.f("uTexel", ...lt); a.f("uDt", h); a.f("uK", S.pipeK); a.f("uVisc", S.visc); a.f("uYield", S.yield); }); flux.swap();
+    run("fsDepth", liq.write, (a) => { a.tex("uLiq", liq.read.t); a.tex("uFlux", flux.read.t); a.f("uTexel", ...lt); a.f("uDt", h); a.f("uEvap", S.evapMem >= 1800 ? 0 : Math.log(10) / S.evapMem); a.f("uDepthFull", S.depthFull); }); liq.swap();
+  }
+  run("fsVelL", velL, (a) => { a.tex("uLiq", liq.read.t); a.tex("uFlux", flux.read.t); a.f("uTexel", ...lt); });
+  // the sand changes as people dig, so the slope-following pattern is rebuilt now and then while they do
+  if (handActive && simTime - lastBase > 0.4) baseDirty = true;
+  if (baseDirty) { makeBase(); lastBase = simTime; }
+  run("fsMaskAge", mask.write, (a) => { a.tex("uTarget", mask.read.t); a.f("uDt", dt); a.f("uFade", S.traceMem >= 1800 ? 0 : Math.log(10) / S.traceMem); }); mask.swap();
+  run("fsFib", fib.write, (a) => { a.tex("uFib", fib.read.t); a.tex("uBase", base.t); a.tex("uVelL", velL.t); a.tex("uMask", mask.read.t); a.f("uLiqRes", LW, LH); a.f("uRes", W, H); a.f("uDt", dt); a.f("uRelax", S.relax); a.f("uCarry", S.carry); a.f("uStreakFlow", S.streakFlow); }); fib.swap();
+}
+function render() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, threadMask.f); gl.viewport(0, 0, W, H); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  drawThreads();
+  run("fsShade", shade, (a) => {
+    a.tex("uLiq", liq.read.t); a.tex("uFib", fib.read.t); a.tex("uTerr", terrain.read.t);
+    a.f("uLiqTexel", 1 / LW, 1 / LH); a.f("uTerrTexel", 1 / TW, 1 / TH);
+    a.f("uDepthFull", S.depthFull); a.f("uContrast", S.contrast); a.f("uGamma", S.gamma); a.f("uBase", S.base); a.f("uMature", S.mature); a.f("uExposure", S.exposure);
+    a.f("uSheen", S.sheen); a.f("uRelief", S.relief); a.f("uShine", S.shine); a.f("uRim", S.rim); a.f("uSand", S.sand);
+    a.f("uFibTexel", 1 / W, 1 / H); a.f("uFibRelief", S.fibRelief); a.f("uLightCol", S.lightCol);
+    a.tex("uMask", mask.read.t); a.f("uMaskTexel", 1 / MW, 1 / MH); a.f("uEdgeCool", S.edgeCool); a.f("uThreadCol", ...hexRGB(S.threadCol));
+    a.tex("uThreads", threadMask.t); a.f("uThreadBright", S.threadsOn ? S.threadBright : 0); a.f("uPulseGain", S.threadsOn ? S.pulseGain : 0);
+    a.f("uC0", ...hexRGB(S.c0)); a.f("uC1", ...hexRGB(S.c1)); a.f("uC2", ...hexRGB(S.c2)); a.f("uC3", ...hexRGB(S.c3)); a.f("uTrough", ...hexRGB(S.trough));
+  });
+  run("fsBright", b1a, (a) => { a.tex("uSrc", shade.t); a.f("uThresh", S.bloomThresh); });
+  for (let i = 0; i < 2; i++) {
+    run("fsBlur", b1b, (a) => { a.tex("uSrc", b1a.t); a.f("uStep", 2 / (W / 2), 0); });
+    run("fsBlur", b1a, (a) => { a.tex("uSrc", b1b.t); a.f("uStep", 0, 2 / (H / 2)); });
+  }
+  run("fsBlur", b2b, (a) => { a.tex("uSrc", b1a.t); a.f("uStep", 1 / (W / 8), 0); });
+  run("fsBlur", b2a, (a) => { a.tex("uSrc", b2b.t); a.f("uStep", 0, 1 / (H / 8)); });
+  for (let i = 0; i < 2; i++) {
+    run("fsBlur", b2b, (a) => { a.tex("uSrc", b2a.t); a.f("uStep", 2 / (W / 8), 0); });
+    run("fsBlur", b2a, (a) => { a.tex("uSrc", b2b.t); a.f("uStep", 0, 2 / (H / 8)); });
+  }
+  run("fsFinal", null, (a) => { a.tex("uShade", shade.t); a.tex("uBloomA", b1a.t); a.tex("uBloomB", b2a.t); a.f("uBloom", S.bloom); });
+}
+
+// ---------- read back for the threads ----------
+const packBuf = new Uint8Array(RW * RH * 4);
+const wet = new Float32Array(RW * RH), terr = new Float32Array(RW * RH);
+let edges = [];
+function readback() {
+  gl.useProgram(PR.fsPack.p); gl.bindFramebuffer(gl.FRAMEBUFFER, packFbo); gl.viewport(0, 0, RW, RH);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, mask.read.t); gl.uniform1i(PR.fsPack.u.uMask, 0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, terrain.read.t); gl.uniform1i(PR.fsPack.u.uTerr, 1);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.readPixels(0, 0, RW, RH, gl.RGBA, gl.UNSIGNED_BYTE, packBuf);
+  for (let j = 0; j < RH; j++) for (let i = 0; i < RW; i++) {
+    const k = 4 * ((RH - 1 - j) * RW + i), c = j * RW + i;
+    wet[c] = packBuf[k] / 255; terr[c] = packBuf[k + 1] / 255 * 150 - 50;
+  }
+  edges = [];
+  for (let j = 2; j < RH - 2; j++) for (let i = 2; i < RW - 2; i++) {
+    const c = j * RW + i;
+    // the edge of the lit ground: partly lit, and falling off steeply toward unlit sand
+    // only the outer edge: lit here, and unlit sand a few cells further out
+    const gx = (wet[c + 2] - wet[c - 2]) / 4, gy = (wet[c + 2 * RW] - wet[c - 2 * RW]) / 4, gl = Math.hypot(gx, gy);
+    if (wet[c] < 0.15 || gl < 0.04) continue;
+    const ox = Math.round(i - 3 * gx / gl), oy = Math.round(j - 3 * gy / gl);
+    if (ox < 0 || oy < 0 || ox >= RW || oy >= RH || wet[oy * RW + ox] < 0.05) edges.push(c);
+  }
+}
+function sampleGrid(arr, x, y) {
+  const i = Math.min(RW - 1, Math.max(0, Math.floor(x / W * RW))), j = Math.min(RH - 1, Math.max(0, Math.floor(y / H * RH)));
+  return arr[j * RW + i];
+}
+
+// ---------- threads (tip growth) ----------
+const OC = 4, OW = Math.ceil(W / OC), OH = Math.ceil(H / OC);
+let occ = new Int32Array(OW * OH);
+let threads = [], nextId = 1, parentOf = new Map(), segCount = 0, segHead = 0, pending = [];
+function clearThreads() { threads = []; occ = new Int32Array(OW * OH); parentOf.clear(); segCount = 0; segHead = 0; pending = []; }
+function randn() { let u = 0, v = 0; while (u === 0) u = Math.random(); while (v === 0) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+function newThread(x, y, a, gen, parent, s0, phase, hue) {
+  const id = nextId++; parentOf.set(id, parent);
+  threads.push({ id, x, y, a, k: 0, gen, age: 0, travel: 0, s: s0, sinceBranch: 0, alive: true, phase, hue });
+}
+function related(a, b) { return a === b || parentOf.get(a) === b || parentOf.get(b) === a; }
+function growThreads(dt) {
+  if (S.threadsOn && edges.length) {
+    let expected = S.spawn * dt * edges.length * (W / RW) / 100;
+    while (expected > 0) {
+      if (Math.random() < Math.min(1, expected)) {
+        let active = 0; for (const t of threads) if (t.alive) active++;
+        if (active < S.maxThreads) {
+          const c = edges[(Math.random() * edges.length) | 0], i = c % RW, j = (c / RW) | 0;
+          const gx = wet[c + 2] - wet[c - 2], gy = wet[c + 2 * RW] - wet[c - 2 * RW];
+          newThread((i + 0.5) * W / RW, (j + 0.5) * H / RH, Math.atan2(-gy, -gx) + (Math.random() - 0.5) * 0.9, 0, 0, 0, Math.random(), Math.random());
+        }
+      }
+      expected -= 1;
+    }
+  }
+  const kSigma = S.curve * Math.PI / 180 / 10;
+  for (const t of threads) {
+    if (!t.alive) continue;
+    const step = S.speed * dt;
+    const r = Math.min(1, step / S.corr);
+    t.k += -t.k * r + kSigma * Math.sqrt(2 * r) * randn();
+    t.a += t.k * step;
+    if (S.slope > 0) {
+      const gx = sampleGrid(terr, t.x + 6, t.y) - sampleGrid(terr, t.x - 6, t.y), gy = sampleGrid(terr, t.x, t.y + 6) - sampleGrid(terr, t.x, t.y - 6);
+      if (Math.hypot(gx, gy) > 0.5) {
+        const ca = Math.atan2(gx, -gy);
+        let d = Math.atan2(Math.sin(ca - t.a), Math.cos(ca - t.a));
+        if (Math.abs(d) > Math.PI / 2) d = Math.atan2(Math.sin(ca + Math.PI - t.a), Math.cos(ca + Math.PI - t.a));
+        t.a += d * S.slope * Math.min(1, step / 20);
+      }
+    }
+    const nx = t.x + Math.cos(t.a) * step, ny = t.y + Math.sin(t.a) * step;
+    t.age += dt; t.travel += step; t.sinceBranch += step;
+    if (nx < 2 || ny < 2 || nx > W - 2 || ny > H - 2 || t.age > S.tipLife) { t.alive = false; continue; }
+    const oc = ((ny / OC) | 0) * OW + ((nx / OC) | 0), owner = occ[oc];
+    const fuse = (owner && !related(owner, t.id) && t.travel > 15) || (t.travel > 25 && sampleGrid(wet, nx, ny) > 0.5);
+    const w = Math.max(0.5, S.width * Math.pow(0.8, t.gen));
+    pending.push([t.x, t.y, nx, ny, w, t.s, t.s + step, t.phase, simTime, t.hue]);
+    t.s += step;
+    if (fuse) { t.alive = false; continue; }
+    occ[oc] = t.id;
+    t.x = nx; t.y = ny;
+    if (Math.random() < S.branch / 100 * step && t.sinceBranch > 8) {
+      t.sinceBranch = 0;
+      newThread(nx, ny, t.a + (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 0.55), t.gen + 1, t.id, t.s, t.phase, Math.min(1, Math.max(0, t.hue + (Math.random() - 0.5) * 0.3)));
+    }
+  }
+  if (threads.length > 4000) threads = threads.filter((t) => t.alive);
+  uploadSegments();
+}
+function uploadSegments() {
+  if (!pending.length) return;
+  const v = new Float32Array(pending.length * 6 * VFL);
+  let o = 0;
+  const put = (x, y, side, s, ph, birth, hue) => { v[o++] = x / W * 2 - 1; v[o++] = 1 - y / H * 2; v[o++] = side; v[o++] = s; v[o++] = ph; v[o++] = birth; v[o++] = hue; };
+  for (const [x0, y0, x1, y1, w, s0, s1, ph, birth, hue] of pending) {
+    let dx = x1 - x0, dy = y1 - y0; const len = Math.hypot(dx, dy) || 1; dx /= len; dy /= len;
+    const ax = x0 - dx * w * 0.5, ay = y0 - dy * w * 0.5, bx = x1 + dx * w * 0.5, by = y1 + dy * w * 0.5;
+    const nx = -dy * w * 1.5, ny = dx * w * 1.5;
+    put(ax + nx, ay + ny, 1.5, s0, ph, birth, hue); put(ax - nx, ay - ny, -1.5, s0, ph, birth, hue); put(bx + nx, by + ny, 1.5, s1, ph, birth, hue);
+    put(bx + nx, by + ny, 1.5, s1, ph, birth, hue); put(ax - nx, ay - ny, -1.5, s0, ph, birth, hue); put(bx - nx, by - ny, -1.5, s1, ph, birth, hue);
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, threadBuf);
+  const n = pending.length, segBytes = 6 * VFL * 4;
+  let written = 0;
+  while (written < n) {
+    const room = Math.min(n - written, MAXSEG - segHead);
+    gl.bufferSubData(gl.ARRAY_BUFFER, segHead * segBytes, v, written * 6 * VFL, room * 6 * VFL);
+    segHead = (segHead + room) % MAXSEG; written += room;
+  }
+  segCount = Math.min(MAXSEG, segCount + n);
+  pending = [];
+}
+function drawThreads() {
+  if (!S.threadsOn || !segCount) return;
+  const p = PR.fsThread; gl.useProgram(p.p); gl.bindVertexArray(threadVao);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, threadMask.f); gl.viewport(0, 0, W, H);
+  gl.uniform1f(p.u.uTime, simTime); gl.uniform1f(p.u.uFade, S.traceMem >= 1800 ? 0 : Math.log(10) / S.traceMem);
+  gl.uniform1f(p.u.uPulseSpeed, S.pulseSpeed); gl.uniform1f(p.u.uPulseLen, S.pulseLen); gl.uniform1f(p.u.uPulseSharp, S.pulseSharp);
+  gl.uniform1f(p.u.uBright, S.threadBright); gl.uniform1f(p.u.uPulseGain, S.pulseGain);
+  gl.uniform3fv(p.u.uC0, hexRGB(S.c0)); gl.uniform3fv(p.u.uC1, hexRGB(S.c1)); gl.uniform3fv(p.u.uC2, hexRGB(S.c2)); gl.uniform3fv(p.u.uC3, hexRGB(S.c3));
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.drawArrays(gl.TRIANGLES, 0, segCount * 6);
+  gl.disable(gl.BLEND);
+  gl.bindVertexArray(vao);
+}
+
+// ---------- loop ----------
+let playing = true, last = performance.now(), frameNo = 0, fpsAcc = 0, fpsN = 0;
+function tick(dt) {
+  const now = performance.now();
+  const hand = (ptr.down || now < userUntil || !demoOn) ? { x: ptr.x, y: ptr.y, down: ptr.down } : demoStep(dt);
+  simTime += dt;
+  handInput(hand, dt);
+  liquidStep(dt);
+  if (frameNo % 5 === 0) readback();
+  growThreads(dt);
+  frameNo++;
+}
+function loop(now) {
+  const dt = Math.min(0.033, Math.max(0.001, (now - last) / 1000)); last = now;
+  if (playing) { tick(dt); render(); }
+  fpsAcc += dt; fpsN++;
+  if (fpsAcc > 0.5) {
+    let active = 0; for (const t of threads) if (t.alive) active++;
+    document.getElementById("readout").textContent = `${(fpsN / fpsAcc).toFixed(0)} fps · ${active} growing threads`;
+    fpsAcc = 0; fpsN = 0;
+  }
+  requestAnimationFrame(loop);
+}
+makeBase(); resetFib();
+for (let i = 0; i < 720; i++) tick(1 / 60);
+render();
+
+const btnPlay = document.getElementById("btnPlay"), btnDemo = document.getElementById("btnDemo");
+btnPlay.addEventListener("click", () => { playing = !playing; btnPlay.textContent = playing ? "Pause" : "Play"; last = performance.now(); });
+btnDemo.addEventListener("click", () => { demoOn = !demoOn; btnDemo.textContent = "Demo strokes: " + (demoOn ? "on" : "off"); btnDemo.classList.toggle("on", demoOn); });
+document.getElementById("btnClear").addEventListener("click", clearLight);
+document.getElementById("btnSand").addEventListener("click", resetSand);
+if (reduce) { playing = false; btnPlay.textContent = "Play"; }
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
