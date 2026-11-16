@@ -4474,7 +4474,7 @@ model in a later step.
   whole-frame noise; flat at 9 mm, four heights within fractions of a mm of
   a glyph boundary, two within fractions of a mm of a band boundary, 0.05 mm
   either side of the 15 mm contour level, -20 and 40 mm). Control (no
-  smoothing, no hysteresis, 5 s): 260,120 changes in 2,780 cells. PASS.
+  smoothing, no hysteresis, 5 s): 252,710 changes in 2,780 cells. PASS.
 Not compiled with openFrameworks, not hardware-tested.
 
 Hardware checklist additions:
