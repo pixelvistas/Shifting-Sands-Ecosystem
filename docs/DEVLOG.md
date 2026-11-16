@@ -4394,3 +4394,24 @@ range reset to the calibrated ceiling):
 4. Hand in the sand: glyphs follow within about half a second and settle.
 5. Note the glyph size that reads best (and the fps in each display mode),
    the calibrated ceiling shown in the panel, and the px/mm readout.
+
+## 2026-11-16 - Prototype 3: elevation range setting (`prototype/3-ascii`)
+
+The ASCII module's input range is now its own setting ("Elevation range" in
+the ASCII panel; `AsciiRenderer::RANGE_MODE`, saved in the preset):
+- Calibrated ceiling (default, as before): -/+ `getCalibratedCeilingElevation()`.
+- Match the Vegetation panel: the range VegetationField currently holds (set
+  at start-up, by the panel's sliders or its reset button), read through a new
+  public read-only getter `VegetationField::getElevationRange(min, max)`
+  (header only; no other change to that class). It returns the values as set;
+  the module sorts them, since setElevationRange() accepts either order.
+- Custom: "Range min/max (mm)" sliders (-300..300, default -80/+80) and
+  "Reset to +-calibrated ceiling".
+The panel shows the active range and its source; a range narrower than 1 mm
+is widened to 1 mm around its centre (with a note) so normalization stays
+finite. The hysteresis readout in mm follows the active range. Changing the
+range does not reset the held glyphs: they move to the new levels through the
+usual smoothing and hysteresis. The earlier entry's note that a hand-typed
+Vegetation range is not followed no longer applies.
+Syntax-checked against stub headers only. Not compiled with openFrameworks,
+not hardware-tested.

@@ -6,12 +6,15 @@ Shows the sand as monospace characters on black: AsciiGlyphRenderer
 bin/data/shaders/ascii/GL2|GL3) fed with, for this first step, the
 normalized elevation map.
 
-- Input field: VegetationField's per-cell elevation (mm), normalized over
-  the calibrated elevation range the sandbox uses, -/+ KinectProjector::
-  getCalibratedCeilingElevation() (what ofApp gives VegetationField at
-  start-up and what "Reset range to +-calibrated ceiling" restores; a
-  range typed by hand into the Vegetation panel is not followed, since
-  VegetationField does not expose it). 0 = calibrated floor, 1 = ceiling.
+- Input field: VegetationField's per-cell elevation (mm), normalized to
+  0..1 over the "Elevation range" setting (RANGE_MODE):
+    Calibrated ceiling (default): -/+ KinectProjector::
+      getCalibratedCeilingElevation() (what ofApp gives VegetationField at
+      start-up and "Reset range to +-calibrated ceiling" restores);
+    Match the Vegetation panel: VegetationField::getElevationRange(), the
+      range currently set there (sorted here);
+    Custom: RANGE_MIN_MM .. RANGE_MAX_MM (sliders; a button resets them to
+      the calibrated ceiling).
 - Placement: the field is drawn through the projector calibration
   (KinectProjector::kinectCoordToProjCoord on a grid every LUT_STEP
   cells, as the seed and water-particle layers do).
@@ -59,9 +62,14 @@ public:
 	bool loadPreset();
 
 	static float GLYPH_MM; // glyph cell height on the sand
+	enum { RANGE_CALIBRATED = 0, RANGE_VEGETATION = 1, RANGE_CUSTOM = 2 };
+	static int RANGE_MODE;
+	static float RANGE_MIN_MM; // Custom
+	static float RANGE_MAX_MM; // Custom
 
 private:
 	void measureScale();
+	void updateRange();
 	void uploadField();
 	void rebuildMesh();
 
@@ -75,7 +83,8 @@ private:
 	float pxPerMM = 0.0f;
 	ofVec2f measuredOrigin;
 	int measuredCols = 0, measuredRows = 0;
-	float rangeLoMM = 0.0f, rangeHiMM = 0.0f;
+	float rangeLoMM = 0.0f, rangeHiMM = 0.0f; // active range (sorted)
+	bool rangeDegenerate = false;
 	ofFloatPixels fieldPix;
 	ofTexture fieldTex;
 	ofVboMesh mesh;

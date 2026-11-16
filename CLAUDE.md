@@ -107,7 +107,7 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
 - `src/Prototypes/Ascii/*` (`prototype/3-ascii`): ASCII mode. `AsciiGlyphRenderer` turns any 0..1 field
   into monospace glyphs: shaders `bin/data/shaders/ascii/GL2|GL3` (sample per cell; state = smoothing +
   hysteresis + 4x4 Bayer; glyph), atlas from JetBrains Mono Bold (`bin/data/ascii/fonts`, OFL). Input:
-  elevation over -/+ calibrated ceiling; cell height in mm (10) via calibration px/mm. Preset
+  elevation over a range (calibrated ceiling / Vegetation panel / custom); cell height in mm (10) via calibration px/mm. Preset
   `settings/asciiPreset.xml`. Test: `tools/ascii_preview/` (preview, 60 s noise test, GL2 = GL3).
 
 ## Hydrology (`VegetationField::stepFlow()`)

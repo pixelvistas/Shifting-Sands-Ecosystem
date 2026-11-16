@@ -6,6 +6,9 @@
 
 // Default (DEVLOG, 2026-11-16): 10 mm cells; to be confirmed on the sand.
 float AsciiRenderer::GLYPH_MM = 10.0f;
+int AsciiRenderer::RANGE_MODE = AsciiRenderer::RANGE_CALIBRATED;
+float AsciiRenderer::RANGE_MIN_MM = -80.0f; // Custom; reset button: -/+ calibrated ceiling
+float AsciiRenderer::RANGE_MAX_MM = 80.0f;
 
 static const int LUT_STEP = 4; // grid cells between mesh vertices
 static const char * PRESET_FILE = "settings/asciiPreset.xml";
@@ -61,6 +64,31 @@ void AsciiRenderer::measureScale()
 	measuredRows = rows;
 }
 
+// The active range, sorted. A range under 1 mm wide is widened to 1 mm
+// around its centre (and flagged in the panel) so the division stays finite.
+void AsciiRenderer::updateRange()
+{
+	float a = 0.0f, b = 0.0f;
+	if (RANGE_MODE == RANGE_VEGETATION && vegetation) {
+		vegetation->getElevationRange(a, b);
+	} else if (RANGE_MODE == RANGE_CUSTOM) {
+		a = RANGE_MIN_MM;
+		b = RANGE_MAX_MM;
+	} else {
+		const float ceiling = kinectProjector ? std::fabs(kinectProjector->getCalibratedCeilingElevation()) : 0.0f;
+		a = -ceiling;
+		b = ceiling;
+	}
+	rangeLoMM = std::min(a, b);
+	rangeHiMM = std::max(a, b);
+	rangeDegenerate = !(rangeHiMM - rangeLoMM >= 1.0f);
+	if (rangeDegenerate) {
+		const float c = std::isfinite(a + b) ? 0.5f * (a + b) : 0.0f;
+		rangeLoMM = c - 0.5f;
+		rangeHiMM = c + 0.5f;
+	}
+}
+
 // R32F, one texel per grid cell: elevation normalized over the
 // calibrated range (0..1), -1 where there is no valid sample.
 void AsciiRenderer::uploadField()
@@ -75,9 +103,6 @@ void AsciiRenderer::uploadField()
 		fieldTex.setTextureMinMagFilter(GL_NEAREST, GL_NEAREST);
 		fieldTex.setTextureWrap(GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE);
 	}
-	const float ceiling = std::fabs(kinectProjector->getCalibratedCeilingElevation());
-	rangeLoMM = -ceiling;
-	rangeHiMM = ceiling;
 	const float inv = 1.0f / std::max(1e-3f, rangeHiMM - rangeLoMM);
 	float * p = fieldPix.getData();
 	for (int gy = 0; gy < rows; gy++) {
@@ -154,6 +179,7 @@ void AsciiRenderer::update()
 	GLYPH_MM = ofClamp(GLYPH_MM, 2.0f, 60.0f);
 	glyphs.setCellHeightPx((int)std::lround(GLYPH_MM * pxPerMM));
 
+	updateRange();
 	uploadField();
 	rebuildMesh();
 	float dt = ofGetLastFrameTime();
@@ -173,6 +199,9 @@ bool AsciiRenderer::savePreset()
 	auto s = xml.appendChild("ASCIIPRESET");
 	s.appendChild("name").set(std::string(PRESET_NAME));
 	s.appendChild("GLYPH_MM").set(GLYPH_MM);
+	s.appendChild("RANGE_MODE").set(RANGE_MODE);
+	s.appendChild("RANGE_MIN_MM").set(RANGE_MIN_MM);
+	s.appendChild("RANGE_MAX_MM").set(RANGE_MAX_MM);
 	std::string codes;
 	for (size_t i = 0; i < AsciiGlyphRenderer::RAMP.size(); i++)
 		codes += (i ? "," : "") + ofToString((int)(unsigned char)AsciiGlyphRenderer::RAMP[i]);
@@ -194,6 +223,9 @@ bool AsciiRenderer::loadPreset()
 	auto s = xml.getChild("ASCIIPRESET");
 	if (!s) { presetStatus = "preset file not recognised"; return false; }
 	if (s.getChild("GLYPH_MM")) GLYPH_MM = s.getChild("GLYPH_MM").getFloatValue();
+	if (s.getChild("RANGE_MODE")) RANGE_MODE = std::max(0, std::min(2, s.getChild("RANGE_MODE").getIntValue()));
+	if (s.getChild("RANGE_MIN_MM")) RANGE_MIN_MM = s.getChild("RANGE_MIN_MM").getFloatValue();
+	if (s.getChild("RANGE_MAX_MM")) RANGE_MAX_MM = s.getChild("RANGE_MAX_MM").getFloatValue();
 	if (s.getChild("RAMP_CODES")) {
 		std::string ramp;
 		for (const std::string & c : ofSplitString(s.getChild("RAMP_CODES").getValue(), ",", true, true)) {
@@ -254,7 +286,21 @@ void AsciiRenderer::drawGui()
 	ImGui::SliderFloat("Brightness", &G::BRIGHTNESS, 0.0f, 1.0f);
 
 	ImGui::Separator();
-	ImGui::Text("Elevation range (calibrated): %.1f .. %.1f mm", rangeLoMM, rangeHiMM);
+	static const char * rangeModes[] = { "Calibrated ceiling", "Match the Vegetation panel", "Custom" };
+	ImGui::Combo("Elevation range", &RANGE_MODE, rangeModes, 3);
+	if (RANGE_MODE == RANGE_CUSTOM) {
+		ImGui::SliderFloat("Range min (mm)", &RANGE_MIN_MM, -300.0f, 300.0f);
+		ImGui::SliderFloat("Range max (mm)", &RANGE_MAX_MM, -300.0f, 300.0f);
+		if (ImGui::Button("Reset to +-calibrated ceiling") && kinectProjector) {
+			const float ceiling = std::fabs(kinectProjector->getCalibratedCeilingElevation());
+			RANGE_MIN_MM = -ceiling;
+			RANGE_MAX_MM = ceiling;
+		}
+	}
+	updateRange(); // show the current setting even before the next update()
+	ImGui::Text("Active range: %.1f .. %.1f mm (%s)", rangeLoMM, rangeHiMM, rangeModes[std::max(0, std::min(2, RANGE_MODE))]);
+	if (rangeDegenerate)
+		ImGui::Text("Range under 1 mm wide: widened to 1 mm around its centre.");
 	ImGui::Text("fps %.1f; field %.2f ms, mesh %.2f ms", ofGetFrameRate(), lastFieldMs, lastMeshMs);
 	ImGui::End();
 }

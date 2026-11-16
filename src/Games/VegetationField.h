@@ -258,6 +258,9 @@ public:
 	// calibration changes, since classification just picks up the new
 	// range next update() - no grid reset needed.
 	void setElevationRange(float minMM, float maxMM);
+	// Read-only: the range as last set (here or in the Vegetation panel),
+	// in the order given, not sorted.
+	void getElevationRange(float & minMM, float & maxMM) const { minMM = elevationMin; maxMM = elevationMax; }
 
 	// Resets the persistent density grids (only) when the play area's grid
 	// dimensions actually change - an ROI update that doesn't change
