@@ -12,6 +12,7 @@ AsciiFontAtlas::build().
     python3 ascii_preview.py preview      # writes out/preview*.png
     python3 ascii_preview.py noise-test   # +-1 mm noise, flat sand, 60 s
     python3 ascii_preview.py compare      # GL2 and GL3 give the same glyphs
+    python3 ascii_preview.py palette-check  # band palettes under colour-blindness simulation
 
 Needs numpy, Pillow and PyOpenGL, and an EGL driver that can create an
 offscreen context (Mesa: EGL_PLATFORM=surfaceless, set below). Not part of
@@ -40,7 +41,7 @@ FONT = os.path.join(REPO, "bin", "data", "ascii", "fonts", "JetBrainsMono-Bold.t
 SRC = os.path.join(REPO, "src", "Prototypes", "Ascii")
 OUT = os.path.join(HERE, "out")
 
-FIRST_CHAR, CHAR_COUNT, MAX_RAMP = 32, 95, 16
+FIRST_CHAR, CHAR_COUNT, MAX_RAMP, BANDS = 32, 95, 16, 5
 REFERENCE_SIZE = 64
 LUT_STEP = 4
 
@@ -55,11 +56,23 @@ def read_defaults():
         m = re.search(r"AsciiGlyphRenderer::%s = ([-0-9.]+)f;|AsciiRenderer::%s = ([-0-9.]+)f;" % (name, name), text)
         return float(m.group(1) or m.group(2))
 
+    def palette(name):
+        block = re.search(r"AsciiGlyphRenderer::%s\[BANDS\] = \{(.*?)\};" % name, g, re.S).group(1)
+        return [h.upper() for h in re.findall(r"hexColor\(0x([0-9A-Fa-f]{6})\)", block)]
+
     ramp = re.search(r'std::string AsciiGlyphRenderer::RAMP = "((?:[^"\\]|\\.)*)";', g).group(1)
     ramp = ramp.encode().decode("unicode_escape")
     dither = re.search(r"bool AsciiGlyphRenderer::DITHER = (true|false);", g).group(1) == "true"
+    contours = re.search(r"bool AsciiGlyphRenderer::SHOW_CONTOURS = (true|false);", g).group(1) == "true"
     return dict(ramp=ramp, smoothing=num(g, "SMOOTHING_SEC"), hysteresis=num(g, "HYSTERESIS_STEPS"),
-                dither=dither, brightness=num(g, "BRIGHTNESS"), glyph_mm=num(r, "GLYPH_MM"))
+                dither=dither, brightness=num(g, "BRIGHTNESS"), glyph_mm=num(r, "GLYPH_MM"),
+                fg=palette("DEFAULT_FG_COLOR"), bg=palette("DEFAULT_BG_COLOR"), contours=contours,
+                contour_interval=num(g, "CONTOUR_INTERVAL"), contour_offset=num(g, "CONTOUR_OFFSET"),
+                contour_brighten=num(g, "CONTOUR_BRIGHTEN"))
+
+
+def hex_rgb(h):
+    return [int(h[i:i + 2], 16) / 255.0 for i in (0, 2, 4)]
 
 
 # ------------------------------------------------------------ atlas
@@ -216,6 +229,7 @@ class Pipeline:
         self.field_tex = None
         self.current = 0
         self.reset = True
+        self.field_lo, self.field_span = 0.0, 1.0
         if not gl2:
             self.vao = GL.glGenVertexArrays(1)
             GL.glBindVertexArray(self.vao)
@@ -300,6 +314,11 @@ class Pipeline:
         GL.glUniform1f(GL.glGetUniformLocation(p, "hysteresis"), max(0.0, s["hysteresis"]))
         GL.glUniform1i(GL.glGetUniformLocation(p, "dither"), 1 if s["dither"] else 0)
         GL.glUniform1i(GL.glGetUniformLocation(p, "resetAll"), 1 if self.reset else 0)
+        GL.glUniform1f(GL.glGetUniformLocation(p, "bands"), float(BANDS))
+        GL.glUniform1f(GL.glGetUniformLocation(p, "fieldLo"), self.field_lo)
+        GL.glUniform1f(GL.glGetUniformLocation(p, "fieldSpan"), self.field_span)
+        GL.glUniform1f(GL.glGetUniformLocation(p, "contourInterval"), max(0.5, s["contour_interval"]))
+        GL.glUniform1f(GL.glGetUniformLocation(p, "contourOffset"), s["contour_offset"])
         self._draw(*self._quad(self.cols, self.rows), ortho(self.cols, self.rows), p)
         self.current = nxt
         self.reset = False
@@ -319,6 +338,10 @@ class Pipeline:
         GL.glUniform2f(GL.glGetUniformLocation(p, "cellSize"), float(self.cw), float(self.ch))
         GL.glUniform1fv(GL.glGetUniformLocation(p, "rampGlyph"), MAX_RAMP, np.array(ramp, np.float32))
         GL.glUniform1f(GL.glGetUniformLocation(p, "brightness"), min(1.0, max(0.0, s["brightness"])))
+        GL.glUniform3fv(GL.glGetUniformLocation(p, "fgColor"), BANDS, np.array([hex_rgb(h) for h in s["fg"]], np.float32))
+        GL.glUniform3fv(GL.glGetUniformLocation(p, "bgColor"), BANDS, np.array([hex_rgb(h) for h in s["bg"]], np.float32))
+        GL.glUniform1i(GL.glGetUniformLocation(p, "showContours"), 1 if s["contours"] else 0)
+        GL.glUniform1f(GL.glGetUniformLocation(p, "contourBrighten"), min(1.0, max(0.0, s["contour_brighten"])))
         self._draw(*self._quad(self.W, self.H), ortho(self.W, self.H), p)
 
     def read_state(self):
@@ -391,6 +414,12 @@ class Sandbox:
         return e
 
 
+def unpack(st):
+    """Held band and contour index from the state's B channel (asciiState.frag)."""
+    q = np.floor(st[..., 2] / BANDS)
+    return st[..., 2] - BANDS * q, q - 512
+
+
 def normalize(e_mm, ceiling):
     """AsciiRenderer::uploadField(): over -/+ the calibrated ceiling."""
     lo, hi = -abs(ceiling), abs(ceiling)
@@ -404,6 +433,11 @@ def make_pipeline(ctx, gl2, box, settings):
     return p
 
 
+def set_units(p, ceiling):
+    """AsciiRenderer: setFieldUnits(range lo, range span) for the calibrated range."""
+    p.field_lo, p.field_span = -abs(ceiling), 2 * abs(ceiling)
+
+
 # ------------------------------------------------------------ commands
 def cmd_preview(args, ctx, settings):
     box = Sandbox()
@@ -413,6 +447,7 @@ def cmd_preview(args, ctx, settings):
     variants = [("preview", settings), ("preview_nodither", dict(settings, dither=False))]
     for name, s in variants:
         p = make_pipeline(ctx, args.gl2, box, s)
+        set_units(p, args.ceiling)
         for _ in range(90):  # 1.5 s of +-1 mm noise
             p.step(normalize(base + rng.uniform(-1, 1, base.shape).astype(np.float32), args.ceiling), 1 / 60.0)
         img = p.read_out()
@@ -421,16 +456,32 @@ def cmd_preview(args, ctx, settings):
             x0, y0, w, h = 120, 180, 420, 260
             crop = Image.fromarray(img[y0:y0 + h, x0:x0 + w]).resize((w * 3, h * 3), Image.NEAREST)
             crop.save(os.path.join(OUT, "preview_zoom.png"))
+        st = p.read_state()
+        band, q = unpack(st)
+        valid = st[..., 3] > 0.5
+        print("  bands low..high: %s cells; contour cells (any lower neighbour): %d"
+              % ([int(((band == b) & valid).sum()) for b in range(BANDS)], contour_cells(q, valid)))
         print("%s: %.2f px/mm, %g mm glyphs -> cell %d x %d px (font %d px), grid %d x %d, ramp %r, dither %s"
               % (name, box.px_per_mm(), s["glyph_mm"], p.cw, p.ch, p.font_size, p.cols, p.rows, s["ramp"], s["dither"]))
     print("wrote", OUT)
 
 
+def contour_cells(q, valid):
+    """asciiGlyph.frag's contour rule: held index above a valid 4-neighbour's."""
+    qp = np.pad(np.where(valid, q, np.inf), 1, constant_values=np.inf)
+    c = np.zeros(q.shape, bool)
+    for dy, dx in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+        c |= qp[1 + dy:1 + dy + q.shape[0], 1 + dx:1 + dx + q.shape[1]] < q
+    return int((c & valid).sum())
+
+
 def run_flat(p, box, height_mm, ceiling, seconds, mode, rng):
-    """Flat sand with +-1 mm noise each frame; returns glyph changes after frame 0."""
+    """Flat sand with +-1 mm noise each frame; returns changes of the held
+    glyph level, band or contour index (the whole packed state) after frame 0."""
     frames = int(round(seconds * 60))
     base = np.full((box.rows, box.cols), height_mm, np.float32)
     p.reset = True
+    set_units(p, ceiling)
     prev = None
     changes = 0
     cells_changed = np.zeros((p.rows, p.cols), bool)
@@ -442,9 +493,9 @@ def run_flat(p, box, height_mm, ceiling, seconds, mode, rng):
         p.step(normalize(base + noise, ceiling), 1 / 60.0, draw_glyphs=False)
         st = p.read_state()
         valid = st[..., 3] > 0.5
-        g = np.where(valid, st[..., 1], -1)
+        g = np.stack([np.where(valid, st[..., 1], -1), np.where(valid, st[..., 2], -1)], -1)
         if prev is not None:
-            diff = g != prev
+            diff = np.any(g != prev, axis=-1)
             changes += int(diff.sum())
             cells_changed |= diff
         prev = g
@@ -457,15 +508,21 @@ def cmd_noise_test(args, ctx, settings):
     p = make_pipeline(ctx, args.gl2, box, settings)
     seconds = 60.0 if not args.quick else 10.0
     ok = True
+    print("Changes counted: held glyph level, height band or contour index of any cell.")
     print("Flat sand, +-1 mm uniform noise per frame, %g s at 60 fps; glyph grid %d x %d (%d x %d px cells)"
           % (seconds, p.cols, p.rows, p.cw, p.ch))
-    print("defaults: smoothing %.2f s, hysteresis %.2f steps, dither %s, ramp %r"
-          % (settings["smoothing"], settings["hysteresis"], settings["dither"], settings["ramp"]))
+    print("defaults: smoothing %.2f s, hysteresis %.2f steps, dither %s, ramp %r, contours every %g mm from %g mm"
+          % (settings["smoothing"], settings["hysteresis"], settings["dither"], settings["ramp"],
+             settings["contour_interval"], settings["contour_offset"]))
     for ceiling in args.ceilings:
         step_mm = 2 * ceiling / (max(2, min(MAX_RAMP, len(settings["ramp"]))) - 1)
         # Heights: flat sand (9 mm) plus offsets that put cells within
         # fractions of a millimetre of a glyph boundary for every Bayer threshold.
-        heights = [9.0] + [9.0 + step_mm * k / 128.0 for k in (1, 3, 5, 7)] + [-20.0, 40.0]
+        band_mm = 2 * ceiling / (BANDS - 1)
+        heights = ([9.0] + [9.0 + step_mm * k / 128.0 for k in (1, 3, 5, 7)]
+                   + [9.0 + band_mm * k / 128.0 for k in (2, 6)]
+                   + [settings["contour_offset"] + settings["contour_interval"] + o for o in (-0.05, 0.05)]
+                   + [-20.0, 40.0])
         if args.quick:
             heights = heights[:3]
         for mode in ("independent", "common"):
@@ -474,12 +531,13 @@ def cmd_noise_test(args, ctx, settings):
                 ch, cells, valid = run_flat(p, box, hmm, ceiling, seconds, mode, rng)
                 ok &= ch == 0
                 print("  range +-%3.0f mm (step %5.2f mm, hysteresis %4.2f mm) %-11s flat %6.2f mm: "
-                      "%d glyph changes (%d cells) of %d cells  [%.0f s]"
+                      "%d changes (%d cells) of %d cells  [%.0f s]"
                       % (ceiling, step_mm, step_mm * settings["hysteresis"], mode, hmm, ch, cells, valid, time.time() - t0))
     # Sensitivity: the test must be able to fail.
     q = make_pipeline(ctx, args.gl2, box, dict(settings, smoothing=0.0, hysteresis=0.0))
     ch, cells, valid = run_flat(q, box, 9.0, args.ceilings[-1], 5.0, "common", rng)
-    print("  control, no smoothing and no hysteresis, 5 s: %d glyph changes (%d cells) - expected > 0" % (ch, cells))
+    print("  (control flat at 9 mm)")
+    print("  control, no smoothing and no hysteresis, 5 s: %d changes (%d cells) - expected > 0" % (ch, cells))
     ok &= ch > 0
     print("PASS" if ok else "FAIL")
     return 0 if ok else 1
@@ -494,20 +552,111 @@ def cmd_compare(args, ctx, settings):
     res = {}
     for gl2 in (False, True):
         p = make_pipeline(ctx, gl2, box, settings)
+        set_units(p, args.ceilings[-1])
         for f in frames:
             p.step(f, 1 / 60.0)
         res[gl2] = (p.read_state(), p.read_out())
     s3, o3 = res[False]
     s2, o2 = res[True]
-    lv = np.array_equal(s3[..., 1], s2[..., 1]) and np.array_equal(s3[..., 3], s2[..., 3])
+    lv = all(np.array_equal(s3[..., c], s2[..., c]) for c in (1, 2, 3))
     im = np.array_equal(o3, o2)
-    print("GL2 vs GL3: held levels identical: %s; output images identical: %s" % (lv, im))
+    print("GL2 vs GL3: held glyph levels, bands and contour indices identical: %s; output images identical: %s" % (lv, im))
     return 0 if (lv and im) else 1
+
+
+# Machado, Oliveira & Fernandes (2009), severity 1.0, applied in linear RGB.
+CVD = {
+    "protanopia": np.array([[0.152286, 1.052583, -0.204868], [0.114503, 0.786281, 0.099216], [-0.003882, -0.048116, 1.051998]]),
+    "deuteranopia": np.array([[0.367322, 0.860646, -0.227968], [0.280085, 0.672501, 0.047413], [-0.011820, 0.042940, 0.968881]]),
+    "tritanopia": np.array([[1.255528, -0.076749, -0.178779], [-0.078411, 0.930809, 0.147602], [0.004733, 0.691367, 0.303900]]),
+}
+
+
+def _lin(c):
+    c = np.asarray(c, float)
+    return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+
+
+def _srgb(l):
+    l = np.clip(l, 0, 1)
+    return np.where(l <= 0.0031308, 12.92 * l, 1.055 * l ** (1 / 2.4) - 0.055)
+
+
+def _lab(c):
+    xyz = np.array([[0.4124564, 0.3575761, 0.1804375], [0.2126729, 0.7151522, 0.0721750],
+                    [0.0193339, 0.1191920, 0.9503041]]) @ _lin(c) / np.array([0.95047, 1.0, 1.08883])
+    f = np.where(xyz > (6 / 29) ** 3, np.cbrt(xyz), xyz / (3 * (6 / 29) ** 2) + 4 / 29)
+    return np.array([116 * f[1] - 16, 500 * (f[0] - f[1]), 200 * (f[1] - f[2])])
+
+
+def _de2000(a, b):
+    """CIEDE2000 colour difference (Sharma, Wu & Dalal 2005)."""
+    L1, a1, b1 = a
+    L2, a2, b2 = b
+    Cb = (math.hypot(a1, b1) + math.hypot(a2, b2)) / 2
+    G = 0.5 * (1 - math.sqrt(Cb ** 7 / (Cb ** 7 + 25 ** 7)))
+    a1p, a2p = (1 + G) * a1, (1 + G) * a2
+    C1p, C2p = math.hypot(a1p, b1), math.hypot(a2p, b2)
+    h1 = math.degrees(math.atan2(b1, a1p)) % 360
+    h2 = math.degrees(math.atan2(b2, a2p)) % 360
+    dL, dC = L2 - L1, C2p - C1p
+    dh = 0.0 if C1p * C2p == 0 else (h2 - h1 - 360 if h2 - h1 > 180 else h2 - h1 + 360 if h2 - h1 < -180 else h2 - h1)
+    dH = 2 * math.sqrt(C1p * C2p) * math.sin(math.radians(dh / 2))
+    Lb, Cbp = (L1 + L2) / 2, (C1p + C2p) / 2
+    if C1p * C2p == 0:
+        hb = h1 + h2
+    else:
+        hb = (h1 + h2) / 2 if abs(h1 - h2) <= 180 else (h1 + h2 + 360) / 2
+    T = (1 - 0.17 * math.cos(math.radians(hb - 30)) + 0.24 * math.cos(math.radians(2 * hb))
+         + 0.32 * math.cos(math.radians(3 * hb + 6)) - 0.20 * math.cos(math.radians(4 * hb - 63)))
+    dth = 30 * math.exp(-((hb - 275) / 25) ** 2)
+    Rc = 2 * math.sqrt(Cbp ** 7 / (Cbp ** 7 + 25 ** 7))
+    Sl = 1 + 0.015 * (Lb - 50) ** 2 / math.sqrt(20 + (Lb - 50) ** 2)
+    Sc, Sh = 1 + 0.045 * Cbp, 1 + 0.015 * Cbp * T
+    Rt = -math.sin(math.radians(2 * dth)) * Rc
+    return math.sqrt((dL / Sl) ** 2 + (dC / Sc) ** 2 + (dH / Sh) ** 2 + Rt * (dC / Sc) * (dH / Sh))
+
+
+def _contrast(a, b):
+    la, lb = sorted(float(np.dot([0.2126, 0.7152, 0.0722], _lin(c))) for c in (a, b))
+    return (lb + 0.05) / (la + 0.05)
+
+
+def cmd_palette_check(args, settings):
+    """Adjacent bands under simulated colour blindness; glyph vs background
+    contrast per band; red/green check. Thresholds: glyphs >= 10 dE00,
+    backgrounds >= 5 dE00 (muted, so smaller), glyph/background >= 4:1."""
+    fg = [np.array(hex_rgb(h)) for h in settings["fg"]]
+    bg = [np.array(hex_rgb(h)) for h in settings["bg"]]
+    ok = True
+    for name, pal, need in (("glyph", fg, 10.0), ("background", bg, 5.0)):
+        for vision in ["normal"] + list(CVD):
+            sim = [c if vision == "normal" else _srgb(CVD[vision] @ _lin(c)) for c in pal]
+            d = [_de2000(_lab(sim[i]), _lab(sim[i + 1])) for i in range(BANDS - 1)]
+            ok &= min(d) >= need
+            print("%-10s %-12s adjacent dE00 %s  min %5.1f (need %g)"
+                  % (name, vision, " ".join("%5.1f" % x for x in d), min(d), need))
+    cr = [_contrast(a, b) for a, b in zip(fg, bg)]
+    ok &= min(cr) >= 4.0
+    print("glyph/background contrast per band: %s (need 4:1)" % " ".join("%.1f" % c for c in cr))
+    # Saturated red: hue 0..40 deg (or > 345) with chroma > 50; saturated green: hue 100..170, chroma > 30.
+    for name, pal in (("glyph", fg), ("background", bg)):
+        kinds = []
+        for c in pal:
+            L, a, b = _lab(c)
+            C, h = math.hypot(a, b), math.degrees(math.atan2(b, a)) % 360
+            kinds.append("red" if C > 50 and (h < 40 or h > 345) else "green" if C > 30 and 100 <= h <= 170 else "")
+            print("  %-10s #%s  L* %5.1f  C* %5.1f  h %5.1f %s" % (name, settings["fg" if name == "glyph" else "bg"][len(kinds) - 1], L, C, h, kinds[-1]))
+        bad = any({kinds[i], kinds[i + 1]} == {"red", "green"} for i in range(BANDS - 1))
+        ok &= not bad
+        print("  %s: saturated red next to saturated green: %s" % (name, "YES" if bad else "no"))
+    print("PASS" if ok else "FAIL")
+    return 0 if ok else 1
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("command", choices=["preview", "noise-test", "compare"])
+    ap.add_argument("command", choices=["preview", "noise-test", "compare", "palette-check"])
     ap.add_argument("--gl2", action="store_true", help="run the GL2 shader variants (compatibility context)")
     ap.add_argument("--ceiling", type=float, default=80.0, help="calibrated ceiling (mm) for the preview")
     ap.add_argument("--ceilings", type=float, nargs="+", default=[80.0, 40.0],
@@ -515,6 +664,8 @@ def main():
     ap.add_argument("--quick", action="store_true", help="10 s and fewer heights")
     args = ap.parse_args()
     settings = read_defaults()
+    if args.command == "palette-check":
+        return cmd_palette_check(args, settings)
     ctx = Context()
     if args.command == "preview":
         cmd_preview(args, ctx, settings)

@@ -185,6 +185,7 @@ void AsciiRenderer::update()
 	float dt = ofGetLastFrameTime();
 	if (!(dt > 0.0f) || dt > 0.1f)
 		dt = 1.0f / 60.0f;
+	glyphs.setFieldUnits(rangeLoMM, rangeHiMM - rangeLoMM);
 	glyphs.update(fieldTex, mesh, dt);
 }
 
@@ -210,6 +211,17 @@ bool AsciiRenderer::savePreset()
 	s.appendChild("HYSTERESIS_STEPS").set(AsciiGlyphRenderer::HYSTERESIS_STEPS);
 	s.appendChild("DITHER").set(AsciiGlyphRenderer::DITHER ? 1 : 0);
 	s.appendChild("BRIGHTNESS").set(AsciiGlyphRenderer::BRIGHTNESS);
+	s.appendChild("SHOW_CONTOURS").set(AsciiGlyphRenderer::SHOW_CONTOURS ? 1 : 0);
+	s.appendChild("CONTOUR_INTERVAL_MM").set(AsciiGlyphRenderer::CONTOUR_INTERVAL);
+	s.appendChild("CONTOUR_OFFSET_MM").set(AsciiGlyphRenderer::CONTOUR_OFFSET);
+	s.appendChild("CONTOUR_BRIGHTEN").set(AsciiGlyphRenderer::CONTOUR_BRIGHTEN);
+	for (int b = 0; b < AsciiGlyphRenderer::BANDS; b++) {
+		auto c = s.appendChild("band" + ofToString(b));
+		c.appendChild("fg").set(ofToString(AsciiGlyphRenderer::FG_COLOR[b].r) + "," + ofToString(AsciiGlyphRenderer::FG_COLOR[b].g)
+			+ "," + ofToString(AsciiGlyphRenderer::FG_COLOR[b].b));
+		c.appendChild("bg").set(ofToString(AsciiGlyphRenderer::BG_COLOR[b].r) + "," + ofToString(AsciiGlyphRenderer::BG_COLOR[b].g)
+			+ "," + ofToString(AsciiGlyphRenderer::BG_COLOR[b].b));
+	}
 	const bool ok = xml.save(PRESET_FILE);
 	presetStatus = ok ? std::string("saved \"") + PRESET_NAME + "\"" : "save failed";
 	return ok;
@@ -240,6 +252,25 @@ bool AsciiRenderer::loadPreset()
 	if (s.getChild("HYSTERESIS_STEPS")) AsciiGlyphRenderer::HYSTERESIS_STEPS = s.getChild("HYSTERESIS_STEPS").getFloatValue();
 	if (s.getChild("DITHER")) AsciiGlyphRenderer::DITHER = s.getChild("DITHER").getIntValue() != 0;
 	if (s.getChild("BRIGHTNESS")) AsciiGlyphRenderer::BRIGHTNESS = s.getChild("BRIGHTNESS").getFloatValue();
+	if (s.getChild("SHOW_CONTOURS")) AsciiGlyphRenderer::SHOW_CONTOURS = s.getChild("SHOW_CONTOURS").getIntValue() != 0;
+	if (s.getChild("CONTOUR_INTERVAL_MM")) AsciiGlyphRenderer::CONTOUR_INTERVAL = s.getChild("CONTOUR_INTERVAL_MM").getFloatValue();
+	if (s.getChild("CONTOUR_OFFSET_MM")) AsciiGlyphRenderer::CONTOUR_OFFSET = s.getChild("CONTOUR_OFFSET_MM").getFloatValue();
+	if (s.getChild("CONTOUR_BRIGHTEN")) AsciiGlyphRenderer::CONTOUR_BRIGHTEN = s.getChild("CONTOUR_BRIGHTEN").getFloatValue();
+	for (int b = 0; b < AsciiGlyphRenderer::BANDS; b++) {
+		auto c = s.getChild("band" + ofToString(b));
+		if (!c)
+			continue;
+		for (int k = 0; k < 2; k++) {
+			auto e = c.getChild(k == 0 ? "fg" : "bg");
+			const std::vector<std::string> v = e ? ofSplitString(e.getValue(), ",", true, true) : std::vector<std::string>();
+			if (v.size() != 3)
+				continue;
+			ofFloatColor & col = (k == 0 ? AsciiGlyphRenderer::FG_COLOR : AsciiGlyphRenderer::BG_COLOR)[b];
+			col.r = ofClamp(ofToFloat(v[0]), 0.0f, 1.0f);
+			col.g = ofClamp(ofToFloat(v[1]), 0.0f, 1.0f);
+			col.b = ofClamp(ofToFloat(v[2]), 0.0f, 1.0f);
+		}
+	}
 	copyRamp(rampBuf, AsciiGlyphRenderer::RAMP);
 	presetStatus = std::string("loaded \"") + s.getChild("name").getValue() + "\"";
 	return true;
@@ -301,6 +332,33 @@ void AsciiRenderer::drawGui()
 	ImGui::Text("Active range: %.1f .. %.1f mm (%s)", rangeLoMM, rangeHiMM, rangeModes[std::max(0, std::min(2, RANGE_MODE))]);
 	if (rangeDegenerate)
 		ImGui::Text("Range under 1 mm wide: widened to 1 mm around its centre.");
+
+	ImGui::Separator();
+	ImGui::Text("Height bands (5, dithered across cells with the same Bayer pattern)");
+	static const char * bandNames[G::BANDS] = { "Low", "Low-mid", "Mid", "High-mid", "High" };
+	const float bandStepMM = (rangeHiMM - rangeLoMM) / (G::BANDS - 1);
+	for (int b = 0; b < G::BANDS; b++) {
+		ImGui::PushID(b);
+		ImGui::Text("%-8s centre %6.1f mm", bandNames[b], rangeLoMM + b * bandStepMM);
+		ImGui::ColorEdit3("glyph", &G::FG_COLOR[b].r);
+		ImGui::SameLine();
+		ImGui::ColorEdit3("background", &G::BG_COLOR[b].r);
+		ImGui::PopID();
+	}
+	if (ImGui::Button("Reset palettes")) {
+		for (int b = 0; b < G::BANDS; b++) {
+			G::FG_COLOR[b] = G::DEFAULT_FG_COLOR[b];
+			G::BG_COLOR[b] = G::DEFAULT_BG_COLOR[b];
+		}
+	}
+	ImGui::Text("(defaults checked for colour-blind contrast; keep saturated red away from saturated green)");
+	ImGui::Checkbox("Contours", &G::SHOW_CONTOURS);
+	ImGui::SliderFloat("Contour interval (mm)", &G::CONTOUR_INTERVAL, 2.0f, 50.0f);
+	ImGui::SliderFloat("Contour offset (mm)", &G::CONTOUR_OFFSET, 0.0f, 50.0f);
+	ImGui::SliderFloat("Contour glyph brighten", &G::CONTOUR_BRIGHTEN, 0.0f, 1.0f);
+	ImGui::Text("(contours at offset + k x interval; hysteresis %.1f mm)", G::HYSTERESIS_STEPS * G::CONTOUR_INTERVAL);
+
+	ImGui::Separator();
 	ImGui::Text("fps %.1f; field %.2f ms, mesh %.2f ms", ofGetFrameRate(), lastFieldMs, lastMeshMs);
 	ImGui::End();
 }

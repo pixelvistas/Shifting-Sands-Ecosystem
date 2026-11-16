@@ -4415,3 +4415,66 @@ usual smoothing and hysteresis. The earlier entry's note that a hand-typed
 Vegetation range is not followed no longer applies.
 Syntax-checked against stub headers only. Not compiled with openFrameworks,
 not hardware-tested.
+
+## 2026-11-16 - Prototype 3: height-band colour and contour cells (`prototype/3-ascii`)
+
+The ASCII view is now coloured by elevation band. Bands are height bands
+only (low, low-mid, mid, high-mid, high); nothing treats them as water or
+vegetation, which will come from the water simulation and the succession
+model in a later step.
+
+- State pass (`asciiState.frag`): from the same smoothed cell value v as
+  the glyph level, two more held levels, all by one rule (`holdLevel`: the
+  held level k stays while k - h <= x < k + 1 + h, else floor(x)):
+  band x = v x 4 + d (d = the existing per-cell 4 x 4 Bayer threshold, so
+  bands dither between neighbours exactly as glyphs do), and contour index
+  x = (elevation mm - offset) / interval (not dithered). h is
+  HYSTERESIS_STEPS in each level's own steps (0.15: 6 mm per band step at
+  +-80 mm, 1.5 mm for 10 mm contours). Packed into the state's B channel:
+  band + 5 x (contour index + 512), exact in float32.
+- Glyph pass: colour = mix(bgColor[band], fgColor[band], glyph alpha) x
+  brightness, glyph alpha = atlas coverage >= 0.5 (crisp). A cell is on a
+  contour when its held contour index is above that of a valid
+  4-neighbour (higher side of the crossing, one cell thick); its glyph
+  colour is mixed towards white by "Contour glyph brighten" (0.6). The
+  decision uses held values only, so a contour cell can change only when a
+  held level does. Changing the contour interval or offset restarts the
+  held levels.
+- Defaults: contours every 10 mm from 5 mm (5, 15, 25 ... mm), so flat sand
+  at ~9 mm sits between two levels. Known: sand lying flat within the noise
+  of a contour level gets a static speckle of contour cells (each cell's
+  first sample decides its side; 46 % of cells for flat sand at exactly
+  15 mm in the harness; none at 9 mm); move the offset if the box's flat
+  level sits on one.
+- Palettes (low .. high), editable per band in the ASCII panel ("Reset
+  palettes" restores them), saved in the preset:
+  glyph #776CC1 slate violet, #B684C4 lilac, #F191AF rose, #F0C66D amber,
+  #F6F1DA warm white; background (muted) #161328, #261C28, #3D242B,
+  #3E3628, #46443D. Lightness rises monotonically (glyph L* 50..95,
+  background 7..29); no green or cyan hue at all (no red-green adjacency,
+  nothing that reads as water or plants). Chosen by a search over hue and
+  chroma at fixed lightness steps, maximising the worst case below.
+- Palette check (`ascii_preview.py palette-check`; Machado et al. 2009
+  simulation, severity 1, CIEDE2000): adjacent glyph colours min 15.9
+  (normal), 10.4 (protanopia), 14.3 (deuteranopia), 11.9 (tritanopia),
+  need >= 10; adjacent backgrounds min 6.2 / 5.4 / 6.0 / 6.8, need >= 5;
+  glyph/background contrast 4.1, 5.5, 6.3, 7.4, 8.6 : 1, need >= 4; no
+  saturated red next to saturated green. PASS.
+- Preview (synthetic box, +-80 mm): flat sand mixes mid (rose) with ~22 %
+  high-mid (amber) in the Bayer pattern, since 9 mm lies 22 % of the way
+  from the mid to the high-mid band centre; the mound runs rose, amber,
+  warm white; the basin lilac/violet. Band centres are shown in the panel.
+- GL2 and GL3: identical held glyph levels, bands, contour indices and
+  images (`compare`). All eight shader files pass glslangValidator and were
+  read line by line (GL2 differs only in version/extension, varying,
+  texture2DRect, gl_FragColor).
+- Noise test (60 s, now also counting band and contour-index changes): see the follow-up line below.
+Not compiled with openFrameworks, not hardware-tested.
+
+Hardware checklist additions:
+1. Bands read as five distinct heights from about 1 m, including in the
+   dark room; neighbouring bands distinguishable (ask a colour-blind
+   visitor if possible).
+2. Contour rings are continuous on slopes, one cell thick, brighter than
+   their band, and steady; none on untouched flat sand.
+3. Background tint: muted enough that glyphs stay the brightest thing.
