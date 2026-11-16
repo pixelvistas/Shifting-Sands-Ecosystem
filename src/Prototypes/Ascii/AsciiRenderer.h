@@ -1,37 +1,43 @@
 /***********************************************************************
 AsciiRenderer - Prototype 3 ("ASCII") display module.
 
-Draws the sandbox state as a grid of text characters, upright in
-projector space, on black:
-  - simulated water: animated ~ - = waves, cyan, brighter with depth;
-  - contour lines every CONTOUR_INTERVAL_MM (from CONTOUR_OFFSET_MM): - | / \ along the contour;
-  - plants (Site feedback model): one glyph set per successional role
-    (pioneer , ; v / intermediate + x X / climax % & #), denser glyph for
-    higher cover;
-  - bare land: a density ramp ( . : o O @) by elevation;
-  - snow (ELF model only): *.
+Shows the sand as monospace characters on black: AsciiGlyphRenderer
+(a generic scalar-field-to-glyph renderer, own shaders in
+bin/data/shaders/ascii/GL2|GL3) fed with, for this first step, the
+normalized elevation map.
 
-Two passes, own shaders (bin/data/shaders/ascii/GL2|GL3):
-  1. asciiCells: the per-Kinect-cell data texture (R elevation mm,
-     G water depth mm / -1 snow / 0 dry, B plant code, A valid) is drawn
-     through the projector calibration (KinectProjector::
-     kinectCoordToProjCoord on a coarse grid, as Prototype 2 does) into
-     a float FBO with one texel per character cell; each texel aggregates
-     a 3 x 3 footprint of Kinect cells.
-  2. ascii: a projector-sized quad picks a glyph per cell from that FBO
-     and its four neighbours (contours, gradient direction) and samples
-     the glyph atlas (AsciiFont).
+- Input field: VegetationField's per-cell elevation (mm), normalized over
+  the calibrated elevation range the sandbox uses, -/+ KinectProjector::
+  getCalibratedCeilingElevation() (what ofApp gives VegetationField at
+  start-up and what "Reset range to +-calibrated ceiling" restores; a
+  range typed by hand into the Vegetation panel is not followed, since
+  VegetationField does not expose it). 0 = calibrated floor, 1 = ceiling.
+- Placement: the field is drawn through the projector calibration
+  (KinectProjector::kinectCoordToProjCoord on a grid every LUT_STEP
+  cells, as the seed and water-particle layers do).
+- Glyph cells are sized in millimetres on the sand (GLYPH_MM, cell
+  height): the projector's pixels per mm are measured from the
+  calibration across the middle of the play area when the mode is first
+  shown, when the grid changes, or on "Re-measure scale"; the cell height
+  is rounded to whole projector pixels.
 
-Read-only against KinectProjector, VegetationField and SuccessionModel;
-the water and succession simulations keep running whatever is shown.
-In "ASCII" display mode ofApp draws only this module's FBO (opaque).
-Removing the module means deleting src/Prototypes/Ascii,
-bin/data/shaders/ascii, the .vcxproj(.filters) entries and the
-"Display mode" ASCII lines in ofApp.
+Read-only against KinectProjector, VegetationField and the succession
+model: the water and succession simulations keep running whatever is
+shown. ofApp updates the module only while "ASCII" is the display mode;
+no GL work happens before that, so the Sandbox output is untouched.
+
+Settings preset "Prototype 3: ASCII": bin/data/settings/asciiPreset.xml
+(Save/Load in the ASCII panel; loaded at start-up when present).
+Defaults live in the .cpp files.
+
+Removing the module: delete src/Prototypes/Ascii, bin/data/shaders/ascii,
+bin/data/ascii, tools/ascii_preview, the .vcxproj(.filters) entries and
+the ASCII lines of the "Display mode" code in ofApp.
 ***********************************************************************/
 
 #pragma once
 #include "ofMain.h"
+#include "AsciiGlyphRenderer.h"
 
 class KinectProjector;
 class VegetationField;
@@ -39,59 +45,42 @@ class VegetationField;
 class AsciiRenderer
 {
 public:
+	// No GL work here: only pointers and the preset file.
 	void setup(std::shared_ptr<KinectProjector> const & kp, const VegetationField * vf);
 	void setProjectorRes(const ofVec2f & res);
-	// Rebuilds the character grid and redraws the FBO. Call only while
-	// the module is shown.
+	// Call every frame while the ASCII mode is shown (starts fresh when
+	// it was not called the frame before).
 	void update();
-	// Opaque: black and the characters.
 	void drawMainWindow(float x, float y, float w, float h);
 	void drawProjectorWindow();
 	void drawGui();
 
-	static int CELL_PX;                 // character cell size in projector pixels
-	static float LAND_MIN_MM;           // elevation of the sparsest land glyph
-	static float LAND_MAX_MM;           // elevation of the densest land glyph
-	static bool SHOW_CONTOURS;
-	static float CONTOUR_INTERVAL_MM;
-	static float CONTOUR_OFFSET_MM;
-	static bool CONTOURS_OVER_PLANTS;
-	static bool SHOW_PLANTS;
-	static float PLANT_MIN_COVER;       // below this the land glyph shows
-	static float WATER_MIN_FRACTION;    // share of a cell's samples that must be water
-	static float WATER_FULL_MM;         // depth at full water brightness
-	static float WAVE_SPEED;            // wave phase cycles per second
-	static float WAVE_LENGTH_CELLS;
-	static float LAND_DIM;              // brightness of the lowest land glyph (highest = 1)
-	static float BRIGHTNESS;
-	static ofFloatColor LAND_COLOR;
-	static ofFloatColor CONTOUR_COLOR;
-	static ofFloatColor WATER_COLOR;
-	static ofFloatColor PLANT_COLOR[3]; // pioneer, intermediate, climax
-	static ofFloatColor SNOW_COLOR;
+	bool savePreset();
+	bool loadPreset();
+
+	static float GLYPH_MM; // glyph cell height on the sand
 
 private:
-	void allocateCells();
-	void uploadData();
+	void measureScale();
+	void uploadField();
 	void rebuildMesh();
-	void renderFbo();
-	void composite(float x, float y, float w, float h);
 
 	std::shared_ptr<KinectProjector> kinectProjector;
 	const VegetationField * vegetation = nullptr;
+	AsciiGlyphRenderer glyphs;
 	ofVec2f projRes;
-	int cellCols = 0, cellRows = 0, allocatedCellPx = 0;
-	ofFbo cellFbo;   // one RGBA32F texel per character cell
-	ofFbo fbo;       // projector resolution, the composited output
-	ofShader cellShader, asciiShader;
-	bool shadersLoaded = false;
-	ofFloatPixels dataPix;
-	ofTexture dataTex;
-	ofTexture glyphTex;
+	bool glReady = false, glFailed = false;
+	uint64_t lastUpdateFrame = 0;
+	bool scaleMeasured = false;
+	float pxPerMM = 0.0f;
+	ofVec2f measuredOrigin;
+	int measuredCols = 0, measuredRows = 0;
+	float rangeLoMM = 0.0f, rangeHiMM = 0.0f;
+	ofFloatPixels fieldPix;
+	ofTexture fieldTex;
 	ofVboMesh mesh;
 	int meshCols = 0, meshRows = 0;
-	ofMesh quad;
-	bool hasFrame = false;
-	float lastUploadMs = 0.0f, lastMeshMs = 0.0f;
-	int waterCells = 0, plantCells = 0;
+	float lastFieldMs = 0.0f, lastMeshMs = 0.0f;
+	char rampBuf[AsciiGlyphRenderer::MAX_RAMP + 1] = {};
+	std::string presetStatus;
 };

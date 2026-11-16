@@ -82,7 +82,7 @@ void ofApp::setup() {
 	lastKinectROI = kinectROI;
 
 	// Prototype 3 (ASCII): read-only against kinectProjector and
-	// vegetationField.
+	// vegetationField; no GL work until the mode is first shown.
 	ascii.setup(kinectProjector, &vegetationField);
 	ascii.setProjectorRes(projRes);
 
@@ -179,7 +179,8 @@ void ofApp::draw()
 		kinectProjector->drawGui();
 		if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING) {
 			drawDisplayModeGui();
-			ascii.drawGui();
+			if (displayMode == DISPLAY_ASCII)
+				ascii.drawGui();
 			sandSurfaceRenderer->drawGui();
 			critterController.drawGui();
 			vegetationField.drawGui();

@@ -28,7 +28,10 @@
 		<ClCompile Include="src\Games\SeedParticles.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
-		<ClCompile Include="src\Prototypes\Ascii\AsciiFont.cpp">
+		<ClCompile Include="src\Prototypes\Ascii\AsciiFontAtlas.cpp">
+			<Filter>src\Prototypes\Ascii</Filter>
+		</ClCompile>
+		<ClCompile Include="src\Prototypes\Ascii\AsciiGlyphRenderer.cpp">
 			<Filter>src\Prototypes\Ascii</Filter>
 		</ClCompile>
 		<ClCompile Include="src\Prototypes\Ascii\AsciiRenderer.cpp">
@@ -776,7 +779,10 @@
 		<ClInclude Include="src\Games\SeedParticles.h">
 			<Filter>src\Games</Filter>
 		</ClInclude>
-		<ClInclude Include="src\Prototypes\Ascii\AsciiFont.h">
+		<ClInclude Include="src\Prototypes\Ascii\AsciiFontAtlas.h">
+			<Filter>src\Prototypes\Ascii</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Prototypes\Ascii\AsciiGlyphRenderer.h">
 			<Filter>src\Prototypes\Ascii</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Prototypes\Ascii\AsciiRenderer.h">

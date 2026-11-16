@@ -16,6 +16,7 @@ Sand, ported to openFrameworks 0.12.1 with an ofxImGui GUI (`README.md`,
 
 - `ss/plant-grain` (current work): grain-dither plants and seed particles
   (display only), on `ss/land-lines`.
+- `prototype/3-ascii` (on `ss/plant-grain`): "Display mode" Sandbox (0) / ASCII (2; 1 = Mycorrhiza).
 - `ss/land-lines`: land lines, band fill, flat fade, Kinect driver stack; on `ss/water-lines`.
 - `ss/water-lines` (water lines) on `ss/succession-feedback` (succession) on `ss/dewitz-flow`.
 - `ss/dewitz-flow`: flow particles, water table. Fallback `ss/ecosim-model-visuals-kiqw12`.
@@ -103,6 +104,11 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   water particles): seeds where cover grew over a 0.5 s window closed on whole
   multiples of UPDATE_INTERLEAVE (no striping), top 10 % pioneer growth only, cap
   1500, soft slow motes; additive on black, "over" on the fill. Test: `tools/grain_seed_harness/`.
+- `src/Prototypes/Ascii/*` (`prototype/3-ascii`): ASCII mode. `AsciiGlyphRenderer` turns any 0..1 field
+  into monospace glyphs: shaders `bin/data/shaders/ascii/GL2|GL3` (sample per cell; state = smoothing +
+  hysteresis + 4x4 Bayer; glyph), atlas from JetBrains Mono Bold (`bin/data/ascii/fonts`, OFL). Input:
+  elevation over -/+ calibrated ceiling; cell height in mm (10) via calibration px/mm. Preset
+  `settings/asciiPreset.xml`. Test: `tools/ascii_preview/` (preview, 60 s noise test, GL2 = GL3).
 
 ## Hydrology (`VegetationField::stepFlow()`)
 

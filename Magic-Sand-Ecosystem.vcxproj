@@ -254,7 +254,8 @@
     <ClCompile Include="src\Games\PlantLayer.cpp" />
     <ClCompile Include="src\Games\SeedParticles.cpp" />
     <ClCompile Include="src\Games\SeedLayer.cpp" />
-    <ClCompile Include="src\Prototypes\Ascii\AsciiFont.cpp" />
+    <ClCompile Include="src\Prototypes\Ascii\AsciiFontAtlas.cpp" />
+    <ClCompile Include="src\Prototypes\Ascii\AsciiGlyphRenderer.cpp" />
     <ClCompile Include="src\Prototypes\Ascii\AsciiRenderer.cpp" />
     <ClCompile Include="src\Games\WaterFlowField.cpp" />
     <ClCompile Include="src\Games\LatticeFlow.cpp" />
@@ -324,7 +325,8 @@
     <ClInclude Include="src\Games\PlantLayer.h" />
     <ClInclude Include="src\Games\SeedParticles.h" />
     <ClInclude Include="src\Games\SeedLayer.h" />
-    <ClInclude Include="src\Prototypes\Ascii\AsciiFont.h" />
+    <ClInclude Include="src\Prototypes\Ascii\AsciiFontAtlas.h" />
+    <ClInclude Include="src\Prototypes\Ascii\AsciiGlyphRenderer.h" />
     <ClInclude Include="src\Prototypes\Ascii\AsciiRenderer.h" />
     <ClInclude Include="src\Games\WaterFlowField.h" />
     <ClInclude Include="src\Games\LatticeFlow.h" />

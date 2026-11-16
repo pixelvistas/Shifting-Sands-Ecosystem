@@ -4297,3 +4297,93 @@ now also renders band fill on: colour map + soil tint + grain at brightness
   seeds only" off: mean 0.18 ms, p99 1.51 ms, one frame 2.93 ms (a window
   close with three full pools in that worst case).
 Not compiled with openFrameworks, not hardware-tested.
+
+## 2026-11-16 - Prototype 3 "ASCII": the sand as monospace characters (`prototype/3-ascii`)
+
+New branch `prototype/3-ascii` from `ss/plant-grain` (nothing merged in). A
+self-contained display mode; the terrain shader and every existing class are
+unchanged.
+
+Display mode switch (`ofApp`): the same structure as `prototype/2-mycorrhiza`
+(765ec21), no Mycorrhiza code: `enum DisplayMode { DISPLAY_SANDBOX = 0,
+DISPLAY_ASCII = 2 }`, `drawDisplayModeGui()`. Value 1 is left for Mycorrhiza so
+the two branches combine without renumbering; the combo maps its entries to
+the enum values through a small table (add Mycorrhiza there when merging).
+Sandbox (default) runs the same calls in the same order as `ss/plant-grain`;
+the ASCII module does no GL work until the mode is first shown (setup only
+stores pointers and reads the preset file), and its panel is drawn only in
+ASCII mode, so the projector output in Sandbox mode is the same as before (by
+reading the diff: not compiled). ASCII mode: the projector shows only the
+module's output; vegetation, water, succession and agents keep updating.
+
+Module (`src/Prototypes/Ascii/`, shaders `bin/data/shaders/ascii/GL2|GL3`):
+- `AsciiGlyphRenderer`: generic, turns any scalar field (rectangle texture, R
+  0..1, negative = no data, plus a mesh placing it on the projector) into glyphs.
+  Three passes: `asciiSample` (one float texel per glyph cell, mean of a 3 x 3
+  footprint), `asciiState` (ping-pong: exponential smoothing, time constant
+  T; held glyph level with hysteresis), `asciiGlyph` (projector resolution,
+  atlas lookup, coverage >= 0.5 lit: crisp monochrome, brightness = grey level).
+- Level rule: x = value x (levels - 1), d = the cell's 4 x 4 Bayer threshold
+  (rank + 0.5) / 16 (0.5 with dithering off); the held level g stays while
+  g - h <= x + d < g + 1 + h, otherwise it becomes floor(x + d). The Bayer
+  pattern is fixed per cell, so dithering adds no temporal flicker; h is in
+  ramp steps so it scales with the range.
+- Ramp: default " .:-=+*#" (8 glyphs), editable, 2..16 characters; changing
+  its length or dithering restarts the held levels.
+- Font: JetBrains Mono Bold (SIL Open Font License 1.1, licence in
+  `bin/data/ascii/fonts/OFL.txt`; upstream commit 1937130). Bold, because thin
+  strokes break up when thresholded at small sizes. `AsciiFontAtlas` renders
+  printable ASCII with `ofTrueTypeFont` at the exact cell size (one atlas texel
+  per projector pixel, no resampling): the font is scaled so the ink extent of
+  all printable glyphs fits the cell height; the cell width is the font's
+  advance (about 0.6 of the height), so cells are not square.
+- Cells sized in mm on the sand: cell height = round(GLYPH_MM x projector px
+  per mm), default 10 mm. Px per mm comes from the calibration
+  (`kinectCoordToProjCoord` at 1/4 and 3/4 of the play area across its middle,
+  both axes, over VegetationField's mm per cell), measured when the mode is
+  first shown, when the grid changes, or with "Re-measure scale" (not every
+  frame, so the cell size never jitters with the depth). The grid starts at
+  projector pixel (0, 0).
+- Input field (first step): VegetationField's elevation grid normalized over
+  -/+ the calibrated ceiling (`KinectProjector::getCalibratedCeilingElevation()`,
+  the range ofApp gives VegetationField and "Reset range to +-calibrated
+  ceiling" restores). VegetationField keeps its range private, so a range typed
+  by hand into the Vegetation panel is not followed (would need a one-line
+  getter there; not added, to change nothing outside the module).
+- Defaults: smoothing 0.5 s, hysteresis 0.15 ramp steps (3.4 mm at a +-80 mm
+  range, 1.7 mm at +-40 mm), dithering on, brightness 1.
+- GUI panel "ASCII" (only in ASCII mode): glyph size (mm) with the resulting
+  cell px, font size and grid; glyph ramp; smoothing time; hysteresis (with
+  its mm equivalent); dithering; brightness; Save/Load preset
+  ("Prototype 3: ASCII", `bin/data/settings/asciiPreset.xml`, loaded at
+  start-up when present; ramp stored as character codes so spaces survive).
+- Project files: the three classes added to `.vcxproj` and `.filters`; the
+  `src\Prototypes` filter uses the same GUID as on `prototype/2-mycorrhiza`.
+
+Checks (`tools/ascii_preview/`: runs the module's own GL3 shader files, and
+GL2 with `--gl2`, headless through EGL/Mesa llvmpipe; defaults parsed from the
+.cpp files; synthetic 519 x 295 grid, 1 m play area, 1280 x 800 projector):
+- Preview: 1.15 px/mm, so 10 mm glyphs give 7 x 12 px cells (font 11 px), a
+  183 x 67 grid; mound, basin and an even slope read as gradients of
+  characters; the Bayer pattern alternates neighbouring glyphs between levels
+  (`out/preview.png`, `preview_zoom.png`, `preview_nodither.png`; copies in
+  `docs/prototype3_ascii/`).
+- GL2 and GL3 variants: identical held levels and identical images (`compare`).
+- All eight shader files pass `glslangValidator`, and were read line by line:
+  the GL2 files differ from GL3 only in version/extension lines,
+  `varying`/`in`/`out`, `texture2DRect`/`texture` and `gl_FragColor`.
+- C++: syntax-checked against stub headers only.
+- Noise test (60 s, flat sand, +-1 mm per frame): results in the next entry line (run in progress at commit time).
+Not compiled with openFrameworks, not hardware-tested.
+
+Hardware checklist (ASCII mode, after `git pull`, Release build, Vegetation
+range reset to the calibrated ceiling):
+1. Glyphs are sharp and readable on the sand from about 1 m (no blur, no
+   broken strokes); check at 10 mm, then try 8, 12 and 15 mm.
+2. Slopes read as smooth gradients of characters (a mound shows rings of
+   increasing density; dithering softens the steps between levels).
+3. Untouched sand shows no flickering glyphs for 60 s (watch a flat area and
+   the boundary between two glyph levels).
+4. Hand in the sand: glyphs follow within about half a second and settle.
+5. Note the glyph size that reads best (and the fps in each display mode),
+   the calibrated ceiling shown in the panel, and the px/mm readout.
