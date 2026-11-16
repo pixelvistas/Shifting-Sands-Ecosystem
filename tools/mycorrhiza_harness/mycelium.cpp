@@ -24,6 +24,8 @@
 #include "../../src/Prototypes/Mycorrhiza/MycorrhizaField.h"
 #include "../dewitz_harness/png.h"
 #include <algorithm>
+#include <array>
+#include <deque>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -554,9 +556,27 @@ static void bench(int threads)
 	MF f; f.clear();
 	Demo d; float px = 0, py = 0; bool had = false;
 	std::vector<float> part[6];
+	// Stroke direction check: the stored direction against the hand's motion, under the hand
+	// and on the trail 0.3 s behind it (where the streaks are seen once the hand has passed).
+	std::deque<std::array<float, 5>> hist; // hx, hy, motion x, y, down
+	double aU = 0, aT = 0; int nU = 0, nT = 0, unmarked = 0, good = 0;
 	for (int s = 0; s < 120 * 40; s++) {
 		float hx, hy;
 		const bool down = d.step(DT, HARNESS_SPEED, hx, hy);
+		const float mx = hist.empty() ? 0 : hx - hist.back()[0], my = hist.empty() ? 0 : hy - hist.back()[1];
+		hist.push_back({ hx, hy, mx, my, down ? 1.0f : 0.0f });
+		if (hist.size() > 13) hist.pop_front();
+		auto align = [&](const std::array<float, 5> & h, double & acc, int & cnt) {
+			const float ml = std::hypot(h[2], h[3]);
+			const int cx = (int)h[0], cy = (int)h[1];
+			if (h[4] < 0.5f || ml < 0.05f || ml > 5.0f || cx < 0 || cy < 0 || cx >= GW || cy >= GH) return;
+			const MS & sim = f.getMycelium();
+			const size_t c = (size_t)cy * GW + cx;
+			if (sim.age()[c] > 0.6f) { unmarked++; return; } // not marked by this pass: keeps an older direction
+			const float dx = sim.dirX()[c], dy = sim.dirY()[c];
+			if (dx != 0 || dy != 0) { const float k = (dx * h[2] + dy * h[3]) / ml; acc += k; cnt++; if (&acc == &aT && k > 0.8f) good++; }
+		};
+		if (s > 40 * 10 && hist.size() == 13) { align(hist.back(), aU, nU); if (hist.back()[4] > 0.5f) align(hist.front(), aT, nT); }
 		handInput(w, down, hx, hy, px, py, had, DT, HARNESS_CARVE);
 		w.sample(down, hx, hy);
 		f.step(w.mfInputs(nullptr));
@@ -569,6 +589,8 @@ static void bench(int threads)
 		threads, f.getMycelium().activeThreads(), f.getMycelium().segments().size());
 	const char * nm[6] = { "touch", "marks + footprint", "mask", "liquid motion", "threads", "whole module step" };
 	for (int k = 0; k < 6; k++) stats(nm[k], part[k]);
+	printf("  stroke direction vs hand motion, cells marked by this pass (mean cos, 1 = along the sweep): under the hand %.2f (%d samples), on the trail 0.3 s behind %.2f (%d; %.0f %% above 0.8); %d samples not marked\n",
+		nU ? aU / nU : 0.0, nU, nT ? aT / nT : 0.0, nT, nT ? 100.0 * good / nT : 0.0, unmarked);
 	MF::THREADS = saved;
 }
 
@@ -585,26 +607,14 @@ static void story()
 	int frame = 0; bool blackBefore = true;
 	std::vector<unsigned char> img;
 	std::vector<float> dug(GW * GH, 0.0f), sand0 = w.sand;
-	double alignNum = 0; int alignN = 0; float firstLitDelay = -1; float tFirstDown = -1;
+	float firstLitDelay = -1; float tFirstDown = -1;
 	double litAtRest = 0, litEnd = 0; size_t segAtRest = 0, segEnd = 0;
-	float lastHx = 0, lastHy = 0;
 	for (int s = 0; s < steps; s++) {
 		const float t = s * DT;
 		float hx = 0, hy = 0;
 		bool down = false;
 		if (t >= WARM && t < WARM + STROKES) down = d.step(DT, HARNESS_SPEED, hx, hy);
 		if (down && tFirstDown < 0) tFirstDown = t;
-		// alignment: the stored stroke direction against the hand's actual motion, under the hand
-		if (down && had) {
-			const float mx = hx - lastHx, my = hy - lastHy, ml = std::hypot(mx, my);
-			const int cx = (int)hx, cy = (int)hy;
-			if (ml > 0.05f && cx >= 0 && cy >= 0 && cx < GW && cy < GH) {
-				const MS & sim = f.getMycelium();
-				const float dx = sim.dirX()[(size_t)cy * GW + cx], dy = sim.dirY()[(size_t)cy * GW + cx];
-				if (dx != 0 || dy != 0) { alignNum += (dx * mx + dy * my) / ml; alignN++; }
-			}
-		}
-		lastHx = hx; lastHy = hy;
 		handInput(w, down, hx, hy, px, py, had, DT, HARNESS_CARVE);
 		w.sample(down, hx, hy);
 		SM::Inputs si = w.smInputs();
@@ -642,8 +652,7 @@ static void story()
 	printf("story: %.0f s untouched, %.0f s of demo strokes (hand 34 mm, 100 mm/s, dig 25 mm/s, pile 0.6), %.0f s rest; frames black before touch: %s\n",
 		WARM, STROKES, REST, blackBefore ? "yes" : "NO");
 	printf("story: first light %.3f s after the first stroke began (one step = %.3f s)\n", firstLitDelay, DT);
-	printf("story: stored stroke direction under the hand vs the hand's motion: mean cos %.2f (%d samples; 1 = along the sweep)\n",
-		alignN ? alignNum / alignN : 0.0, alignN);
+	printf("story: stroke direction alignment is measured by the bench (cells marked by the pass)\n");
 	printf("story: at the end, %d cells lit, mean warmth (0 cyan .. 1 amber) %.2f; threads: %zu segments, fusions %lld, stops on lit ground %lld\n",
 		nl, nl ? warm / nl : 0.0, segEnd, sim.fusions(), sim.patchStops());
 	printf("story: 1 s into the rest vs the end (89 s later): lit sum %.1f vs %.1f, segments %zu vs %zu (nothing fades)\n", litAtRest, litEnd, segAtRest, segEnd);
@@ -658,6 +667,7 @@ int main(int argc, char ** argv)
 	setvbuf(stdout, nullptr, _IOLBF, 0);
 	makeNoise();
 	MF::STYLE = MF::STYLE_MYCELIUM;
+	if (const char * e = std::getenv("MYC_DIR_RADIUS")) MS::DIR_RADIUS_CELLS = std::atoi(e); // tuning runs only
 	std::vector<std::string> which;
 	for (int i = 3; i < argc; i++) which.push_back(argv[i]);
 	auto want = [&](const char * k) { return which.empty() || std::find(which.begin(), which.end(), k) != which.end(); };
@@ -665,6 +675,7 @@ int main(int argc, char ** argv)
 	if (want("stable")) ok = stable() && ok;
 	if (want("ident")) ok = ident() && ok;
 	if (want("bench")) { bench(1); bench(4); }
+	if (std::find(which.begin(), which.end(), "bench4") != which.end()) bench(4);
 	if (want("story")) story();
 	return ok ? 0 : 2;
 }

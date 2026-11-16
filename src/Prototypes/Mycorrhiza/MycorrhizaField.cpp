@@ -197,6 +197,9 @@ void MycorrhizaField::step(const Inputs & in)
 		mi.soil = in.soil;
 		mi.cols = cols; mi.rows = rows; mi.mmPerCell = in.mmPerCell; mi.dt = dt;
 		mi.adopting = adopting;
+		mycelium.setParallel([this](size_t n, const std::function<void(size_t, size_t)> & f) {
+			parallel(n, [&f](size_t b, size_t e, int) { f(b, e); });
+		});
 		mycelium.step(mi);
 		phaseMs[2] = mycelium.partMs(0); phaseMs[3] = mycelium.partMs(1); phaseMs[4] = mycelium.partMs(2);
 		t0 = std::chrono::steady_clock::now();

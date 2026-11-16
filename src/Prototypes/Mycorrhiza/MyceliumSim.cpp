@@ -1,4 +1,5 @@
 #include "MyceliumSim.h"
+#include <atomic>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -29,10 +30,14 @@ bool MyceliumSim::WARM_FROM_MODEL = false;
 float MyceliumSim::MODEL_EASE_SEC = 3.0f;
 float MyceliumSim::SEGMENT_MM = 3.0f;   // curvature varies over CORR (14 mm): 3 mm chords stay smooth
 int MyceliumSim::MAX_SEGMENTS = 300000; // ~58 MB of GPU vertices (6 per segment)
+// Page: a ring of MAXSEG = 60,000 one-frame segments (8 mm/s / 60 fps = 0.13 mm each), so it shows
+// at most ~8 m of thread and overwrites the oldest beyond that. Same budget here, oldest dropped first.
+float MyceliumSim::THREAD_KEEP_M = 8.0f;
 int MyceliumSim::COARSE_CELLS = 4;
 
 static const float PI_F = 3.14159265358979f;
 static const float AGE_MAX = 9000.0f;
+static const float EPISODE_GAP_SEC = 0.25f; // untouched this long: the next touch is a new contact
 static const int LIQUID_SUBSTEPS = 3;          // page liquidStep: sub = 3
 static const float NEVER = 1800.0f;            // page: a memory slider at its maximum means "never fade"
 
@@ -53,6 +58,7 @@ void MyceliumSim::clear()
 {
 	std::fill(R.begin(), R.end(), 0.0f);
 	std::fill(G.begin(), G.end(), AGE_MAX);
+	std::fill(A.begin(), A.end(), AGE_MAX);
 	std::fill(DX.begin(), DX.end(), 0.0f);
 	std::fill(DY.begin(), DY.end(), 0.0f);
 	std::fill(MW.begin(), MW.end(), 0.0f);
@@ -62,6 +68,7 @@ void MyceliumSim::clear()
 	parentOf.assign(1, 0);
 	nextId = 1;
 	segs.clear();
+	keptLen = 0.0;
 	removed.clear();
 	nextSeg = 0;
 	edges.clear();
@@ -74,7 +81,7 @@ void MyceliumSim::resize(int c, int r)
 {
 	cols = c; rows = r;
 	const size_t n = (size_t)c * r;
-	for (std::vector<float> * v : { &R, &G, &DX, &DY, &MW, &fp2, &sandS, &tmp }) v->assign(n, 0.0f);
+	for (std::vector<float> * v : { &R, &G, &A, &DX, &DY, &MW, &fp2, &sandS, &tmp, &tmp2 }) v->assign(n, 0.0f);
 	touched.assign(n, 0);
 	lw = (c + 1) / 2; lh = (r + 1) / 2;
 	const size_t ln = (size_t)lw * lh;
@@ -116,64 +123,96 @@ void MyceliumSim::step(const Inputs & in)
 }
 
 // ------------------------------------------------------------ lit footprint (page fsMaskTouch, fsMaskAge)
-static void box3(const float * src, float * dst, int W, int H)
+void MyceliumSim::box3(const float * src, float * dst)
 {
-	for (int y = 0; y < H; y++)
-		for (int x = 0; x < W; x++) {
-			float s = 0; int n = 0;
-			for (int dy = -1; dy <= 1; dy++) {
-				const int yy = y + dy; if (yy < 0 || yy >= H) continue;
-				for (int dx = -1; dx <= 1; dx++) {
-					const int xx = x + dx; if (xx < 0 || xx >= W) continue;
-					s += src[(size_t)yy * W + xx]; n++;
-				}
-			}
-			dst[(size_t)y * W + x] = s / n;
+	const int W = cols, H = rows;
+	float * hs = tmp2.data();
+	// Horizontal mean, then vertical mean: the same as the 3 x 3 mean over the cells inside the grid.
+	forRows((size_t)H, [&](size_t y0, size_t y1) {
+		for (size_t y = y0; y < y1; y++) {
+			const float * r = src + y * W; float * o = hs + y * W;
+			if (W == 1) { o[0] = r[0]; continue; }
+			o[0] = (r[0] + r[1]) * 0.5f;
+			for (int x = 1; x < W - 1; x++) o[x] = (r[x - 1] + r[x] + r[x + 1]) * (1.0f / 3.0f);
+			o[W - 1] = (r[W - 2] + r[W - 1]) * 0.5f;
 		}
+	});
+	forRows((size_t)H, [&](size_t y0, size_t y1) {
+		for (size_t y = y0; y < y1; y++) {
+			const float * a = hs + (y > 0 ? y - 1 : y) * W, * b = hs + y * W, * c = hs + (y + 1 < (size_t)H ? y + 1 : y) * W;
+			const float k = (y > 0 && y + 1 < (size_t)H) ? 1.0f / 3.0f : (H > 1 ? 0.5f : 1.0f);
+			float * o = dst + y * W;
+			if (y > 0 && y + 1 < (size_t)H) for (int x = 0; x < W; x++) o[x] = (a[x] + b[x] + c[x]) * k;
+			else if (H > 1) for (int x = 0; x < W; x++) o[x] = (y > 0 ? a[x] + b[x] : b[x] + c[x]) * k;
+			else for (int x = 0; x < W; x++) o[x] = b[x];
+		}
+	});
 }
 
 void MyceliumSim::updateMask(const Inputs & in, float dt)
 {
 	const int W = cols, H = rows;
 	const size_t n = (size_t)W * H;
-	if (in.footprint && !in.adopting) box3(in.footprint, fp2.data(), W, H);
+	if (in.footprint && !in.adopting) box3(in.footprint, fp2.data());
 	else std::fill(fp2.begin(), fp2.end(), 0.0f);
 	const float fade = std::exp(-dt * fadeRate());
 	touchedNow = false;
-	for (size_t i = 0; i < n; i++) {
-		R[i] = std::max(R[i] * fade, smoothstepf(0.25f, 0.55f, fp2[i]));
-		touched[i] = fp2[i] > 0.3f;
-		if (touched[i]) { G[i] = 0.0f; touchedNow = true; }
-		else G[i] = std::min(G[i] + dt, AGE_MAX);
-	}
-	// Stroke direction: from older to newer touch, fitted over recent touches nearby.
+	std::atomic<bool> any(false);
+	forRows((size_t)H, [&](size_t y0, size_t y1) {
+		bool anyHere = false;
+		for (size_t i = y0 * W; i < y1 * W; i++) {
+			R[i] = std::max(R[i] * fade, smoothstepf(0.25f, 0.55f, fp2[i]));
+			touched[i] = fp2[i] > 0.3f;
+			// A: seconds since the onset of the cell's current (or last) contact. A new contact
+			// starts after EPISODE_GAP_SEC untouched, so a flickering edge keeps its onset.
+			if (touched[i] && G[i] > EPISODE_GAP_SEC) A[i] = 0.0f;
+			else A[i] = std::min(A[i] + dt, AGE_MAX);
+			if (touched[i]) { G[i] = 0.0f; anyHere = true; }
+			else G[i] = std::min(G[i] + dt, AGE_MAX);
+		}
+		if (anyHere) any = true;
+	});
+	touchedNow = any;
+	// Stroke direction (page: the pointer's motion). A moving hand reaches the cells ahead
+	// of it later, so the onset time grows along the stroke across the whole footprint:
+	// direction = -grad(A), fitted over nearby cells of the same stroke (touched within
+	// DIR_WINDOW_SEC, onsets within DIR_WINDOW_SEC of this cell's). A resting hand gives
+	// uniform onsets and no gradient, and the last good value is kept. (The time since
+	// touch, G, is 0 everywhere under the hand and gives a gradient only at its trailing
+	// edge; fitting it pointed along the sweep only at random, mean cos 0.07 in the harness.)
 	if (touchedNow) {
 		const int rad = std::max(1, DIR_RADIUS_CELLS);
 		const float win = std::max(0.05f, DIR_WINDOW_SEC);
-		for (int y = 0; y < H; y++)
+		forRows((size_t)H, [&](size_t ry0, size_t ry1) {
+		for (int y = (int)ry0; y < (int)ry1; y++)
 			for (int x = 0; x < W; x++) {
 				const size_t i = (size_t)y * W + x;
 				if (!touched[i]) continue;
+				const float a0 = A[i];
 				float sx = 0, sy = 0; int cnt = 0;
 				for (int dy = -rad; dy <= rad; dy++) {
 					const int yy = y + dy; if (yy < 0 || yy >= H) continue;
 					for (int dx = -rad; dx <= rad; dx++) {
 						const int xx = x + dx; if (xx < 0 || xx >= W || (dx == 0 && dy == 0)) continue;
-						const float g = G[(size_t)yy * W + xx];
-						if (g > win) continue;
-						sx += dx * g; sy += dy * g; cnt++;
+						const size_t j = (size_t)yy * W + xx;
+						if (G[j] > win) continue;
+						const float d = A[j] - a0;
+						if (std::fabs(d) > win) continue;
+						sx += dx * d; sy += dy * d; cnt++;
 					}
 				}
-				// G grows toward older touches; the stroke runs the other way.
+				// Onsets differ by ~0.02 s per cell at 100 mm/s; below 0.002 s per cell is no motion.
 				const float l = std::sqrt(sx * sx + sy * sy);
-				if (cnt < 4 || l < 0.02f * cnt) continue; // no clear gradient: keep the last good value
+				if (cnt < 4 || l < 0.002f * cnt) continue; // no clear gradient: keep the last good value
 				const float ux = -sx / l, uy = -sy / l;
-				const float w = std::min(1.0f, fp2[i] * 1.5f);
+				const float w = std::min(1.0f, fp2[i] * 1.5f) * 0.5f;
 				float nx = DX[i] + (ux - DX[i]) * w, ny = DY[i] + (uy - DY[i]) * w;
 				if (DX[i] == 0.0f && DY[i] == 0.0f) { nx = ux; ny = uy; }
-				const float nl = std::sqrt(nx * nx + ny * ny) + 1e-5f;
+				const float nl = std::sqrt(nx * nx + ny * ny);
+				if (nl < 1e-3f) continue; // reversal: keep the old value this step
 				DX[i] = nx / nl; DY[i] = ny / nl;
 			}
+		});
 	}
 	// Warming from the model's recovery (option): eased toward max(cover, S), reset by touch.
 	if (WARM_FROM_MODEL) {
@@ -189,8 +228,8 @@ void MyceliumSim::updateMask(const Inputs & in, float dt)
 	}
 	// Smoothed sand (5 x 5 box, every 5 steps): the only sand the look uses.
 	if (stepNo % 5 == 1 || stepNo < 3) {
-		box3(in.sand, tmp.data(), W, H);
-		box3(tmp.data(), sandS.data(), W, H);
+		box3(in.sand, tmp.data());
+		box3(tmp.data(), sandS.data());
 	}
 }
 
@@ -199,21 +238,22 @@ void MyceliumSim::updateLiquid(const Inputs & in, float dt)
 {
 	(void)in;
 	const int LW = lw, LH = lh, W = cols, H = rows;
-	const size_t ln = (size_t)LW * LH;
-	for (int j = 0; j < LH; j++)
-		for (int i = 0; i < LW; i++) {
-			float t = 0, s = 0; int c = 0;
-			for (int dy = 0; dy < 2; dy++)
-				for (int dx = 0; dx < 2; dx++) {
-					const int x = 2 * i + dx, y = 2 * j + dy;
-					if (x >= W || y >= H) continue;
-					t += sandS[(size_t)y * W + x]; s += fp2[(size_t)y * W + x]; c++;
-				}
-			const size_t l = (size_t)j * LW + i;
-			lT[l] = t / std::max(1, c);
-			lSrc[l] = s / std::max(1, c);
-			lH[l] += std::max(0.0f, POUR) * dt * lSrc[l];
-		}
+	forRows((size_t)LH, [&](size_t j0, size_t j1) {
+		for (int j = (int)j0; j < (int)j1; j++)
+			for (int i = 0; i < LW; i++) {
+				float t = 0, s = 0; int c = 0;
+				for (int dy = 0; dy < 2; dy++)
+					for (int dx = 0; dx < 2; dx++) {
+						const int x = 2 * i + dx, y = 2 * j + dy;
+						if (x >= W || y >= H) continue;
+						t += sandS[(size_t)y * W + x]; s += fp2[(size_t)y * W + x]; c++;
+					}
+				const size_t l = (size_t)j * LW + i;
+				lT[l] = t / std::max(1, c);
+				lSrc[l] = s / std::max(1, c);
+				lH[l] += std::max(0.0f, POUR) * dt * lSrc[l];
+			}
+	});
 	const float h = dt / LIQUID_SUBSTEPS;
 	const float damp = std::exp(-h * std::max(0.0f, VISC));
 	const float evap = EVAP_MEM >= NEVER ? 0.0f : std::log(10.0f) / std::max(1.0f, EVAP_MEM);
@@ -222,53 +262,61 @@ void MyceliumSim::updateLiquid(const Inputs & in, float dt)
 	auto S = [&](int i, int j) { const size_t l = (size_t)j * LW + i; return lT[l] + lH[l]; };
 	for (int sub = 0; sub < LIQUID_SUBSTEPS; sub++) {
 		// flux: 0 to x-1, 1 to x+1, 2 to y+1, 3 to y-1 (page x, y, z, w)
-		for (int j = 0; j < LH; j++)
-			for (int i = 0; i < LW; i++) {
-				const size_t l = (size_t)j * LW + i;
-				const float s = S(i, j), hh = lH[l];
-				float d[4] = { i > 0 ? s - S(i - 1, j) : 0.0f, i < LW - 1 ? s - S(i + 1, j) : 0.0f,
-					j < LH - 1 ? s - S(i, j + 1) : 0.0f, j > 0 ? s - S(i, j - 1) : 0.0f };
-				float f[4], tot = 0;
-				for (int k = 0; k < 4; k++) {
-					const float dd = (d[k] > 0 ? 1.0f : (d[k] < 0 ? -1.0f : 0.0f)) * std::max(std::fabs(d[k]) - yld, 0.0f);
-					f[k] = std::max(0.0f, lF[4 * l + k] * damp + h * K * dd);
+		forRows((size_t)LH, [&](size_t j0, size_t j1) {
+			for (int j = (int)j0; j < (int)j1; j++)
+				for (int i = 0; i < LW; i++) {
+					const size_t l = (size_t)j * LW + i;
+					const float hh = lH[l];
+					// A dry cell has nothing to send (the page's scale factor min(1, h / total) is 0).
+					if (hh <= 0.0f) { lFn[4 * l] = lFn[4 * l + 1] = lFn[4 * l + 2] = lFn[4 * l + 3] = 0.0f; continue; }
+					const float s = S(i, j);
+					float d[4] = { i > 0 ? s - S(i - 1, j) : 0.0f, i < LW - 1 ? s - S(i + 1, j) : 0.0f,
+						j < LH - 1 ? s - S(i, j + 1) : 0.0f, j > 0 ? s - S(i, j - 1) : 0.0f };
+					float f[4];
+					for (int k = 0; k < 4; k++) {
+						const float dd = (d[k] > 0 ? 1.0f : (d[k] < 0 ? -1.0f : 0.0f)) * std::max(std::fabs(d[k]) - yld, 0.0f);
+						f[k] = std::max(0.0f, lF[4 * l + k] * damp + h * K * dd);
+					}
+					if (i == 0) f[0] = 0;
+					if (i == LW - 1) f[1] = 0;
+					if (j == LH - 1) f[2] = 0;
+					if (j == 0) f[3] = 0;
+					const float tot = (f[0] + f[1] + f[2] + f[3]) * h;
+					const float sc = tot > 1e-6f ? std::min(1.0f, hh / tot) : 0.0f;
+					for (int k = 0; k < 4; k++) lFn[4 * l + k] = f[k] * sc;
 				}
-				if (i == 0) f[0] = 0;
-				if (i == LW - 1) f[1] = 0;
-				if (j == LH - 1) f[2] = 0;
-				if (j == 0) f[3] = 0;
-				tot = (f[0] + f[1] + f[2] + f[3]) * h;
-				const float sc = tot > 1e-6f ? std::min(1.0f, hh / tot) : 0.0f;
-				for (int k = 0; k < 4; k++) lFn[4 * l + k] = f[k] * sc;
-			}
+		});
 		lF.swap(lFn);
-		for (int j = 0; j < LH; j++)
+		forRows((size_t)LH, [&](size_t j0, size_t j1) {
+			for (int j = (int)j0; j < (int)j1; j++)
+				for (int i = 0; i < LW; i++) {
+					const size_t l = (size_t)j * LW + i;
+					const float inL = i > 0 ? lF[4 * (l - 1) + 1] : 0.0f;
+					const float inR = i < LW - 1 ? lF[4 * (l + 1) + 0] : 0.0f;
+					const float inT = j < LH - 1 ? lF[4 * (l + LW) + 3] : 0.0f;
+					const float inB = j > 0 ? lF[4 * (l - LW) + 2] : 0.0f;
+					const float out = lF[4 * l] + lF[4 * l + 1] + lF[4 * l + 2] + lF[4 * l + 3];
+					lHn[l] = std::max(lH[l] + h * ((inL + inR + inT + inB) - out), 0.0f) * evapF;
+				}
+		});
+		lH.swap(lHn);
+	}
+	forRows((size_t)LH, [&](size_t j0, size_t j1) {
+		for (int j = (int)j0; j < (int)j1; j++)
 			for (int i = 0; i < LW; i++) {
 				const size_t l = (size_t)j * LW + i;
 				const float inL = i > 0 ? lF[4 * (l - 1) + 1] : 0.0f;
 				const float inR = i < LW - 1 ? lF[4 * (l + 1) + 0] : 0.0f;
 				const float inT = j < LH - 1 ? lF[4 * (l + LW) + 3] : 0.0f;
 				const float inB = j > 0 ? lF[4 * (l - LW) + 2] : 0.0f;
-				const float out = lF[4 * l] + lF[4 * l + 1] + lF[4 * l + 2] + lF[4 * l + 3];
-				lHn[l] = std::max(lH[l] + h * ((inL + inR + inT + inB) - out), 0.0f) * evapF;
+				const float hh = std::max(lH[l], 0.3f);
+				float vx = 0.5f * ((inL - lF[4 * l]) + (lF[4 * l + 1] - inR)) / hh;
+				float vy = 0.5f * ((inB - lF[4 * l + 3]) + (lF[4 * l + 2] - inT)) / hh;
+				const float m = std::sqrt(vx * vx + vy * vy);
+				if (m > 40.0f) { vx *= 40.0f / m; vy *= 40.0f / m; }
+				lVX[l] = vx; lVY[l] = vy;
 			}
-		lH.swap(lHn);
-	}
-	for (int j = 0; j < LH; j++)
-		for (int i = 0; i < LW; i++) {
-			const size_t l = (size_t)j * LW + i;
-			const float inL = i > 0 ? lF[4 * (l - 1) + 1] : 0.0f;
-			const float inR = i < LW - 1 ? lF[4 * (l + 1) + 0] : 0.0f;
-			const float inT = j < LH - 1 ? lF[4 * (l + LW) + 3] : 0.0f;
-			const float inB = j > 0 ? lF[4 * (l - LW) + 2] : 0.0f;
-			const float hh = std::max(lH[l], 0.3f);
-			float vx = 0.5f * ((inL - lF[4 * l]) + (lF[4 * l + 1] - inR)) / hh;
-			float vy = 0.5f * ((inB - lF[4 * l + 3]) + (lF[4 * l + 2] - inT)) / hh;
-			const float m = std::sqrt(vx * vx + vy * vy);
-			if (m > 40.0f) { vx *= 40.0f / m; vy *= 40.0f / m; }
-			lVX[l] = vx; lVY[l] = vy;
-		}
-	(void)ln;
+	});
 }
 
 // ------------------------------------------------------------ coarse grid and edges (page readback)
@@ -308,9 +356,21 @@ void MyceliumSim::emit(int ti, float x1, float y1, float s1)
 {
 	Thread & t = threads[ti];
 	const float w = std::max(0.5f, WIDTH * std::pow(0.8f, (float)t.gen));
-	if ((int)segs.size() >= std::max(1, MAX_SEGMENTS)) segs.pop_front();
+	if ((int)segs.size() >= std::max(1, MAX_SEGMENTS)) popOldest(false);
 	segs.push_back(Segment{ t.sx, t.sy, x1, y1, w, t.ss, s1, t.phase, (float)time, t.hue, nextSeg++ });
+	keptLen += std::hypot(x1 - t.sx, y1 - t.sy);
 	t.sx = x1; t.sy = y1; t.ss = s1;
+}
+
+void MyceliumSim::popOldest(bool tellRenderer)
+{
+	const Segment & s = segs.front();
+	if (s.width > 0.0f) {
+		keptLen -= std::hypot(s.x1 - s.x0, s.y1 - s.y0);
+		if (tellRenderer) removed.push_back(s.id);
+	}
+	segs.pop_front();
+	if (segs.empty()) keptLen = 0.0;
 }
 
 void MyceliumSim::growThreads(const Inputs & in, float dt)
@@ -400,7 +460,10 @@ void MyceliumSim::growThreads(const Inputs & in, float dt)
 	// Persistence: drop segments only once faded (Trace memory), or beyond the cap.
 	const float fr = fadeRate();
 	if (fr > 0.0f)
-		while (!segs.empty() && std::exp(-(float)(time - segs.front().birth) * fr) < 0.02f) segs.pop_front();
+		while (!segs.empty() && std::exp(-(float)(time - segs.front().birth) * fr) < 0.02f) popOldest(false);
+	// Length budget (page ring): the oldest go first; the renderer clears their slots.
+	const double budget = (double)std::max(0.1f, THREAD_KEEP_M) * 1000.0 * pxmm;
+	while (!segs.empty() && keptLen > budget) popOldest(true);
 	if (in.water) {
 		const int fp = std::max(1, FIB_PX);
 		auto wetAt = [&](float x, float y) {
@@ -408,6 +471,9 @@ void MyceliumSim::growThreads(const Inputs & in, float dt)
 			return in.water[(size_t)cy * cols + cx] != 0;
 		};
 		for (Segment & s : segs)
-			if (s.width > 0.0f && (wetAt(s.x0, s.y0) || wetAt(s.x1, s.y1))) { s.width = 0.0f; removed.push_back(s.id); }
+			if (s.width > 0.0f && (wetAt(s.x0, s.y0) || wetAt(s.x1, s.y1))) {
+				keptLen -= std::hypot(s.x1 - s.x0, s.y1 - s.y0);
+				s.width = 0.0f; removed.push_back(s.id);
+			}
 	}
 }

@@ -17,9 +17,10 @@ only need the coarse grids):
   0.25). R fades only with TRACE_MEM (1800 s = never). G: seconds since the
   cell was last touched (reset where the footprint > 0.3). Stroke direction
   (dirX, dirY): page fsMaskTouch took it from the pointer; here it is the
-  direction from older to newer touch, -grad(G), fitted over cells within
-  DIR_RADIUS_CELLS that were touched in the last DIR_WINDOW_SEC, blended
-  into the stored value and kept when no good value is found.
+  direction in which contact onsets get newer, -grad(A) with A = seconds
+  since the onset of the current contact, fitted over cells within
+  DIR_RADIUS_CELLS of the same stroke (touched in the last DIR_WINDOW_SEC),
+  blended into the stored value and kept when no good value is found.
 - Liquid motion: the page's virtual-pipe shallow water (Mei, Decaudin and
   Hu 2007; fsFlux, fsDepth, fsVelL) on a half-resolution grid (~4 mm cells)
   over the smoothed sand, with Thickness (flux damping) and Stickiness
@@ -35,7 +36,9 @@ only need the coarse grids):
   ground after 25 mm; tip lifetime TIP_LIFE. Also stops on the sandbox's own
   water. Segments are stored every SEGMENT_MM (the page stores one per
   frame; coalescing keeps the persistent mesh within MAX_SEGMENTS) with arc
-  length s, phase, birth time, and persist with TRACE_MEM.
+  length s, phase, birth time, and persist with TRACE_MEM; as in the page,
+  whose ring of 60,000 segments overwrote the oldest, at most THREAD_KEEP_M
+  of thread is kept (oldest dropped first).
 
 Units: positions of threads and segments are in "fibre pixels", the
 renderer's grid-space image at FIB_PX pixels per grid cell (~1 px per mm,
@@ -44,8 +47,10 @@ mmPerCell.
 ***********************************************************************/
 
 #pragma once
+#include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <vector>
 
 class MyceliumSim
@@ -73,6 +78,10 @@ public:
 
 	void step(const Inputs & in);
 	void clear();
+	// Row-parallel for: f(begin, end) over [0, n), called from several threads at once
+	// (MycorrhizaField hands in its pool). Unset: everything runs on the calling thread.
+	using ParallelFn = std::function<void(std::size_t, const std::function<void(std::size_t, std::size_t)> &)>;
+	void setParallel(ParallelFn f) { par = std::move(f); }
 
 	int getCols() const { return cols; }
 	int getRows() const { return rows; }
@@ -133,6 +142,7 @@ public:
 	static float MODEL_EASE_SEC;
 	static float SEGMENT_MM;
 	static int MAX_SEGMENTS;
+	static float THREAD_KEEP_M;   // thread length kept, m (page: its 60,000-segment ring, ~8 m); oldest dropped first
 	static int COARSE_CELLS;      // cells per coarse cell for edges and lit-ground tests (~7.6 mm; page 6.4 px)
 
 private:
@@ -141,8 +151,11 @@ private:
 	void updateLiquid(const Inputs & in, float dt);
 	void updateCoarse();
 	void growThreads(const Inputs & in, float dt);
+	void forRows(std::size_t n, const std::function<void(std::size_t, std::size_t)> & f) { if (par) par(n, f); else f(0, n); }
+	void box3(const float * src, float * dst);  // 3 x 3 mean, separable, row-parallel (uses tmp2)
 	float sampleCoarse(const std::vector<float> & a, float px, float py) const;
 	void emit(int t, float x1, float y1, float s1);
+	void popOldest(bool tellRenderer);
 	inline uint32_t rnd() { rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5; return rng; }
 	inline float rnd01() { return (rnd() >> 8) * (1.0f / 16777216.0f); }
 	float randn();
@@ -153,7 +166,8 @@ private:
 	bool dirtyBase = true, touchedNow = false;
 	unsigned stepNo = 0;
 	uint32_t rng = 0x2545F491u;
-	std::vector<float> R, G, DX, DY, MW, fp2, sandS, tmp;
+	std::vector<float> R, G, A, DX, DY, MW, fp2, sandS, tmp, tmp2;
+	ParallelFn par;
 	std::vector<unsigned char> touched;
 	// liquid (half resolution)
 	std::vector<float> lT, lH, lHn, lF, lFn, lVX, lVY, lSrc; // lF: 4 per cell (L, R, T, B outflows)
@@ -174,6 +188,7 @@ private:
 	int ow = 0, oh = 0;
 	uint32_t nextId = 1;
 	std::deque<Segment> segs;
+	double keptLen = 0.0;       // drawn thread length, fibre px
 	std::vector<uint64_t> removed;
 	uint64_t nextSeg = 0;
 	long long fuses = 0, stopsOnLight = 0;

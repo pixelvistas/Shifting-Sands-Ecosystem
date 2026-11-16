@@ -4694,3 +4694,145 @@ pour rate, viscosity.
 All module shaders compiled and linked with glslangValidator (GL2 and GL3);
 `MycorrhizaRenderer.cpp` syntax-checked against oF/ImGui stubs with real
 glm. Not compiled with openFrameworks, not hardware-tested.
+
+## 2026-11-16 - Prototype 2: "Mycelium" network style, a port of the look-dev page (branch `prototype/2-mycelium`)
+
+Branch `prototype/2-mycelium` from `prototype/2-mycorrhiza` (`4dfcbb1`); nothing
+merged from `main` or elsewhere. The look-dev page is committed as
+`tools/mycelium_lookdev/index.html` (on `main` it is
+`tools/mycelium_lookdev/mycelium_lookdev.html`; same content, renamed as the
+brief asks); no other reference material is committed. No settings were pasted
+with the brief, so the page's own defaults are used throughout.
+
+**Aim.** The `4dfcbb1` build was close in colour and layout but noisy. The
+three causes are removed: no specular gloss on fine noise (the sheen is low,
+optional, and computed only from the smoothed fibre field and smoothed sand);
+no per-step turning of threads (curvature is an Ornstein-Uhlenbeck process per
+mm grown); no light from raw depth (light follows the touch footprint only).
+
+**Structure.** "Network style" Mycelium (default) / Patches and hyphae /
+Physarum (previous); the other two are unchanged. CPU part:
+`src/Prototypes/Mycorrhiza/MyceliumSim.*` (plain C++; mask, liquid, edges,
+threads), owned by `MycorrhizaField`. GPU part:
+`MycorrhizaRendererMycelium.cpp` with `bin/data/shaders/mycorrhiza/GL2|GL3/myc_*`
+(curl, lic, fib, shade, bright, blur, final, thread, present; generated from
+one source by `tools/mycorrhiza_harness/gen_mycelium_shaders.py`). Passes run
+in a grid-space image (2 px per grid cell, ~1 px per mm as the page) and are
+mapped onto the projector through the calibration mesh. The succession model,
+hydrology, the sandbox's water, `heightMapShader`, the colour map and the
+Sandbox mode are untouched.
+
+**Method, as the page** (page function in brackets):
+- Lit mask (fsMaskTouch, fsMaskAge), on the vegetation grid (~2 mm): the
+  touch footprint is blurred once more (3 x 3), so an isolated marked cell
+  never reaches the threshold; R = max(R, smoothstep(0.25, 0.55, footprint)) at
+  once; R fades only with Trace memory (1800 s = never); G = seconds since
+  touched (reset where footprint > 0.3).
+- Liquid motion (fsFlux, fsDepth, fsVelL): virtual pipes (Mei, Decaudin and Hu
+  2007) at half resolution, Thickness as flux damping, Stickiness as yield,
+  3 substeps, velocity clamp 40; poured by touch. Velocity only: it never sets
+  visibility.
+- Texture (fsCurlField, fsLic, fsFib): LIC of soft noise (48 steps) along the
+  stroke where lit, curl swirl elsewhere, rebuilt every 0.4 s while touches
+  happen; each frame advected by liquid velocity x Carry plus Streak flow, then
+  settling toward the base.
+- Shading (fsShade, fsBright, fsBlur, fsFinal): colour from time since touched
+  over Warm-up time (4 s), Cool edges, trough colour, base glow, low sheen,
+  two-level bloom (5-tap Gaussian), tone map (1 - exp(-1.35 c))^0.95, palettes
+  (Cyan and amber default). Option "Warm from the model's recovery": warming
+  eased toward max(cover, S) of that ground, reset by touch.
+- Hyphae (growThreads): k += -k r + sigma sqrt(2 r) N(0,1), r = min(1, step /
+  Curve smoothness), sigma = Curve amount x pi / 180 / 10; spawn only on the
+  outer edge of the lit mask (lit here, unlit 3 coarse cells outward, refreshed
+  every 5 steps as the page's read-back); branch after 8 mm; fuse with an
+  unrelated thread's 4 px occupancy cell after 15 mm, stop on lit ground after
+  25 mm; tip lifetime 20 s. Thread mask with presence and outward pulse along
+  arc length, pale cyan-white plus pulse tint; minimum drawn width 1.5
+  projector px.
+- GUI: every page slider with the page's names, units and defaults (groups
+  Touch, Liquid motion, Texture in the light, Memory and warming, Light and
+  colour, Threads), saved with the module preset (`MYC_*` and `M_*` entries in
+  `bin/data/settings/mycorrhizaPreset.xml`).
+
+**Deviations from the page (decisions).**
+1. Stroke direction. The page took it from the pointer. The brief asked for
+   the gradient of G; under a moving hand G is 0 across the whole footprint, so
+   its gradient exists only at the trailing edge: mean cos 0.07 against the
+   hand's motion in the harness. Used instead: A = seconds since the onset of
+   the current contact (a new contact after 0.25 s untouched); a moving hand
+   reaches the cells ahead later, so -grad(A) points along the stroke across
+   the whole footprint, and a resting hand gives no gradient (last good value
+   kept). Fitted over 3 cells among cells of the same stroke (touched within
+   1.5 s, onsets within 1.5 s), blended 50 % per step. Result on cells marked
+   by the pass: mean cos 0.91 under the hand, 0.83 on the trail 0.3 s behind
+   (79 % of samples above 0.8). Cells the pass did not mark keep an older
+   direction (expected; the hand hides the sand beneath it).
+2. Thread persistence. The page drew its last 60,000 one-frame segments
+   (MAXSEG; ~0.13 mm each at 60 fps, so ~8 m of thread) and overwrote the
+   oldest. Storing every segment, as first ported, gave 50,702 segments
+   (~150 m) after 60 s of strokes and 90 s of rest: a tangle that covered the
+   box (`p2_mycelium_still_end_unbounded.png`). Now "Thread length kept (m)"
+   (default 8, the page's budget; not a page slider) drops the oldest segments
+   first. Consequence: as in the page, the mesh renews itself (about every
+   10 s at the harness's spawn rate) and older threads break into fragments
+   before they go. This conflicts with "nothing fades" for threads; the light
+   itself never fades. Raising the slider keeps more mesh.
+3. Segments are stored every 3 mm (coalesced), not every frame; curvature
+   varies over 14 mm, so 3 mm chords stay smooth. Hard cap 300,000 segments.
+4. Threads also stop on the sandbox's simulated water, and their segments on
+   water are removed (the page had no water).
+5. Sand visibility default 0 (page 0.12): the page simulated room light; on a
+   projector it would light untouched sand. At 0.12 the stability test shows a
+   small shimmer (below).
+6. Light vectors are y-down (grid image): Ld = (-0.5, -0.55, 0.65), sand light
+   (-0.5, -0.6, 0.65); page y-up.
+7. The page's hand sliders (Hand size, Dig rate, Sand pushed ahead) only drive
+   its simulated hand; here they affect the harness only. The harness hand
+   digs 25 mm/s and moves 100 mm/s (page Dig rate 10 mm/s is at the edge of
+   the real 4 mm touch threshold).
+
+**Performance.** `MyceliumSim` now runs its mask, direction and liquid passes
+row-parallel on `MycorrhizaField`'s pool (`setParallel`), the 3 x 3 blur is
+separable, and dry liquid cells skip the flux computation (the page's scale
+factor min(1, h / total) is 0 there, so the result is identical).
+
+**Harness** (`tools/mycorrhiza_harness/mycelium.cpp`, `./build.sh`, then
+`./mycelium_harness <out> ../.. stable ident bench story`):
+- Stability, +-1 mm per cell per frame on still sand for 60 s: 0 touched
+  block-steps, lit sum 0, 0 segments; rendered image mean |frame-to-frame
+  difference| 0.0000 of 255 (worst 0.0000, 56 pairs) at Sand visibility 0;
+  0.0199 (worst 0.0368) at 0.12.
+- Succession model bit-identical with the module on or off: 2,000 steps with
+  strokes, hash cda5d09abec50b01 both, identical at every 100-step check and
+  by final memcmp.
+- Cost per module step, 120 s of strokes (last 110 s timed), -O2, 4 threads:
+  touch 0.17 ms, marks + footprint 0.99, mask 0.58, liquid motion 0.79,
+  threads 0.09; whole step 2.63 ms mean (median 2.62, p95 3.55, worst 14.6).
+  One thread: 3.98 ms mean (p95 4.88). Before the parallel passes: 6.64 ms
+  with 4 threads (liquid 3.53, mask 1.69).
+- Story (30 s untouched, 60 s of strokes, 90 s rest): black before the first
+  touch; first light 0.325 s after the first stroke began; at the end 19,402
+  cells lit, mean warmth 1.00 (amber); lit sum 19,438 both 1 s into the rest
+  and 89 s later (no light fades); 6,194 fusions, 173 stops on lit ground;
+  2,641 vs 2,697 segments (length budget). Evidence:
+  `docs/prototype2_mycorrhiza/p2_mycelium.gif`, `p2_mycelium_still_45s.png`,
+  `p2_mycelium_still_end.png`, `p2_mycelium_still_end_unbounded.png`.
+- GLSL: all 18 programs compile and link with glslangValidator; the GL2 and GL3
+  fragment shaders are identical after normalising the version, in/out and
+  output declarations; vertex shaders differ only in declaration syntax; both
+  variants read line by line against the page.
+- `MycorrhizaRenderer.cpp`, `MycorrhizaRendererMycelium.cpp`,
+  `MycorrhizaField.cpp` and `MyceliumSim.cpp` syntax-checked against oF and
+  ImGui stubs. Not compiled with openFrameworks, not hardware-tested.
+
+**Hardware checklist.**
+1. "Sandbox" mode unchanged; "Patches and hyphae" and "Physarum (previous)"
+   unchanged.
+2. Untouched sand for 60 s in Mycelium: dark, no flicker or snow.
+3. A sweep lights up in its own shape at once, streaks run along the sweep,
+   it warms to amber within a few seconds, and stays.
+4. Digging more: the light builds; nothing drains or fades.
+5. Hyphae: smooth curves forming a looping mesh between patches, visible on
+   the sand (not lost to blur), with pulses. Note whether the 8 m thread
+   budget renews the mesh too quickly; if so, try "Thread length kept" 20-30 m.
+6. Note fps and any settings changed on the projector.

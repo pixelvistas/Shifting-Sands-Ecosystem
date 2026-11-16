@@ -455,5 +455,7 @@ void MycorrhizaRenderer::myceliumGui()
 		ImGui::SliderFloat("Pulse spacing (px)", &M_PULSE_LEN, 5.0f, 200.0f);
 		ImGui::SliderFloat("Pulse sharpness", &M_PULSE_SHARP, 1.0f, 12.0f);
 		ImGui::SliderInt("Thread cap", &MS::MAX_THREADS, 50, 3000);
+		ImGui::SliderFloat("Thread length kept (m)", &MS::THREAD_KEEP_M, 1.0f, 100.0f, "%.1f");
+		ImGui::TextWrapped("Thread length kept: not a page slider. The page kept its last 60,000 segments (about 8 m) and overwrote the oldest; the same budget here.");
 	}
 }
