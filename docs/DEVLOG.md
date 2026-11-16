@@ -4373,7 +4373,14 @@ GL2 with `--gl2`, headless through EGL/Mesa llvmpipe; defaults parsed from the
   the GL2 files differ from GL3 only in version/extension lines,
   `varying`/`in`/`out`, `texture2DRect`/`texture` and `gl_FragColor`.
 - C++: syntax-checked against stub headers only.
-- Noise test (60 s, flat sand, +-1 mm per frame): results in the next entry line (run in progress at commit time).
+- Noise test (`noise-test`, defaults, 60 s at 60 fps, flat sand, +-1 mm
+  uniform noise each frame, 183 x 67 cells): 0 glyph changes in all 28 runs:
+  ranges +-80 and +-40 mm; noise independent per Kinect cell or one offset
+  for the whole frame (no spatial averaging); flat at 9 mm (flat sand),
+  -20 and 40 mm, and four heights 1/128 to 7/128 of a ramp step above 9 mm,
+  which with the 16 Bayer thresholds put cells within fractions of a
+  millimetre of a glyph boundary. Control (no smoothing, no hysteresis,
+  5 s): 158,040 changes in 1,666 cells, so the test can fail. PASS.
 Not compiled with openFrameworks, not hardware-tested.
 
 Hardware checklist (ASCII mode, after `git pull`, Release build, Vegetation
