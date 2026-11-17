@@ -20,7 +20,7 @@ bool SceneStylizer::PALETTE_ON = true;
 int SceneStylizer::PALETTE_PRESET = SceneStylizer::PALETTE_GREEN;
 int SceneStylizer::PALETTE_STOPS = 3;
 ofFloatColor SceneStylizer::PALETTE[3] = { hexColor(0x020806), hexColor(0x2F7A55), hexColor(0xCFE8D2) };
-float SceneStylizer::BOTH_THRESHOLD = 0.35f;
+float SceneStylizer::BOTH_THRESHOLD = 0.25f;
 float SceneStylizer::EDGE_THRESHOLD = 0.05f;
 std::string SceneStylizer::DIR_GLYPHS = "-=\\\\!|//";
 float SceneStylizer::WEIGHT_SPLIT = 0.55f;
