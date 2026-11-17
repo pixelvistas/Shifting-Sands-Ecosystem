@@ -452,7 +452,7 @@ void SceneRenderer::drawGui()
 
 	if (ImGui::CollapsingHeader("Style", ImGuiTreeNodeFlags_DefaultOpen)) {
 		static const char * styles[] = { "Off (plain scene)", "ASCII", "Dither", "Both" };
-		ImGui::Combo("Style", &S::STYLE, styles, 4);
+		ImGui::Combo("Style##filter", &S::STYLE, styles, 4); // own ID: the section header is also "Style"
 		ImGui::SliderFloat("cellSize (mm)", &S::CELL_MM, 2.0f, 30.0f);
 		if (scaleMeasured)
 			ImGui::Text("%.2f projector px/mm: cell %d x %d px (font %d px)", pxPerMM, stylizer.getCellWidth(),
