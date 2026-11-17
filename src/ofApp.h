@@ -38,6 +38,7 @@ deer/human population.
 #include "Games/VegetationField.h"
 #include "Games/WaterFlowField.h"
 #include "Prototypes/Ascii/AsciiRenderer.h"
+#include "Prototypes/Scene/SceneRenderer.h"
 
 class ofApp : public ofBaseApp {
 
@@ -86,10 +87,12 @@ private:
 	// self-contained (src/Prototypes/Ascii); this enum, the member below
 	// and the guarded blocks in ofApp.cpp are its only hooks. Value 1 is
 	// reserved for Mycorrhiza (Prototype 2, branch prototype/2-mycorrhiza),
-	// so the two branches combine without renumbering.
-	enum DisplayMode { DISPLAY_SANDBOX = 0, DISPLAY_ASCII = 2 };
+	// so the two branches combine without renumbering. Scene (Prototype 4,
+	// src/Prototypes/Scene) is 3, wired the same way.
+	enum DisplayMode { DISPLAY_SANDBOX = 0, DISPLAY_ASCII = 2, DISPLAY_SCENE = 3 };
 	int displayMode = DISPLAY_SANDBOX;
 	AsciiRenderer ascii;
+	SceneRenderer scene;
 	void drawDisplayModeGui();
 
 	// Main window ROI

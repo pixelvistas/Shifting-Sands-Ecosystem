@@ -37,6 +37,21 @@
 		<ClCompile Include="src\Prototypes\Ascii\AsciiRenderer.cpp">
 			<Filter>src\Prototypes\Ascii</Filter>
 		</ClCompile>
+		<ClCompile Include="src\Prototypes\Scene\SceneGL.cpp">
+			<Filter>src\Prototypes\Scene</Filter>
+		</ClCompile>
+		<ClCompile Include="src\Prototypes\Scene\SceneHeightInput.cpp">
+			<Filter>src\Prototypes\Scene</Filter>
+		</ClCompile>
+		<ClCompile Include="src\Prototypes\Scene\RippleField.cpp">
+			<Filter>src\Prototypes\Scene</Filter>
+		</ClCompile>
+		<ClCompile Include="src\Prototypes\Scene\SceneStylizer.cpp">
+			<Filter>src\Prototypes\Scene</Filter>
+		</ClCompile>
+		<ClCompile Include="src\Prototypes\Scene\SceneRenderer.cpp">
+			<Filter>src\Prototypes\Scene</Filter>
+		</ClCompile>
 		<ClCompile Include="src\Games\SeedLayer.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
@@ -221,6 +236,9 @@
 		</Filter>
 		<Filter Include="src\Prototypes\Ascii">
 			<UniqueIdentifier>{6D3F2A41-8C1B-4E7A-9F25-3B7C1D2E4A03}</UniqueIdentifier>
+		</Filter>
+		<Filter Include="src\Prototypes\Scene">
+			<UniqueIdentifier>{6D3F2A41-8C1B-4E7A-9F25-3B7C1D2E4A04}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="src\Games">
 			<UniqueIdentifier>{AA87C14C--613-5-48-6B-9-17E-2F1A2F71D5FB}</UniqueIdentifier>
@@ -787,6 +805,21 @@
 		</ClInclude>
 		<ClInclude Include="src\Prototypes\Ascii\AsciiRenderer.h">
 			<Filter>src\Prototypes\Ascii</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Prototypes\Scene\SceneGL.h">
+			<Filter>src\Prototypes\Scene</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Prototypes\Scene\SceneHeightInput.h">
+			<Filter>src\Prototypes\Scene</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Prototypes\Scene\RippleField.h">
+			<Filter>src\Prototypes\Scene</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Prototypes\Scene\SceneStylizer.h">
+			<Filter>src\Prototypes\Scene</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Prototypes\Scene\SceneRenderer.h">
+			<Filter>src\Prototypes\Scene</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Games\SeedLayer.h">
 			<Filter>src\Games</Filter>

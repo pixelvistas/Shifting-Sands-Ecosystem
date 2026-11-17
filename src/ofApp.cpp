@@ -85,6 +85,10 @@ void ofApp::setup() {
 	// vegetationField; no GL work until the mode is first shown.
 	ascii.setup(kinectProjector, &vegetationField);
 	ascii.setProjectorRes(projRes);
+	// Prototype 4 (Scene): read-only against kinectProjector and
+	// vegetationField; no GL work until the mode is first shown.
+	scene.setup(kinectProjector, &vegetationField);
+	scene.setProjectorRes(projRes);
 
 	imgui.setup();
 
@@ -147,6 +151,9 @@ void ofApp::update() {
 	const bool running = kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING;
 	if (running && displayMode == DISPLAY_ASCII)
 		ascii.update();
+	// Prototype 4: likewise.
+	if (running && displayMode == DISPLAY_SCENE)
+		scene.update();
 }
 
 
@@ -165,6 +172,8 @@ void ofApp::draw()
 		// ofApp.h's header note on what has been removed from this branch.
 		if (displayMode == DISPLAY_ASCII) {
 			ascii.drawMainWindow(x, y, w, h);
+		} else if (displayMode == DISPLAY_SCENE) {
+			scene.drawMainWindow(x, y, w, h);
 		} else {
 			sandSurfaceRenderer->drawMainWindow(x, y, w, h);
 			vegetationField.drawSeedsMainWindow(x, y, w, h);
@@ -181,6 +190,8 @@ void ofApp::draw()
 			drawDisplayModeGui();
 			if (displayMode == DISPLAY_ASCII)
 				ascii.drawGui();
+			if (displayMode == DISPLAY_SCENE)
+				scene.drawGui();
 			sandSurfaceRenderer->drawGui();
 			critterController.drawGui();
 			vegetationField.drawGui();
@@ -196,6 +207,8 @@ void ofApp::drawProjWindow(ofEventArgs &args)
 	{
 		if (displayMode == DISPLAY_ASCII) {
 			ascii.drawProjectorWindow();
+		} else if (displayMode == DISPLAY_SCENE) {
+			scene.drawProjectorWindow();
 		} else {
 			sandSurfaceRenderer->drawProjectorWindow();
 			vegetationField.drawSeedsProjectorWindow();
@@ -210,18 +223,20 @@ void ofApp::drawDisplayModeGui()
 {
 	ImGui::Begin("Display mode");
 	// The combo lists the modes in order; values[] maps an entry to its
-	// DisplayMode value (ASCII is 2: 1 is reserved for Mycorrhiza).
-	static const char * modes[] = { "Sandbox", "ASCII" };
-	static const int values[] = { DISPLAY_SANDBOX, DISPLAY_ASCII };
+	// DisplayMode value (ASCII is 2: 1 is reserved for Mycorrhiza; Scene 3).
+	static const char * modes[] = { "Sandbox", "ASCII", "Scene" };
+	static const int values[] = { DISPLAY_SANDBOX, DISPLAY_ASCII, DISPLAY_SCENE };
 	int item = 0;
-	for (int i = 0; i < 2; i++)
+	for (int i = 0; i < 3; i++)
 		if (values[i] == displayMode)
 			item = i;
-	if (ImGui::Combo("Display mode", &item, modes, 2))
+	if (ImGui::Combo("Display mode", &item, modes, 3))
 		displayMode = values[item];
 	ImGui::Text("fps %.1f", ofGetFrameRate());
 	if (displayMode == DISPLAY_ASCII)
 		ImGui::Text("Projector: the ASCII view only; water and succession run unseen.");
+	if (displayMode == DISPLAY_SCENE)
+		ImGui::Text("Projector: the Scene view only; water and succession run unseen.");
 	ImGui::End();
 }
 
