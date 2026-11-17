@@ -4484,3 +4484,113 @@ Hardware checklist additions:
 2. Contour rings are continuous on slopes, one cell thick, brighter than
    their band, and steady; none on untouched flat sand.
 3. Background tint: muted enough that glyphs stay the brightest thing.
+
+## 2026-11-18 - Prototype 4 "Scene", step 1: a lit, animated scene through a stylise filter (`prototype/4-scene`)
+
+New branch `prototype/4-scene` from `prototype/3-ascii` at 5213a45;
+`prototype/3-ascii` is unchanged. (The uncommitted Prototype 3 "Ecosystem"
+view from 2026-11-17 was not committed there: it is kept as a local git
+stash and a patch, see the report of that session.)
+
+Why: Prototype 3 picks one glyph per cell from a smoothed scalar and
+holds it (deliberately still). The references (`docs/prototype4_scene/
+ref-ascii.jpg`, `ref-dither.jpg`, frames from the two clips the user
+supplied, UI cropped) are continuously animated lit scenes passed through
+a screen-space filter: motion comes from the scene, the filter only
+decides how each pixel or cell is drawn. Step 1 builds that scene from the
+sandbox's own height and simulated water.
+
+Display mode: "Scene" = 3 (Sandbox 0, Mycorrhiza 1 reserved, ASCII 2),
+wired exactly as ASCII (updated and drawn only while shown; the module
+does no GL work before it is first shown; its panel only in Scene mode).
+
+Module (`src/Prototypes/Scene/`, shaders `bin/data/shaders/scene/GL2|GL3`,
+one shared `scene.vert`):
+- `SceneHeightInput` (pass 0, grid resolution): display height = EMA
+  (`sceneHeightEma`, 0.5 s) then separable Gaussian (`sceneBlur`, sigma 3
+  cells, taps to 3 sigma); the second blur also writes d(height)/dt (ripple
+  source only). This replaces Prototype 3's hysteresis: stability comes
+  from a clean input. Water: `getWaterDepthAt` x the Vegetation panel's
+  range (mm), `getFlowVelocityAt`, d(depth)/dt, uploaded fresh each frame,
+  no smoothing; never placed by elevation, except in mock mode.
+  Mock terrain (`sceneMock`): mound, ridge, basin (or flat, "Mock flat"),
+  water below "Mock water level", optional "Mock hand" (a 20 mm dimple
+  circling the basin rim), optional per-frame noise for tests.
+- `RippleField` (2 x grid, ping-pong RGBA32F, 2 substeps): damped wave
+  equation u' = u + (u - u_prev)(1 - damping) + c2 lap(u), c2 0.35.
+  Shore: dry cells are held at 0 (a fixed boundary: waves reflect with
+  inverted phase and are damped out), chosen over an absorbing layer for
+  simplicity and because reflections off a dug bank read as real water.
+  Sources: |d height/dt| > 15 mm/s and |d depth/dt| > 8 mm/s inject a
+  capped impulse; autonomous drops are drawn on the CPU (Poisson,
+  0.6 /s per 0.1 m^2 of grid area, at most 8 per frame, seeded mt19937),
+  passed as uniforms and applied as small Gaussians on water only. (A
+  first version hashed a per-cell probability of ~1e-7 in the shader;
+  float precision made dozens of cells fire per frame.) Display only: its
+  output only perturbs water normals.
+- `sceneRender` (pass 1, 4 x grid, RGBA16F): terrain colour from three
+  height stops (deep emerald, mid, warm sand), Lambert from the display
+  height's normals (relief x1.5) + ambient 0.3, times a dappled-light mask
+  (4-octave value noise scrolled at 6 mm/s, contrast 0.55, shade 0.3).
+  Grass: procedural in the fragment shader: tufts on a blade-length grid
+  (5 mm), up to 5 blades each, every blade a tapered, anti-aliased stroke
+  whose tip is swayed by a travelling wind wave (150 mm, 0.25 /s) plus
+  gust noise, lit by the same light and dapple, brighter at the tip.
+  Chosen over instanced geometry because it needs no vertex data or CPU
+  work, is deterministic per position (nothing moves unless the wind or
+  the light does), scales with SCENE_MULT, and covers the whole box at any
+  density for a fixed per-pixel cost (3 x 3 tufts x up to 6 blades).
+  Placement: `grassDensity()` (marked in the shader): an elevation band,
+  a slope limit and a clumping noise, zero on water. Step 2 replaces this
+  one function with the succession cover. Water (depth > 1 mm, soft edge
+  2 mm): near-black teal by depth (#0E3B40 to #02070A at 30 mm), ripple
+  normals give a Blinn specular (strength 1.2, shininess 60) and a shimmer
+  proportional to the ripple slope, plus a faint reflection (0.12) of the
+  land colour 25 mm away with a sine wobble. Black point 0.04 (soft 0.03):
+  below it the colour is exactly 0.
+- `sceneWarp` (pass 2): the scene through the calibration: the grid mesh
+  at kinectCoordToProjCoord every LUT_STEP = 4 cells (as Prototype 3),
+  into a projector-sized RGBA16F FBO.
+- `SceneStylizer` (pass 3, projector pixels): Off / ASCII / Dither / Both.
+  ASCII: cells CELL_MM = 8 mm high (rounded to whole projector pixels;
+  width from the font), `sceneCells` averages each cell; glyph from a
+  31-character ramp sorted at runtime by each glyph's measured ink
+  coverage in the atlas (AsciiFontAtlas from Prototype 3, included from
+  `src/Prototypes/Ascii`, unchanged); luminance gamma 0.55, colour boost
+  2.0; cells below the black point are empty. Dither: dot size 2 px, 4
+  levels per channel, Bayer 4 x 4 (8 x 8 optional), fixed in projector
+  space; palette option with presets Gold / Night / Green (2 or 3 stops).
+  Both: dither with glyphs over it above luminance 0.35. A shared Bayer
+  threshold per dot means the dither cannot turn one colour into red and
+  green neighbours (R - G takes at most two adjacent values of one sign).
+- `SceneRenderer`: module, GUI ("Scene" panel, every setting above plus a
+  per-pass GPU timer from GL_TIME_ELAPSED queries read a frame late, never
+  stalling), preset `bin/data/settings/scenePreset.xml` (loaded at start-up
+  when present). "Freeze animation" stops wind, dapple drift and drops.
+- Accessors: none added. Everything is read through existing const
+  accessors (`getElevationGrid`, `getWaterDepthAt`, `getFlowVelocityAt`,
+  `getElevationRange`, `getMmPerCell`, grid geometry).
+- Kinect: the app cannot reach the running state without one
+  (`KinectProjector::startApplication()` returns while no Kinect is open),
+  so Scene mode, mock terrain included, needs the Kinect connected and
+  calibrated on the sandbox; the mock is fully usable in the headless
+  preview. Changing that would mean changing KinectProjector (not done).
+
+Checks (`tools/scene_preview/`, the real shader files on Mesa llvmpipe,
+defaults parsed from the .cpp files, 519 x 295 grid, 1 m box, 1280 x 800
+projector at 1.15 px/mm):
+- Results: in the follow-up entry below (the checks were still running at this commit).
+Not compiled with openFrameworks, not hardware-tested.
+
+Hardware checklist (Scene mode; `git pull` on `prototype/4-scene`,
+Release build, Vegetation range reset to the calibrated ceiling):
+1. From about 1 m, grass blades read as individual swaying strokes in both
+   ASCII and Dither; note the cellSize and dot size that read best.
+2. Light patches drift visibly but slowly; with "Freeze animation" on, no
+   area of untouched sand flickers over 60 s.
+3. Water sits exactly where the simulated water is; digging beside it
+   starts rings that spread and fade smoothly.
+4. Shadows and deep water emit no visible light; the sand shows through.
+5. Switching Style between ASCII, Dither and Both keeps the same scene.
+Also note: fps and the panel's GPU ms per pass (the scene pass is the
+expensive one; SCENE_MULT 2 or 3 and fewer blades per tuft are the knobs).

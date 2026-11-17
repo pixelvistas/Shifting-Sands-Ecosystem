@@ -17,6 +17,7 @@ Sand, ported to openFrameworks 0.12.1 with an ofxImGui GUI (`README.md`,
 - `ss/plant-grain` (current work): grain-dither plants and seed particles
   (display only), on `ss/land-lines`.
 - `prototype/3-ascii` (on `ss/plant-grain`): "Display mode" Sandbox (0) / ASCII (2; 1 = Mycorrhiza).
+- `prototype/4-scene` (on `prototype/3-ascii` 5213a45): adds Display mode Scene (3).
 - `ss/land-lines`: land lines, band fill, flat fade, Kinect driver stack; on `ss/water-lines`.
 - `ss/water-lines` (water lines) on `ss/succession-feedback` (succession) on `ss/dewitz-flow`.
 - `ss/dewitz-flow`: flow particles, water table. Fallback `ss/ecosim-model-visuals-kiqw12`.
@@ -110,6 +111,12 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   mix(bg, fg, alpha), contour cells brighter), atlas from JetBrains Mono Bold (`bin/data/ascii/fonts`). Input:
   elevation over a range (calibrated ceiling / Vegetation panel / custom); cell height in mm (10) via calibration px/mm. Preset
   `settings/asciiPreset.xml`. Test: `tools/ascii_preview/` (preview, noise test, GL2 = GL3, palette-check).
+- `src/Prototypes/Scene/*` (`prototype/4-scene`): lit animated scene + stylise filter. SceneHeightInput (display
+  height = EMA + Gaussian; water fresh; mock terrain), RippleField (wave eq. on water), sceneRender (grid x4:
+  terrain light, dapple, procedural grass via `grassDensity()`, water), warp to projector, SceneStylizer
+  (Off/ASCII/Dither/Both; reuses AsciiFontAtlas). Shaders `bin/data/shaders/scene/GL2|GL3`; preset
+  `settings/scenePreset.xml`; acceptance criteria in `CONCEPTS.md`. Test: `tools/scene_preview/`.
+  Needs a Kinect to reach the running state (mock terrain is display input only).
 
 ## Hydrology (`VegetationField::stepFlow()`)
 
