@@ -112,9 +112,10 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   elevation over a range (calibrated ceiling / Vegetation panel / custom); cell height in mm (10) via calibration px/mm. Preset
   `settings/asciiPreset.xml`. Test: `tools/ascii_preview/` (preview, noise test, GL2 = GL3, palette-check).
 - `src/Prototypes/Scene/*` (`prototype/4-scene`): lit animated scene + stylise filter. SceneHeightInput (display
-  height = EMA + Gaussian; water fresh; mock terrain), RippleField (wave eq. on water), sceneRender (grid x4:
-  terrain light, dapple, procedural grass via `grassDensity()`, water), warp to projector, SceneStylizer
-  (Off/ASCII/Dither/Both; reuses AsciiFontAtlas). Shaders `bin/data/shaders/scene/GL2|GL3`; preset
+  height = EMA + Gaussian; water fresh; mock terrain), RippleField (bounded wave eq. on water), sceneRender (grid x2:
+  terrain light, dapple, procedural grass via `grassDensity()` sized in glyph cells / dither dots, water, exposure;
+  heights as fractions of the Elevation range), warp to projector, SceneStylizer (Off/ASCII shape-aware via a
+  per-cell structure tensor/Dither green palette/Both; reuses AsciiFontAtlas). Shaders `bin/data/shaders/scene/GL2|GL3`; preset
   `settings/scenePreset.xml`; acceptance criteria in `CONCEPTS.md`. Test: `tools/scene_preview/`.
   Needs a Kinect to reach the running state (mock terrain is display input only).
 

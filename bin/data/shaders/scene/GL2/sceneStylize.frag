@@ -1,12 +1,20 @@
 // Prototype 4 (Scene), stylise step 2 (SceneStylizer), projector pixels.
-// style 0 Off: the warped scene. 1 ASCII: per glyph cell, the glyph whose
-// measured ink coverage matches the cell's luminance (after the black
-// point and luminanceGamma; ramp sorted by coverage on the CPU), drawn as
-// crisp coverage (>= 0.5) x the cell's scene colour x colourBoost; cells
-// below the black point stay empty. 2 Dither: colour-preserving ordered
-// dither on dotSize-pixel dots: each channel of the dot's mean colour
-// quantised to `levels` with a Bayer threshold (4 x 4 or 8 x 8), fixed in
-// projector space; optional palette (luminance -> 2 or 3 stops) first;
+// style 0 Off: the warped scene. 1 ASCII, shape-aware: per glyph cell,
+// if the cell's edge strength (sceneEdges: structure tensor) exceeds
+// edgeThreshold, a directional glyph by the stroke angle quantised to four
+// screen directions (0 horizontal, 1 "\", 2 vertical, 3 "/"; y down),
+// light or heavy by luminance (dirGlyph[dir * 2 + heavy]); otherwise the
+// glyph whose measured ink coverage matches the cell's luminance (after
+// the black point and luminanceGamma; ramp sorted by coverage on the
+// CPU). Drawn as crisp coverage (>= 0.5) x the cell's scene colour x
+// colourBoost; cells below the black point stay empty. debugEdges: edge
+// cells in one colour per direction, the rest dim grey. 2 Dither: ordered
+// dither on dotSize-pixel dots: with the palette (default) the dot's
+// luminance is quantised to `levels` and the quantised value mapped
+// through the 2 or 3 stops (every dot is exactly one palette tone: the
+// two-tone look), otherwise each channel is quantised; with a Bayer threshold (4 x 4 or 8 x 8) fixed in projector
+// space, or with lineScreen a horizontal line screen (threshold by pixel
+// row, period linePeriod px: 1-pixel lines whose count encodes the tone);
 // black stays black. 3 Both: the dither, with glyphs drawn over it in
 // cells brighter than bothThreshold. Keep in sync with
 // ../GL3/sceneStylize.frag.
@@ -15,6 +23,7 @@
 
 uniform sampler2DRect warpedTex;   // projector resolution, RGB scene
 uniform sampler2DRect cellTex;     // per glyph cell: RGB mean, A luminance
+uniform sampler2DRect edgeTex;     // per glyph cell: R edge strength, G stroke angle (deg)
 uniform sampler2DRect atlasTex;    // AsciiFontAtlas: coverage in R
 uniform int style;
 uniform vec2 cellSize;             // projector pixels
@@ -30,6 +39,13 @@ uniform int paletteOn;
 uniform float paletteStops;        // 2 or 3
 uniform vec3 paletteColor[3];
 uniform float bothThreshold;
+uniform float edgeThreshold;       // luminance per pixel
+uniform float dirGlyph[8];         // atlas indices: (dir x 2 + heavy)
+uniform float weightSplit;         // heavy above this (gamma-mapped) luminance
+uniform int debugEdges;
+uniform vec3 debugColor[4];
+uniform int lineScreen;
+uniform float linePeriod;          // projector pixels
 
 varying vec2 coord;                     // projector pixel coordinate
 
@@ -76,15 +92,17 @@ vec3 dither(vec2 pix)
 	float l = lum(c);
 	if (l <= blackPoint)
 		return vec3(0.0);
-	if (paletteOn == 1) {
-		float t = clamp(l, 0.0, 1.0);
-		if (paletteStops < 2.5)
-			c = mix(paletteColor[0], paletteColor[1], t);
-		else
-			c = (t < 0.5) ? mix(paletteColor[0], paletteColor[1], t * 2.0) : mix(paletteColor[1], paletteColor[2], t * 2.0 - 1.0);
-	}
-	float th = (bayer8 == 1) ? (bayer8f(dc) + 0.5) / 64.0 : (bayer4(dc) + 0.5) / 16.0;
+	float th = (lineScreen == 1) ? (mod(pix.y, max(1.0, linePeriod)) + 0.5) / max(1.0, linePeriod)
+		: (bayer8 == 1) ? (bayer8f(dc) + 0.5) / 64.0 : (bayer4(dc) + 0.5) / 16.0;
 	float top = max(1.0, levels - 1.0);
+	if (paletteOn == 1) {
+		float t = clamp(floor(clamp(l, 0.0, 1.0) * top + th) / top, 0.0, 1.0);
+		if (t <= 0.0)
+			return vec3(0.0);
+		if (paletteStops < 2.5)
+			return mix(paletteColor[0], paletteColor[1], t);
+		return (t < 0.5) ? mix(paletteColor[0], paletteColor[1], t * 2.0) : mix(paletteColor[1], paletteColor[2], t * 2.0 - 1.0);
+	}
 	return clamp(floor(clamp(c, 0.0, 1.0) * top + th) / top, 0.0, 1.0);
 }
 
@@ -98,10 +116,21 @@ vec4 glyph(vec2 pix, float minLum)
 	if (c.a <= minLum)
 		return vec4(0.0);
 	float l = pow(clamp((c.a - blackPoint) / max(1e-3, 1.0 - blackPoint), 0.0, 1.0), max(0.05, luminanceGamma));
-	int idx = int(clamp(floor(l * (rampCount - 1.0) + 0.5), 0.0, rampCount - 1.0));
-	vec2 texel = vec2(rampGlyph[idx] * cellSize.x + local.x + 0.5, local.y + 0.5);
+	vec4 e = texture2DRect(edgeTex, cell + 0.5);
+	float g;
+	int dir = -1;
+	if (e.r > edgeThreshold) {
+		dir = int(mod(floor(e.g / 45.0 + 0.5), 4.0));
+		g = dirGlyph[dir * 2 + ((l > weightSplit) ? 1 : 0)];
+	} else {
+		int idx = int(clamp(floor(l * (rampCount - 1.0) + 0.5), 0.0, rampCount - 1.0));
+		g = rampGlyph[idx];
+	}
+	vec2 texel = vec2(g * cellSize.x + local.x + 0.5, local.y + 0.5);
 	if (texture2DRect(atlasTex, texel).r < 0.5)
 		return vec4(0.0);
+	if (debugEdges == 1)
+		return vec4((dir >= 0) ? debugColor[dir] : vec3(0.25), 1.0);
 	return vec4(clamp(c.rgb * colourBoost, 0.0, 1.0), 1.0);
 }
 

@@ -53,15 +53,23 @@ public:
 	// Scene look (sceneRender.frag); defaults in the .cpp.
 	static int SCENE_MULT;              // scene texels per grid cell (1..6)
 	static bool FREEZE;                 // stops wind, dapple drift and drops
-	static float HEIGHT_LO_MM, HEIGHT_HI_MM, TERRAIN_MID_POS;
+	// Elevation range (as Prototype 3's ASCII view): heights are fractions of it.
+	enum { RANGE_CALIBRATED = 0, RANGE_VEGETATION = 1, RANGE_CUSTOM = 2 };
+	static int RANGE_MODE;
+	static float RANGE_MIN_MM, RANGE_MAX_MM;
+	static float TERRAIN_LO_FRAC, TERRAIN_HI_FRAC, TERRAIN_MID_POS;
 	static ofFloatColor TERRAIN_LOW, TERRAIN_MID, TERRAIN_HIGH;
 	static float EXAGGERATION;
 	static float SUN_AZIMUTH_DEG, SUN_ELEVATION_DEG;
 	static ofFloatColor SUN_COLOR;
 	static float AMBIENT;
 	static float DAPPLE_SCALE_MM, DAPPLED_LIGHT_SPEED, DAPPLE_DIRECTION_DEG, DAPPLE_CONTRAST, DAPPLE_SHADE;
-	static float BLADE_LENGTH_MM, BLADE_WIDTH_MM, BLADES_PER_TUFT;
-	static float GRASS_MIN_MM, GRASS_MAX_MM, GRASS_MAX_SLOPE, CLUMP_SCALE_MM, CLUMP_AMOUNT;
+	// Grass sizes in stylise units: glyph cells (ASCII, Both, Off) or dither
+	// dots (Dither); the mm values follow cellSize, dot size and the scale.
+	static float BLADE_WIDTH_CELLS, BLADE_LENGTH_CELLS, TUFT_SPACING_CELLS;
+	static float BLADE_WIDTH_DOTS, BLADE_LENGTH_DOTS, TUFT_SPACING_DOTS;
+	static float BLADES_PER_TUFT;
+	static float GRASS_MIN_FRAC, GRASS_MAX_FRAC, GRASS_MAX_SLOPE, CLUMP_SCALE_MM, CLUMP_AMOUNT;
 	static ofFloatColor GRASS_BASE, GRASS_TIP;
 	static float TIP_BOOST;
 	static float WIND_DIRECTION_DEG, WIND_STRENGTH, WIND_WAVELENGTH_MM, WIND_SPEED, GUST_STRENGTH, LEAN_SPREAD_DEG;
@@ -70,9 +78,17 @@ public:
 	static float RIPPLE_NORMAL_GAIN, SPEC_STRENGTH, SHININESS, RIPPLE_SHIMMER, HIGHLIGHT_MAX;
 	static float REFLECT_STRENGTH, REFLECT_DIRECTION_DEG, REFLECT_DISTANCE_MM, REFLECT_AMP_MM, REFLECT_FREQ, REFLECT_SPEED;
 	static float BLACK_POINT, BLACK_SOFTNESS;
+	// Exposure at the end of pass 1, and optional auto-exposure.
+	static float EXPOSURE, TOE, SHOULDER;
+	static bool AUTO_EXPOSURE;
+	static float AUTO_TARGET;            // 95th percentile luminance aimed at
+	static float AUTO_TIME_SEC;
 
 private:
 	void measureScale();
+	void updateRange();
+	void updateGrassMM();
+	void probeScene(float dt);
 	void rebuildMesh();
 	void renderScene();
 	void warpScene();
@@ -97,6 +113,15 @@ private:
 	ofVec2f measuredOrigin;
 	int measuredCols = 0, measuredRows = 0;
 	SceneGL::GpuTimer tInput, tRipple, tScene, tWarp, tStyle;
+	float rangeLoMM = -142.6f, rangeHiMM = 142.6f;
+	float bladeLenMM = 30.0f, bladeWidthMM = 3.0f, tuftMM = 10.0f;
+	ofShader probeShader;
+	ofFbo probeFbo;
+	ofMesh probeQuad;
+	ofFloatPixels probePix;
+	float histogram[32] = {};
+	float p95 = 0.0f, p95Ema = -1.0f, autoGain = 1.0f;
+	int probeCountdown = 0;
 	float cpuInputMs = 0.0f, cpuMeshMs = 0.0f;
 	std::string presetStatus;
 	char rampBuf[SceneStylizer::MAX_RAMP * 2 + 1] = {};

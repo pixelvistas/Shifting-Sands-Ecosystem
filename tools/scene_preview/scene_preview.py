@@ -65,11 +65,15 @@ def read_defaults():
         m = re.search(r'std::string SceneStylizer::RAMP = "((?:[^"\\]|\\.)*)";', s)
         if m:
             d["RAMP"] = m.group(1).encode().decode("unicode_escape")
+        m = re.search(r'std::string SceneStylizer::DIR_GLYPHS = "((?:[^"\\]|\\.)*)";', s)
+        if m:
+            d["DIR_GLYPHS"] = m.group(1).encode().decode("unicode_escape")
         m = re.search(r"ofFloatColor SceneStylizer::PALETTE\[3\] = \{(.*?)\};", s, re.S)
         if m:
             d["PALETTE"] = re.findall(r"hexColor\(0x([0-9A-Fa-f]{6})\)", m.group(1))
     enums = {"SceneStylizer::STYLE_ASCII": 1, "SceneStylizer::STYLE_OFF": 0, "SceneStylizer::STYLE_DITHER": 2,
-             "SceneStylizer::STYLE_BOTH": 3, "SceneStylizer::PALETTE_GOLD": 0}
+             "SceneStylizer::STYLE_BOTH": 3, "SceneStylizer::PALETTE_GOLD": 0, "SceneStylizer::PALETTE_NIGHT": 1,
+             "SceneStylizer::PALETTE_GREEN": 2, "SceneRenderer::RANGE_CALIBRATED": 0}
     for k, v in list(d.items()):
         if isinstance(v, str) and v in enums:
             d[k] = enums[v]
@@ -80,7 +84,8 @@ def rgb(h):
     return [int(h[i:i + 2], 16) / 255.0 for i in (0, 2, 4)]
 
 
-PALETTES = {0: ["1A1206", "9C7A2E", "F2D58A"], 1: ["05070D", "2E4466", "C9D6E8"], 2: ["0B2A1E", "2F7A55", "CFE8D2"]}
+PALETTES = {0: ["1A1206", "9C7A2E", "F2D58A"], 1: ["05070D", "2E4466", "C9D6E8"], 2: ["020806", "2F7A55", "CFE8D2"]}
+CEILING_MM = 142.606  # this box's calibrated ceiling (DEVLOG); the repo's settings file holds the untrained 300
 
 
 # ------------------------------------------------------------ GL helpers
@@ -150,7 +155,7 @@ class Pipeline:
             GL.glBindVertexArray(GL.glGenVertexArrays(1))
         GL.glDisable(GL.GL_BLEND)
         self.p = {n: program(gl2, n) for n in ("sceneMock", "sceneHeightEma", "sceneBlur", "rippleStep", "sceneRender",
-                                              "sceneWarp", "sceneCells", "sceneStylize")}
+                                              "sceneWarp", "sceneCells", "sceneEdges", "sceneStylize")}
         c, r = box.cols, box.rows
         self.c, self.r = c, r
         self.mm = box.mm_per_cell
@@ -160,6 +165,7 @@ class Pipeline:
         self.blurx = Target(c, r, GL.GL_RGBA32F)
         self.disp = [Target(c, r, GL.GL_RGBA32F, linear=True) for _ in range(2)]
         self.rm = max(1, min(4, int(self.d["RIPPLE_MULT"])))
+        self.range_lo, self.range_hi = -CEILING_MM, CEILING_MM
         self.rip = [Target(c * self.rm, r * self.rm, GL.GL_RGBA32F, linear=True) for _ in range(2)]
         self.sm = max(1, min(6, int(self.d["SCENE_MULT"])))
         self.scene = Target(c * self.sm, r * self.sm, GL.GL_RGBA16F, linear=True)
@@ -197,6 +203,7 @@ class Pipeline:
         self.cols = int(math.ceil(self.W / self.cw))
         self.rows = int(math.ceil(self.H / self.ch))
         self.cells = Target(self.cols, self.rows, GL.GL_RGBA16F)
+        self.edges = Target(self.cols, self.rows, GL.GL_RGBA16F)
 
     def build_mesh(self):
         pos, texc = [], []
@@ -351,7 +358,8 @@ class Pipeline:
                          heightGain=d["HEIGHT_GAIN"] if d["SOURCE_HEIGHT"] else 0.0,
                          waterGain=d["WATER_GAIN"] if d["SOURCE_WATER"] else 0.0,
                          impulseCap=d["IMPULSE_CAP"], impulseScale=fdt if s == 0 else 0.0,
-                         dropCount=float(nd) if s == 0 else 0.0, dropAmp=d["DROP_AMP"], resetAll=int(self.reset))
+                         dropCount=float(nd) if s == 0 else 0.0, dropAmp=d["DROP_AMP"],
+                         dropRadius=d["DROP_RADIUS_MM"] / (self.mm / self.rm), resetAll=int(self.reset))
             GL.glUniform2fv(GL.glGetUniformLocation(p, "drops"), 8, drops)
             self.quad(p, self.rip[nr])
             self.rcur = nr
@@ -359,22 +367,24 @@ class Pipeline:
         mark("ripples", t0)
 
         t0 = T()
+        blen, bwid, tuft = self.grass_mm()
         az, el = math.radians(d["SUN_AZIMUTH_DEG"]), math.radians(min(90, max(1, d["SUN_ELEVATION_DEG"])))
         da, wa, ra = (math.radians(d[k]) for k in ("DAPPLE_DIRECTION_DEG", "WIND_DIRECTION_DEG", "REFLECT_DIRECTION_DEG"))
         self.scene.begin((0, 0, 0, 1))
         p = self.use("sceneRender", [("heightTex", self.disp[self.cur].tex), ("waterTex", self.mock_water.tex),
                                      ("rippleTex", self.rip[self.rcur].tex)],
                      sceneMult=float(self.sm), rippleMult=float(self.rm), gridSize=(self.c, self.r), mmPerCell=self.mm,
-                     animTime=self.anim, heightLo=d["HEIGHT_LO_MM"], heightHi=d["HEIGHT_HI_MM"],
+                     animTime=self.anim, rangeLo=self.range_lo, rangeHi=self.range_hi, terrainLoFrac=d["TERRAIN_LO_FRAC"],
+                     terrainHiFrac=max(d["TERRAIN_LO_FRAC"] + 0.01, d["TERRAIN_HI_FRAC"]),
                      terrainLow=rgb(d["TERRAIN_LOW"]), terrainMid=rgb(d["TERRAIN_MID"]), terrainHigh=rgb(d["TERRAIN_HIGH"]),
                      terrainMidPos=min(0.99, max(0.01, d["TERRAIN_MID_POS"])), exaggeration=d["EXAGGERATION"],
                      sunDir=(math.cos(az) * math.cos(el), math.sin(az) * math.cos(el), math.sin(el)),
                      sunColor=rgb(d["SUN_COLOR"]), ambient=d["AMBIENT"], dappleScale=d["DAPPLE_SCALE_MM"],
                      dappleVelocity=(math.cos(da) * d["DAPPLED_LIGHT_SPEED"], math.sin(da) * d["DAPPLED_LIGHT_SPEED"]),
                      dappleContrast=min(1, max(0.01, d["DAPPLE_CONTRAST"])), dappleShade=d["DAPPLE_SHADE"],
-                     bladeLength=d["BLADE_LENGTH_MM"], bladeWidth=d["BLADE_WIDTH_MM"],
-                     bladesPerTuft=min(6.0, max(0.0, d["BLADES_PER_TUFT"])), grassMinHeight=d["GRASS_MIN_MM"],
-                     grassMaxHeight=d["GRASS_MAX_MM"], grassMaxSlope=max(0.01, d["GRASS_MAX_SLOPE"]),
+                     bladeLength=blen, bladeWidth=bwid, tuftSpacing=tuft,
+                     bladesPerTuft=min(6.0, max(0.0, d["BLADES_PER_TUFT"])), grassMinFrac=d["GRASS_MIN_FRAC"],
+                     grassMaxFrac=d["GRASS_MAX_FRAC"], grassMaxSlope=max(0.01, d["GRASS_MAX_SLOPE"]),
                      clumpScale=d["CLUMP_SCALE_MM"], clumpAmount=d["CLUMP_AMOUNT"], grassBase=rgb(d["GRASS_BASE"]),
                      grassTip=rgb(d["GRASS_TIP"]), tipBoost=d["TIP_BOOST"], windDir=(math.cos(wa), math.sin(wa)),
                      windStrength=d["WIND_STRENGTH"], windWaveLength=d["WIND_WAVELENGTH_MM"], windSpeed=d["WIND_SPEED"],
@@ -385,6 +395,7 @@ class Pipeline:
                      rippleShimmer=d["RIPPLE_SHIMMER"], highlightMax=max(0.01, d["HIGHLIGHT_MAX"]), reflectStrength=d["REFLECT_STRENGTH"],
                      reflectOffset=(math.cos(ra) * d["REFLECT_DISTANCE_MM"], math.sin(ra) * d["REFLECT_DISTANCE_MM"]),
                      reflectAmp=d["REFLECT_AMP_MM"], reflectFreq=d["REFLECT_FREQ"], reflectSpeed=d["REFLECT_SPEED"],
+                     exposure=max(0.0, d["EXPOSURE"]), toe=max(1.0, d["TOE"]), shoulder=max(0.0, d["SHOULDER"]),
                      blackPoint=d["BLACK_POINT"], blackSoftness=max(0.0, d["BLACK_SOFTNESS"]))
         self.quad(p, self.scene)
         mark("scene", t0)
@@ -401,17 +412,36 @@ class Pipeline:
         if timing is not None:
             timing.append(tm)
 
-    def stylize(self, style=None):
+    def grass_mm(self):
+        """SceneRenderer::updateGrassMM(): stylise units -> mm."""
+        d = self.d
+        ppm = self.box.px_per_mm()
+        if int(d["STYLE"]) == 2:
+            dot = max(1, int(d["DOT_SIZE"])) / ppm
+            return d["BLADE_LENGTH_DOTS"] * dot, d["BLADE_WIDTH_DOTS"] * dot, d["TUFT_SPACING_DOTS"] * dot
+        cw, ch = self.cw / ppm, self.ch / ppm
+        return d["BLADE_LENGTH_CELLS"] * ch, max(0.2, d["BLADE_WIDTH_CELLS"] * cw), d["TUFT_SPACING_CELLS"] * ch
+
+    def stylize(self, style=None, debug=False):
         d = self.d
         style = d["STYLE"] if style is None else style
         if style in (1, 3):
             self.cells.begin()
             p = self.use("sceneCells", [("warpedTex", self.warped.tex)], cellSize=(self.cw, self.ch), projSize=(self.W, self.H))
             self.quad(p, self.cells)
+            self.edges.begin()
+            p = self.use("sceneEdges", [("warpedTex", self.warped.tex)], cellSize=(self.cw, self.ch), projSize=(self.W, self.H))
+            self.quad(p, self.edges)
         pal = PALETTES.get(int(d["PALETTE_PRESET"]), d["PALETTE"]) if d.get("_preset_palette") else d["PALETTE"]
         ramp = np.array([A.atlas_index(self.ramp[i]) if i < len(self.ramp) else 0 for i in range(32)], np.float32)
+        dg = d["DIR_GLYPHS"]
+        dirg = np.array([A.atlas_index(dg[i] if i < len(dg) else "-") for i in range(8)], np.float32)
         self.out.begin((0, 0, 0, 1))
-        p = self.use("sceneStylize", [("warpedTex", self.warped.tex), ("cellTex", self.cells.tex), ("atlasTex", self.atlas)],
+        p = self.use("sceneStylize", [("warpedTex", self.warped.tex), ("cellTex", self.cells.tex), ("atlasTex", self.atlas),
+                                      ("edgeTex", self.edges.tex)],
+                     edgeThreshold=d["EDGE_THRESHOLD"], dirGlyph=dirg, weightSplit=d["WEIGHT_SPLIT"], debugEdges=int(debug),
+                     debugColor=np.array([[0, 0.78, 1], [1, 0.82, 0], [1, 0.25, 1], [1, 1, 1]], np.float32),
+                     lineScreen=int(d["LINE_SCREEN"]), linePeriod=float(max(1, min(8, int(d["LINE_PERIOD"])))),
                      style=int(style), cellSize=(self.cw, self.ch), rampGlyph=ramp, rampCount=float(max(2, len(self.ramp))),
                      luminanceGamma=max(0.05, d["LUMINANCE_GAMMA"]), blackPoint=d["BLACK_POINT"],
                      colourBoost=d["COLOUR_BOOST"], dotSize=float(max(1, min(8, int(d["DOT_SIZE"])))),

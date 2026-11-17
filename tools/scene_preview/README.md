@@ -15,6 +15,12 @@ coverage-sorted ramp follow `AsciiFontAtlas` and `SceneStylizer` (Pillow).
     python3 scene_preview.py timing              # per pass, on this GL (software: not the installation PC)
     ./build.sh && python3 scene_preview.py identity   # succession/water bit-identical with Scene reading
 
+The preview uses this box's calibrated range (+-142.606 mm, DEVLOG); the
+repository's `kinectProjectorSettings.xml` holds the untrained defaults
+(ceiling 300 mm). Grass sizes follow the stylise units of the current
+style (`SceneRenderer::updateGrassMM`): `styles` renders one scene (ASCII
+units) through all four styles.
+
 Differences from the app, by design: the preview's "dig" subtracts a
 dimple from the mock height texture on the CPU (a stand-in for a hand in
 the sand); the autonomous drops use numpy's generator instead of

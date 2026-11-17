@@ -4,11 +4,11 @@
 #include <random>
 
 // Defaults (DEVLOG, 2026-11-18; chosen on the headless preview).
-int RippleField::RIPPLE_MULT = 2;
+int RippleField::RIPPLE_MULT = 1;   // 1.9 mm cells: rings are several glyph cells wide
 int RippleField::SUBSTEPS = 2;
 float RippleField::WAVE_C2 = 0.35f;
 float RippleField::DAMPING_PER_SEC = 1.5f;     // ~22 % of the amplitude left after 1 s
-float RippleField::MAX_AMPLITUDE = 0.6f;
+float RippleField::MAX_AMPLITUDE = 1.0f;
 bool RippleField::SOURCE_HEIGHT = true;
 bool RippleField::SOURCE_WATER = true;
 float RippleField::HEIGHT_RATE_THRESHOLD = 15.0f;
@@ -17,7 +17,8 @@ float RippleField::HEIGHT_GAIN = 0.05f;
 float RippleField::WATER_GAIN = 0.05f;
 float RippleField::IMPULSE_CAP = 1.5f;
 float RippleField::DROP_RATE = 0.6f;
-float RippleField::DROP_AMP = 0.5f;
+float RippleField::DROP_AMP = 1.0f;
+float RippleField::DROP_RADIUS_MM = 6.0f;
 
 bool RippleField::setup()
 {
@@ -28,6 +29,7 @@ bool RippleField::setup()
 void RippleField::update(ofTexture & height, ofTexture & water, int gridCols, int gridRows, float mmPerCell,
 	float dt, bool dropsOn, uint64_t frame)
 {
+	(void)frame; // drops are drawn by the seeded generator, not hashed by frame
 	if (!loaded || gridCols <= 0 || gridRows <= 0)
 		return;
 	const int m = std::max(1, std::min(4, RIPPLE_MULT));
@@ -85,6 +87,7 @@ void RippleField::update(ofTexture & height, ofTexture & water, int gridCols, in
 		stepShader.setUniform2fv("drops", drops, 8);
 		stepShader.setUniform1f("dropCount", s == 0 ? (float)dropCount : 0.0f);
 		stepShader.setUniform1f("dropAmp", DROP_AMP);
+		stepShader.setUniform1f("dropRadius", DROP_RADIUS_MM / std::max(1e-3f, mmPerCell / mult));
 		stepShader.setUniform1i("resetAll", resetPending ? 1 : 0);
 		quad.draw();
 		stepShader.end();

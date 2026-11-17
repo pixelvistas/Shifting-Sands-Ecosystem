@@ -12,7 +12,11 @@
 // exceeds waterRateThreshold (a hand entering, sand falling in; each
 // source can be off: gain 0), and autonomous drops: up to 8 per
 // frame, drawn on the CPU (Poisson, seeded), each a Gaussian depression
-// of dropAmp, radius 1.5 ripple cells, applied only where there is water.
+// of dropAmp, sigma dropRadius ripple cells (so rings are several glyph
+// cells wide), applied only where there is water. Impulses are added to
+// both stored steps (u and u_prev): a displacement at rest, which then
+// spreads as a ring, not a velocity kick (a kick keeps deepening the
+// depression every substep).
 // Keep in sync with ../GL2/rippleStep.frag; tools/scene_preview runs this file.
 #version 150
 
@@ -33,6 +37,7 @@ uniform float maxAmp;
 uniform vec2 drops[8];             // ripple cell coordinates
 uniform float dropCount;
 uniform float dropAmp;
+uniform float dropRadius;          // ripple cells (sigma)
 uniform int resetAll;
 
 in vec2 coord;                     // ripple texel coordinate
@@ -58,18 +63,20 @@ void main()
 		+ wetAt(coord + vec2(0.0, 1.0)) * texture(prevTex, coord + vec2(0.0, 1.0)).r
 		+ wetAt(coord - vec2(0.0, 1.0)) * texture(prevTex, coord - vec2(0.0, 1.0)).r;
 	float un = u + (u - up) * (1.0 - damping) + c2 * (n - 4.0 * u);
+	float kick = 0.0;
 	if (impulseScale > 0.0) {
 		float hr = abs(texture(heightTex, coord / rippleMult).g);
 		float rate = heightGain * max(hr - heightRateThreshold, 0.0) + waterGain * max(abs(w.a) - waterRateThreshold, 0.0);
-		un -= min(impulseCap, rate) * impulseScale;
+		kick -= min(impulseCap, rate) * impulseScale;
 		for (int k = 0; k < 8; k++) {
 			if (float(k) >= dropCount)
 				break;
 			vec2 dd = coord - drops[k];
 			float r2 = dot(dd, dd);
-			if (r2 < 25.0)
-				un -= dropAmp * exp(-r2 / 4.5);
+			float s2 = max(0.25, dropRadius * dropRadius);
+			if (r2 < 9.0 * s2)
+				kick -= dropAmp * exp(-0.5 * r2 / s2);
 		}
 	}
-	outputColor = vec4(clamp(un, -maxAmp, maxAmp), u, 0.0, 1.0);
+	outputColor = vec4(clamp(un + kick, -maxAmp, maxAmp), clamp(u + kick, -maxAmp, maxAmp), 0.0, 1.0);
 }

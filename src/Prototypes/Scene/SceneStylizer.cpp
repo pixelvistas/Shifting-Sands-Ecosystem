@@ -14,13 +14,19 @@ float SceneStylizer::LUMINANCE_GAMMA = 0.55f;
 float SceneStylizer::COLOUR_BOOST = 2.0f;
 std::string SceneStylizer::RAMP = " .`',:;-~^\"=+<!ivxzcoa*#%&8@$WM";
 int SceneStylizer::DOT_SIZE = 2;
-int SceneStylizer::LEVELS = 4;
+int SceneStylizer::LEVELS = 3;
 bool SceneStylizer::BAYER8 = false;
-bool SceneStylizer::PALETTE_ON = false;
-int SceneStylizer::PALETTE_PRESET = SceneStylizer::PALETTE_GOLD;
+bool SceneStylizer::PALETTE_ON = true;
+int SceneStylizer::PALETTE_PRESET = SceneStylizer::PALETTE_GREEN;
 int SceneStylizer::PALETTE_STOPS = 3;
-ofFloatColor SceneStylizer::PALETTE[3] = { hexColor(0x1A1206), hexColor(0x9C7A2E), hexColor(0xF2D58A) };
+ofFloatColor SceneStylizer::PALETTE[3] = { hexColor(0x020806), hexColor(0x2F7A55), hexColor(0xCFE8D2) };
 float SceneStylizer::BOTH_THRESHOLD = 0.35f;
+float SceneStylizer::EDGE_THRESHOLD = 0.05f;
+std::string SceneStylizer::DIR_GLYPHS = "-=\\\\!|//";
+float SceneStylizer::WEIGHT_SPLIT = 0.55f;
+bool SceneStylizer::DEBUG_EDGES = false;
+bool SceneStylizer::LINE_SCREEN = false;
+int SceneStylizer::LINE_PERIOD = 2;
 
 // Presets approximating the reference's three looks (dark, mid, light).
 void SceneStylizer::applyPalettePreset(int preset)
@@ -28,7 +34,7 @@ void SceneStylizer::applyPalettePreset(int preset)
 	static const unsigned int P[3][3] = {
 		{ 0x1A1206, 0x9C7A2E, 0xF2D58A },   // Gold
 		{ 0x05070D, 0x2E4466, 0xC9D6E8 },   // Night
-		{ 0x0B2A1E, 0x2F7A55, 0xCFE8D2 } }; // Green
+		{ 0x020806, 0x2F7A55, 0xCFE8D2 } }; // Green: near black, mid green, pale green
 	PALETTE_PRESET = std::max(0, std::min(2, preset));
 	for (int i = 0; i < 3; i++)
 		PALETTE[i] = hexColor(P[PALETTE_PRESET][i]);
@@ -36,7 +42,8 @@ void SceneStylizer::applyPalettePreset(int preset)
 
 bool SceneStylizer::setup()
 {
-	loaded = SceneGL::load(cellShader, "sceneCells") && SceneGL::load(stylizeShader, "sceneStylize");
+	loaded = SceneGL::load(cellShader, "sceneCells") && SceneGL::load(edgeShader, "sceneEdges")
+		&& SceneGL::load(stylizeShader, "sceneStylize");
 	return loaded;
 }
 
@@ -57,6 +64,7 @@ void SceneStylizer::setCellHeightPx(int px)
 		cols = c;
 		rows = r;
 		SceneGL::allocate(cellFbo, cols, rows, GL_RGBA16F, GL_NEAREST);
+		SceneGL::allocate(edgeFbo, cols, rows, GL_RGBA16F, GL_NEAREST);
 		cellQuad = SceneGL::quad((float)cols, (float)rows);
 	}
 	if (!outFbo.isAllocated() || (int)outFbo.getWidth() != (int)projRes.x || (int)outFbo.getHeight() != (int)projRes.y)
@@ -121,7 +129,21 @@ void SceneStylizer::render(ofTexture & warped, float blackPoint)
 		cellQuad.draw();
 		cellShader.end();
 		cellFbo.end();
+		edgeFbo.begin();
+		ofClear(0, 0, 0, 0);
+		edgeShader.begin();
+		edgeShader.setUniformTexture("warpedTex", warped, 0);
+		edgeShader.setUniform2f("cellSize", cw, ch);
+		edgeShader.setUniform2f("projSize", projRes.x, projRes.y);
+		cellQuad.draw();
+		edgeShader.end();
+		edgeFbo.end();
 	}
+	float dirG[8];
+	for (int i = 0; i < 8; i++)
+		dirG[i] = (float)AsciiFontAtlas::indexOf(i < (int)DIR_GLYPHS.size() ? DIR_GLYPHS[i] : (i < 2 ? '-' : i < 4 ? '\\' : i < 6 ? '|' : '/'));
+	// Debug colours per direction (no saturated red next to green).
+	const float dbg[12] = { 0.0f, 0.78f, 1.0f,   1.0f, 0.82f, 0.0f,   1.0f, 0.25f, 1.0f,   1.0f, 1.0f, 1.0f };
 	float ramp[MAX_RAMP];
 	const int n = std::max(2, std::min(MAX_RAMP, (int)sortedRamp.size()));
 	for (int i = 0; i < MAX_RAMP; i++)
@@ -136,6 +158,14 @@ void SceneStylizer::render(ofTexture & warped, float blackPoint)
 	stylizeShader.setUniformTexture("warpedTex", warped, 0);
 	stylizeShader.setUniformTexture("cellTex", cellFbo.getTexture(), 1);
 	stylizeShader.setUniformTexture("atlasTex", atlas.getTexture(), 2);
+	stylizeShader.setUniformTexture("edgeTex", edgeFbo.getTexture(), 3);
+	stylizeShader.setUniform1f("edgeThreshold", EDGE_THRESHOLD);
+	stylizeShader.setUniform1fv("dirGlyph", dirG, 8);
+	stylizeShader.setUniform1f("weightSplit", WEIGHT_SPLIT);
+	stylizeShader.setUniform1i("debugEdges", DEBUG_EDGES ? 1 : 0);
+	stylizeShader.setUniform3fv("debugColor", dbg, 4);
+	stylizeShader.setUniform1i("lineScreen", LINE_SCREEN ? 1 : 0);
+	stylizeShader.setUniform1f("linePeriod", (float)std::max(1, std::min(8, LINE_PERIOD)));
 	stylizeShader.setUniform1i("style", std::max(0, std::min(3, STYLE)));
 	stylizeShader.setUniform2f("cellSize", cw, ch);
 	stylizeShader.setUniform1fv("rampGlyph", ramp, MAX_RAMP);

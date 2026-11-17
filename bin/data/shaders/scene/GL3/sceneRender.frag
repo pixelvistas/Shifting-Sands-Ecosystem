@@ -10,7 +10,12 @@
 // blades (procedural, hashed tufts: see grassDensity() and grass()); water
 // where the simulated depth exceeds waterThreshold: near-black teal by
 // depth, ripple normals (specular + shimmer), a faint mirrored reflection
-// of the land; then the black point: luminance below it is exactly 0.
+// of the land; then exposure (gain, toe and shoulder curve) so the useful
+// range spans 0..1, then the black point: luminance below it is exactly 0.
+// Heights are read as fractions of the active elevation range (rangeLo ..
+// rangeHi, the "Elevation range" setting), so terrain stops and the grass
+// band mean the same on the mock and on the sand. Output A = the final
+// luminance (histogram and auto-exposure).
 #version 150
 
 uniform sampler2DRect heightTex;   // grid: R display height (mm)
@@ -22,8 +27,10 @@ uniform vec2 gridSize;
 uniform float mmPerCell;
 uniform float animTime;            // s; stops while "Freeze animation" is on
 // terrain and light
-uniform float heightLo;            // mm at the low stop
-uniform float heightHi;            // mm at the high stop
+uniform float rangeLo;             // mm, active elevation range
+uniform float rangeHi;
+uniform float terrainLoFrac;       // low colour stop, fraction of the range
+uniform float terrainHiFrac;       // high colour stop
 uniform vec3 terrainLow;
 uniform vec3 terrainMid;
 uniform vec3 terrainHigh;
@@ -37,11 +44,12 @@ uniform vec2 dappleVelocity;       // mm/s
 uniform float dappleContrast;      // 0..1
 uniform float dappleShade;         // light level in the shade, 0..1
 // grass
-uniform float bladeLength;         // mm
+uniform float bladeLength;         // mm (from the stylise units on the CPU)
 uniform float bladeWidth;          // mm
+uniform float tuftSpacing;         // mm
 uniform float bladesPerTuft;       // 1..6
-uniform float grassMinHeight;      // mm
-uniform float grassMaxHeight;      // mm
+uniform float grassMinFrac;        // grass band, fractions of the range
+uniform float grassMaxFrac;
 uniform float grassMaxSlope;       // mm per mm
 uniform float clumpScale;          // mm
 uniform float clumpAmount;         // 0..1
@@ -71,6 +79,9 @@ uniform float reflectAmp;          // mm
 uniform float reflectFreq;         // 1/mm
 uniform float reflectSpeed;        // rad/s
 // output
+uniform float exposure;            // gain (x auto-exposure)
+uniform float toe;                 // >= 1: deepens the shadows
+uniform float shoulder;            // >= 0: compresses the highlights
 uniform float blackPoint;
 uniform float blackSoftness;
 
@@ -148,28 +159,39 @@ float dapple(vec2 pmm)
 // (an elevation band, a slope limit, a clumping noise; none on water).
 // Step 2 replaces this one function with the succession model's cover.
 // ---------------------------------------------------------------------
+float heightFrac(float heightMM)
+{
+	return (heightMM - rangeLo) / max(1.0, rangeHi - rangeLo);
+}
+
 float grassDensity(float heightMM, float slope, float clump, float depthMM)
 {
 	if (depthMM > waterThreshold)
 		return 0.0;
-	float band = smoothstep(grassMinHeight - 4.0, grassMinHeight + 4.0, heightMM)
-		* (1.0 - smoothstep(grassMaxHeight - 4.0, grassMaxHeight + 4.0, heightMM));
+	float f = heightFrac(heightMM);
+	float soft = 0.015;
+	float band = smoothstep(grassMinFrac - soft, grassMinFrac + soft, f)
+		* (1.0 - smoothstep(grassMaxFrac - soft, grassMaxFrac + soft, f));
 	float slopeOk = 1.0 - smoothstep(0.8 * grassMaxSlope, grassMaxSlope, slope);
 	return band * slopeOk * mix(1.0, clump, clumpAmount);
 }
 
-// Grass blades over position pmm: tufts on a bladeLength grid, up to 6
+// Grass blades over position pmm: tufts on a tuftSpacing grid, up to 6
 // blades each, every blade a tapered stroke from its root towards its
-// tip, the tip swayed by a travelling wind wave plus gust noise. Returns
-// the blade colour factor (rgb, unlit) and its coverage (a).
+// tip, the tip swayed by a travelling wind wave plus gust noise. Tufts
+// within the blades' reach are searched (at most 3 tufts each way).
+// Returns the blade colour factor (rgb, unlit) and its coverage (a).
 vec4 grass(vec2 pmm, float pxMM)
 {
-	float tuft = max(0.5, bladeLength);
+	float tuft = max(0.5, tuftSpacing);
 	vec2 tc = floor(pmm / tuft);
 	vec4 acc = vec4(0.0);
 	vec2 windN = vec2(-windDir.y, windDir.x);
-	for (int j = -1; j <= 1; j++) {
-		for (int i = -1; i <= 1; i++) {
+	float reach = min(3.0, ceil(bladeLength * 1.3 * (1.0 + windStrength * (1.0 + gustStrength)) / tuft));
+	for (int j = -3; j <= 3; j++) {
+		for (int i = -3; i <= 3; i++) {
+			if (abs(float(i)) > reach || abs(float(j)) > reach)
+				continue;
 			vec2 cell = tc + vec2(float(i), float(j));
 			vec2 centre = (cell + 0.5) * tuft;
 			float h = heightAt(centre);
@@ -216,7 +238,7 @@ vec3 sunlight(vec2 pmm)
 vec3 landColour(vec2 pmm, float pxMM)
 {
 	float h = heightAt(pmm);
-	float k = clamp((h - heightLo) / max(1.0, heightHi - heightLo), 0.0, 1.0);
+	float k = clamp((heightFrac(h) - terrainLoFrac) / max(0.01, terrainHiFrac - terrainLoFrac), 0.0, 1.0);
 	vec3 base = (k < terrainMidPos) ? mix(terrainLow, terrainMid, k / max(1e-3, terrainMidPos))
 		: mix(terrainMid, terrainHigh, (k - terrainMidPos) / max(1e-3, 1.0 - terrainMidPos));
 	vec4 gr = grass(pmm, pxMM);
@@ -251,7 +273,11 @@ void main()
 		col = mix(col, water, wa);
 	}
 
+	// Exposure: gain, shoulder (x (1 + s) / (1 + s x): 1 stays 1), toe (power).
+	col = max(col * exposure, vec3(0.0));
+	col = col * (1.0 + shoulder) / (1.0 + shoulder * col);
+	col = pow(clamp(col, 0.0, 1.0), vec3(max(1.0, toe)));
 	float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
 	col *= (blackSoftness > 0.0) ? smoothstep(blackPoint, blackPoint + blackSoftness, lum) : step(blackPoint, lum);
-	outputColor = vec4(col, 1.0);
+	outputColor = vec4(col, dot(col, vec3(0.2126, 0.7152, 0.0722)));
 }

@@ -52,6 +52,7 @@ public:
 	static float IMPULSE_CAP;          // impulse per second
 	static float DROP_RATE;            // drops per second per 0.1 m^2
 	static float DROP_AMP;
+	static float DROP_RADIUS_MM;       // Gaussian sigma; rings ~4 sigma apart
 
 private:
 	ofShader stepShader;
