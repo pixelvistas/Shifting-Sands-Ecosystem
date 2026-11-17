@@ -7,11 +7,15 @@
 int RippleField::RIPPLE_MULT = 2;
 int RippleField::SUBSTEPS = 2;
 float RippleField::WAVE_C2 = 0.35f;
-float RippleField::DAMPING = 0.012f;
+float RippleField::DAMPING_PER_SEC = 1.5f;     // ~22 % of the amplitude left after 1 s
+float RippleField::MAX_AMPLITUDE = 0.6f;
+bool RippleField::SOURCE_HEIGHT = true;
+bool RippleField::SOURCE_WATER = true;
 float RippleField::HEIGHT_RATE_THRESHOLD = 15.0f;
-float RippleField::WATER_RATE_THRESHOLD = 8.0f;
-float RippleField::IMPULSE_GAIN = 0.01f;
-float RippleField::IMPULSE_CAP = 1.0f;
+float RippleField::WATER_RATE_THRESHOLD = 20.0f;  // above the 8 mm/s inflow and normal sloshing (~12 mm/s p99)
+float RippleField::HEIGHT_GAIN = 0.05f;
+float RippleField::WATER_GAIN = 0.05f;
+float RippleField::IMPULSE_CAP = 1.5f;
 float RippleField::DROP_RATE = 0.6f;
 float RippleField::DROP_AMP = 0.5f;
 
@@ -56,7 +60,9 @@ void RippleField::update(ofTexture & height, ofTexture & water, int gridCols, in
 	ofPushStyle();
 	ofEnableBlendMode(OF_BLENDMODE_DISABLED);
 	ofSetColor(255);
-	const int steps = std::max(1, std::min(8, SUBSTEPS));
+	const float frameDt = ofClamp(dt, 0.0f, 0.1f);
+	const int steps = std::max(1, std::min(8, (int)std::lround(SUBSTEPS * frameDt * 60.0f)));
+	const float dampSub = 1.0f - std::exp(-std::max(0.0f, DAMPING_PER_SEC) * frameDt / steps);
 	for (int s = 0; s < steps; s++) {
 		const int next = 1 - cur;
 		state[next].begin();
@@ -68,12 +74,14 @@ void RippleField::update(ofTexture & height, ofTexture & water, int gridCols, in
 		stepShader.setUniform1f("rippleMult", (float)mult);
 		stepShader.setUniform1f("waterThreshold", SceneHeightInput::WATER_THRESHOLD_MM);
 		stepShader.setUniform1f("c2", ofClamp(WAVE_C2, 0.0f, 0.5f));
-		stepShader.setUniform1f("damping", ofClamp(DAMPING, 0.0f, 1.0f));
+		stepShader.setUniform1f("damping", ofClamp(dampSub, 0.0f, 1.0f));
+		stepShader.setUniform1f("maxAmp", std::max(0.01f, MAX_AMPLITUDE));
 		stepShader.setUniform1f("heightRateThreshold", HEIGHT_RATE_THRESHOLD);
 		stepShader.setUniform1f("waterRateThreshold", WATER_RATE_THRESHOLD);
-		stepShader.setUniform1f("impulseGain", IMPULSE_GAIN);
+		stepShader.setUniform1f("heightGain", SOURCE_HEIGHT ? HEIGHT_GAIN : 0.0f);
+		stepShader.setUniform1f("waterGain", SOURCE_WATER ? WATER_GAIN : 0.0f);
 		stepShader.setUniform1f("impulseCap", IMPULSE_CAP);
-		stepShader.setUniform1f("impulseScale", s == 0 ? 1.0f : 0.0f);
+		stepShader.setUniform1f("impulseScale", s == 0 ? frameDt : 0.0f);
 		stepShader.setUniform2fv("drops", drops, 8);
 		stepShader.setUniform1f("dropCount", s == 0 ? (float)dropCount : 0.0f);
 		stepShader.setUniform1f("dropAmp", DROP_AMP);

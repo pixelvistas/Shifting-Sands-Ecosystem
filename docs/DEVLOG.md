@@ -4594,3 +4594,51 @@ Release build, Vegetation range reset to the calibrated ceiling):
 5. Switching Style between ASCII, Dither and Both keeps the same scene.
 Also note: fps and the panel's GPU ms per pass (the scene pass is the
 expensive one; SCENE_MULT 2 or 3 and fewer blades per tuft are the knobs).
+
+## 2026-11-18 - Prototype 4: runaway ripples on the sandbox, fixed (`prototype/4-scene`)
+
+Hardware report (photos, Dither style): concentric rings centred on an
+object in the water, spreading over the whole water and saturating it to
+white. Cause, in this module: (1) ripple sources fired on every frame
+while their rate stayed above threshold, with the impulse applied per
+frame (60 per second at 60 fps); (2) nothing bounded the wave height; (3)
+the specular + shimmer highlight was unbounded, so tall waves turned the
+water white. Any source that keeps firing (a hand not quite still, Kinect
+depth flicker at an object's edge, the water simulation reacting to it)
+therefore grew the waves without limit. The headless mock never showed it:
+its water is still. Kinect-like flicker (+-15 mm white, and a two-state
+telegraph at an object's rim) did not trigger it after the display-height
+smoothing either, so the exact hardware source is not reproduced; the fix
+bounds the result whatever the source.
+
+Fix (display only, defaults in the .cpp):
+- Sources are rates: impulse per second = min(IMPULSE_CAP 1.5, gain x
+  excess), applied x the frame time; separate gains and on/off switches
+  for sand changes (HEIGHT_GAIN 0.05, threshold 15 mm/s) and water changes
+  (WATER_GAIN 0.05, threshold raised from 8 to 20 mm/s: the inflow adds
+  8 mm/s and normal sloshing reached 12 mm/s at the 99th percentile on the
+  live-water run).
+- Wave height clamped to MAX_AMPLITUDE 0.6.
+- Damping per second (1.5 /s: 22 % of the amplitude left after 1 s) and
+  substeps scaled with the frame time (2 at 60 fps), so ripples behave the
+  same at any frame rate.
+- Water highlights compressed: HIGHLIGHT_MAX x (1 - exp(-h / HIGHLIGHT_MAX)),
+  HIGHLIGHT_MAX 0.5, so the water never saturates.
+Stress test (live water from the real stepFlow, Scene pipeline reading it,
+every cell injecting: thresholds 0, high gains), 20 s: old code wave height
+up to 97, 87-94 % of water pixels above luminance 0.9; fixed code wave
+height capped at 0.6, 0 % above 0.9, water luminance p99 0.57. A sudden
+20 mm press beside the water still starts a ring (peak 0.43, fading over
+~1.5 s); 40 mm reaches the cap. On the sandbox: if rings still keep coming
+from one place, switch "Rings from sand changes" / "Rings from water
+changes" off one at a time in the Scene panel to see which source it is.
+
+Check results so far (before this fix; the ripple change does not affect
+them): GL2 vs GL3 identical in all four styles (scene x2: max channel
+difference 0); succession and water outputs bit-identical with the Scene
+pipeline reading every frame vs off (20 s, real stepFlow + SuccessionModel:
+water depth, state, velocity, soil, moisture, three covers); frame
+sequence before the dig: 7.5 % of output pixels change per 0.1 s (wind,
+dapple, drops). The 60 s noise test was stopped for this fix and is rerun
+next. Not compiled with openFrameworks, not hardware-tested.
+

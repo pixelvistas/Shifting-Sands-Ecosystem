@@ -54,6 +54,7 @@ float SceneRenderer::RIPPLE_NORMAL_GAIN = 4.0f;
 float SceneRenderer::SPEC_STRENGTH = 1.2f;
 float SceneRenderer::SHININESS = 60.0f;
 float SceneRenderer::RIPPLE_SHIMMER = 0.6f;
+float SceneRenderer::HIGHLIGHT_MAX = 0.5f;  // water glints never above this (no white-out)
 float SceneRenderer::REFLECT_STRENGTH = 0.12f;
 float SceneRenderer::REFLECT_DIRECTION_DEG = 90.0f;
 float SceneRenderer::REFLECT_DISTANCE_MM = 25.0f;
@@ -272,6 +273,7 @@ void SceneRenderer::renderScene()
 	s.setUniform1f("specStrength", SPEC_STRENGTH);
 	s.setUniform1f("shininess", SHININESS);
 	s.setUniform1f("rippleShimmer", RIPPLE_SHIMMER);
+	s.setUniform1f("highlightMax", std::max(0.01f, HIGHLIGHT_MAX));
 	s.setUniform1f("reflectStrength", REFLECT_STRENGTH);
 	s.setUniform2f("reflectOffset", std::cos(ra) * REFLECT_DISTANCE_MM, std::sin(ra) * REFLECT_DISTANCE_MM);
 	s.setUniform1f("reflectAmp", REFLECT_AMP_MM);
@@ -331,20 +333,21 @@ void SceneRenderer::drawProjectorWindow() { drawMainWindow(0, 0, projRes.x, proj
 	X(SceneRenderer, CLUMP_SCALE_MM) X(SceneRenderer, CLUMP_AMOUNT) X(SceneRenderer, TIP_BOOST) X(SceneRenderer, WIND_DIRECTION_DEG) \
 	X(SceneRenderer, WIND_STRENGTH) X(SceneRenderer, WIND_WAVELENGTH_MM) X(SceneRenderer, WIND_SPEED) X(SceneRenderer, GUST_STRENGTH) \
 	X(SceneRenderer, LEAN_SPREAD_DEG) X(SceneRenderer, WATER_EDGE_MM) X(SceneRenderer, WATER_DEEP_MM) X(SceneRenderer, RIPPLE_NORMAL_GAIN) \
-	X(SceneRenderer, SPEC_STRENGTH) X(SceneRenderer, SHININESS) X(SceneRenderer, RIPPLE_SHIMMER) X(SceneRenderer, REFLECT_STRENGTH) \
+	X(SceneRenderer, SPEC_STRENGTH) X(SceneRenderer, SHININESS) X(SceneRenderer, RIPPLE_SHIMMER) X(SceneRenderer, HIGHLIGHT_MAX) X(SceneRenderer, REFLECT_STRENGTH) \
 	X(SceneRenderer, REFLECT_DIRECTION_DEG) X(SceneRenderer, REFLECT_DISTANCE_MM) X(SceneRenderer, REFLECT_AMP_MM) \
 	X(SceneRenderer, REFLECT_FREQ) X(SceneRenderer, REFLECT_SPEED) X(SceneRenderer, BLACK_POINT) X(SceneRenderer, BLACK_SOFTNESS) \
 	X(SceneHeightInput, MOCK_WATER_LEVEL_MM) X(SceneHeightInput, MOCK_HAND_SPEED) X(SceneHeightInput, MOCK_NOISE_MM) \
 	X(SceneHeightInput, SMOOTH_RADIUS_CELLS) X(SceneHeightInput, SMOOTH_TIME_SEC) X(SceneHeightInput, WATER_THRESHOLD_MM) \
-	X(RippleField, WAVE_C2) X(RippleField, DAMPING) X(RippleField, HEIGHT_RATE_THRESHOLD) X(RippleField, WATER_RATE_THRESHOLD) \
-	X(RippleField, IMPULSE_GAIN) X(RippleField, IMPULSE_CAP) X(RippleField, DROP_RATE) X(RippleField, DROP_AMP) \
+	X(RippleField, WAVE_C2) X(RippleField, DAMPING_PER_SEC) X(RippleField, MAX_AMPLITUDE) X(RippleField, HEIGHT_RATE_THRESHOLD) \
+	X(RippleField, WATER_RATE_THRESHOLD) X(RippleField, HEIGHT_GAIN) X(RippleField, WATER_GAIN) X(RippleField, IMPULSE_CAP) \
+	X(RippleField, DROP_RATE) X(RippleField, DROP_AMP) \
 	X(SceneStylizer, CELL_MM) X(SceneStylizer, LUMINANCE_GAMMA) X(SceneStylizer, COLOUR_BOOST) X(SceneStylizer, BOTH_THRESHOLD)
 #define SCENE_INTS(X) \
 	X(SceneRenderer, SCENE_MULT) X(RippleField, RIPPLE_MULT) X(RippleField, SUBSTEPS) X(SceneStylizer, STYLE) \
 	X(SceneStylizer, DOT_SIZE) X(SceneStylizer, LEVELS) X(SceneStylizer, PALETTE_PRESET) X(SceneStylizer, PALETTE_STOPS)
 #define SCENE_BOOLS(X) \
 	X(SceneRenderer, FREEZE) X(SceneHeightInput, MOCK_TERRAIN) X(SceneHeightInput, MOCK_FLAT) X(SceneHeightInput, MOCK_HAND) X(SceneStylizer, BAYER8) \
-	X(SceneStylizer, PALETTE_ON)
+	X(SceneStylizer, PALETTE_ON) X(RippleField, SOURCE_HEIGHT) X(RippleField, SOURCE_WATER)
 #define SCENE_COLOURS(X) \
 	X(SceneRenderer, TERRAIN_LOW) X(SceneRenderer, TERRAIN_MID) X(SceneRenderer, TERRAIN_HIGH) X(SceneRenderer, SUN_COLOR) \
 	X(SceneRenderer, GRASS_BASE) X(SceneRenderer, GRASS_TIP) X(SceneRenderer, WATER_SHALLOW) X(SceneRenderer, WATER_DEEP) \
@@ -528,6 +531,7 @@ void SceneRenderer::drawGui()
 		ImGui::SliderFloat("Specular", &R::SPEC_STRENGTH, 0.0f, 4.0f);
 		ImGui::SliderFloat("Shininess", &R::SHININESS, 2.0f, 400.0f);
 		ImGui::SliderFloat("Ripple shimmer", &R::RIPPLE_SHIMMER, 0.0f, 3.0f);
+		ImGui::SliderFloat("Highlight max", &R::HIGHLIGHT_MAX, 0.05f, 1.0f);
 		ImGui::SliderFloat("Ripple normal gain", &R::RIPPLE_NORMAL_GAIN, 0.0f, 20.0f);
 		ImGui::SliderFloat("Reflection strength", &R::REFLECT_STRENGTH, 0.0f, 1.0f);
 		ImGui::SliderFloat("Reflection direction (deg)", &R::REFLECT_DIRECTION_DEG, 0.0f, 360.0f);
@@ -535,14 +539,19 @@ void SceneRenderer::drawGui()
 		ImGui::SliderFloat("Reflection wobble (mm)", &R::REFLECT_AMP_MM, 0.0f, 10.0f);
 		ImGui::SliderFloat("Wobble frequency (/mm)", &R::REFLECT_FREQ, 0.01f, 1.0f);
 		ImGui::SliderFloat("Wobble speed (rad/s)", &R::REFLECT_SPEED, 0.0f, 6.0f);
-		ImGui::SliderFloat("Ripple damping", &W::DAMPING, 0.0f, 0.1f);
+		ImGui::SliderFloat("Ripple damping (/s)", &W::DAMPING_PER_SEC, 0.0f, 10.0f);
+		ImGui::SliderFloat("Ripple max height", &W::MAX_AMPLITUDE, 0.05f, 3.0f);
 		ImGui::SliderFloat("Ripple speed (c^2)", &W::WAVE_C2, 0.02f, 0.5f);
-		ImGui::SliderInt("Ripple substeps", &W::SUBSTEPS, 1, 8);
+		ImGui::SliderInt("Ripple substeps (at 60 fps)", &W::SUBSTEPS, 1, 8);
 		ImGui::SliderInt("Ripple resolution (x grid)", &W::RIPPLE_MULT, 1, 4);
-		ImGui::SliderFloat("Disturbance threshold, height (mm/s)", &W::HEIGHT_RATE_THRESHOLD, 0.0f, 100.0f);
-		ImGui::SliderFloat("Disturbance threshold, water (mm/s)", &W::WATER_RATE_THRESHOLD, 0.0f, 100.0f);
-		ImGui::SliderFloat("Impulse gain", &W::IMPULSE_GAIN, 0.0f, 0.2f);
-		ImGui::SliderFloat("Impulse cap", &W::IMPULSE_CAP, 0.0f, 4.0f);
+		ImGui::Checkbox("Rings from sand changes", &W::SOURCE_HEIGHT);
+		ImGui::SameLine();
+		ImGui::Checkbox("Rings from water changes", &W::SOURCE_WATER);
+		ImGui::SliderFloat("Threshold, sand (mm/s)", &W::HEIGHT_RATE_THRESHOLD, 0.0f, 100.0f);
+		ImGui::SliderFloat("Threshold, water (mm/s)", &W::WATER_RATE_THRESHOLD, 0.0f, 100.0f);
+		ImGui::SliderFloat("Gain, sand (/s per mm/s)", &W::HEIGHT_GAIN, 0.0f, 0.5f);
+		ImGui::SliderFloat("Gain, water (/s per mm/s)", &W::WATER_GAIN, 0.0f, 0.5f);
+		ImGui::SliderFloat("Impulse cap (/s)", &W::IMPULSE_CAP, 0.0f, 10.0f);
 		ImGui::SliderFloat("Drops (/s per 0.1 m^2)", &W::DROP_RATE, 0.0f, 10.0f);
 		ImGui::SliderFloat("Drop size", &W::DROP_AMP, 0.0f, 4.0f);
 	}

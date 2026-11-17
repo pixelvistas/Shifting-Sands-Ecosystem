@@ -337,15 +337,20 @@ class Pipeline:
             nd = min(8, int(self.rng.poisson(lam)))
             drops[:nd, 0] = self.rng.uniform(0, self.c * self.rm, nd)
             drops[:nd, 1] = self.rng.uniform(0, self.r * self.rm, nd)
-        for s in range(max(1, min(8, int(d["SUBSTEPS"])))):
+        fdt = min(0.1, max(0.0, dt))
+        steps = max(1, min(8, int(round(d["SUBSTEPS"] * fdt * 60.0))))
+        damp = 1.0 - math.exp(-max(0.0, d["DAMPING_PER_SEC"]) * fdt / steps)
+        for s in range(steps):
             nr = 1 - self.rcur
             self.rip[nr].begin()
             p = self.use("rippleStep", [("prevTex", self.rip[self.rcur].tex), ("heightTex", self.disp[self.cur].tex),
                                         ("waterTex", self.mock_water.tex)],
                          rippleMult=float(self.rm), waterThreshold=d["WATER_THRESHOLD_MM"], c2=min(0.5, d["WAVE_C2"]),
-                         damping=d["DAMPING"], heightRateThreshold=d["HEIGHT_RATE_THRESHOLD"],
-                         waterRateThreshold=d["WATER_RATE_THRESHOLD"], impulseGain=d["IMPULSE_GAIN"],
-                         impulseCap=d["IMPULSE_CAP"], impulseScale=1.0 if s == 0 else 0.0,
+                         damping=damp, maxAmp=max(0.01, d["MAX_AMPLITUDE"]), heightRateThreshold=d["HEIGHT_RATE_THRESHOLD"],
+                         waterRateThreshold=d["WATER_RATE_THRESHOLD"],
+                         heightGain=d["HEIGHT_GAIN"] if d["SOURCE_HEIGHT"] else 0.0,
+                         waterGain=d["WATER_GAIN"] if d["SOURCE_WATER"] else 0.0,
+                         impulseCap=d["IMPULSE_CAP"], impulseScale=fdt if s == 0 else 0.0,
                          dropCount=float(nd) if s == 0 else 0.0, dropAmp=d["DROP_AMP"], resetAll=int(self.reset))
             GL.glUniform2fv(GL.glGetUniformLocation(p, "drops"), 8, drops)
             self.quad(p, self.rip[nr])
@@ -377,7 +382,7 @@ class Pipeline:
                      waterThreshold=d["WATER_THRESHOLD_MM"], waterEdge=d["WATER_EDGE_MM"], waterDeepDepth=d["WATER_DEEP_MM"],
                      waterShallow=rgb(d["WATER_SHALLOW"]), waterDeep=rgb(d["WATER_DEEP"]),
                      rippleNormalGain=d["RIPPLE_NORMAL_GAIN"], specStrength=d["SPEC_STRENGTH"], shininess=d["SHININESS"],
-                     rippleShimmer=d["RIPPLE_SHIMMER"], reflectStrength=d["REFLECT_STRENGTH"],
+                     rippleShimmer=d["RIPPLE_SHIMMER"], highlightMax=max(0.01, d["HIGHLIGHT_MAX"]), reflectStrength=d["REFLECT_STRENGTH"],
                      reflectOffset=(math.cos(ra) * d["REFLECT_DISTANCE_MM"], math.sin(ra) * d["REFLECT_DISTANCE_MM"]),
                      reflectAmp=d["REFLECT_AMP_MM"], reflectFreq=d["REFLECT_FREQ"], reflectSpeed=d["REFLECT_SPEED"],
                      blackPoint=d["BLACK_POINT"], blackSoftness=max(0.0, d["BLACK_SOFTNESS"]))

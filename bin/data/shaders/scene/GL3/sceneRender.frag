@@ -64,6 +64,7 @@ uniform float rippleNormalGain;
 uniform float specStrength;
 uniform float shininess;
 uniform float rippleShimmer;
+uniform float highlightMax;        // water highlights compressed below this
 uniform float reflectStrength;
 uniform vec2 reflectOffset;        // mm
 uniform float reflectAmp;          // mm
@@ -240,7 +241,9 @@ void main()
 		vec3 hv = normalize(sunDir + vec3(0.0, 0.0, 1.0));
 		float spec = specStrength * pow(max(dot(n, hv), 0.0), max(1.0, shininess));
 		vec3 water = mix(waterShallow, waterDeep, clamp(depth / max(0.1, waterDeepDepth), 0.0, 1.0));
-		water += sunColor * (spec + rippleShimmer * length(slope));
+		float hl = spec + rippleShimmer * length(slope);
+		hl = highlightMax * (1.0 - exp(-hl / max(0.01, highlightMax)));
+		water += sunColor * hl;
 		vec2 off = reflectOffset + reflectAmp * vec2(sin(pmm.y * reflectFreq + animTime * reflectSpeed),
 			sin(pmm.x * reflectFreq * 1.3 + animTime * reflectSpeed * 0.8));
 		if (reflectStrength > 0.0)
