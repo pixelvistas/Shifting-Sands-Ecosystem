@@ -4642,3 +4642,122 @@ sequence before the dig: 7.5 % of output pixels change per 0.1 s (wind,
 dapple, drops). The 60 s noise test was stopped for this fix and is rerun
 next. Not compiled with openFrameworks, not hardware-tested.
 
+## 2026-11-19 - Prototype 4, step 1b: features at the stylise scale, mostly black, shape-aware ASCII (`prototype/4-scene`)
+
+Hardware/preview finding (user): ASCII and Dither read as a uniform
+grey-teal texture of thin punctuation, no grass. Causes: (1) blades
+(5 x 1 mm, about 6 x 1 px) were smaller than an ASCII cell (8 mm, 5 x 9 px)
+and close to a dither dot, so averaging merged blade and gap; (2) the scene
+was mid-dark everywhere; (3) ASCII chose by brightness only, never by the
+direction of the stroke inside a cell; (4) per-channel dither on dark
+colours gave scattered grey/teal/yellow dots. The reference clips (an ASCII
+"water reflection" grass scene and a dithered boat-on-water clip, frames of
+other artists' videos) are described here only; the stills committed in
+7c7ec98 are removed from the branch (still in its history on the remote).
+
+Decisions:
+- Grass sizes in stylise units, mm shown alongside and recomputed every
+  frame from cellSize, dot size and the measured px/mm
+  (`SceneRenderer::updateGrassMM`): ASCII/Both/Off in glyph cells (blade
+  width 0.8 cell widths, length 4 cell heights, tuft spacing 1.5 cell
+  heights: 3.5 x 31 mm, tufts 12 mm at 8 mm cells and 1.15 px/mm); Dither
+  in dots (width 2.5, length 16, spacing 6.5 dots: 4.3 x 28 mm, 11 mm at
+  2 px dots). The two sets give nearly the same mm, so switching Style
+  keeps the scene. Tuft spacing is separate from blade length; the shader
+  searches tufts within the blades' reach (at most 3 each way). Blades per
+  tuft 3. Scene resolution 2 x grid (1038 x 590): blades are now several
+  scene texels wide.
+- Tone, mostly black: ground #020806 / #0A1A0E (high ground dark warm sand
+  #5A4630), grass base #0E3A18 to tip #9BE86A x tip boost 2.0, ambient
+  0.12, dapple shade 0.08, contrast 0.85, water #041416 / #010304 with
+  reflection 0.25. Exposure stage at the end of pass 1: gain 1.0, shoulder
+  x (1 + s) / (1 + s x) with s 0.6 (1 stays 1), toe power 1.5, then the
+  black point 0.04. Exposure gain 2.0 (at 1.0 the 95th percentile was
+  0.46 and the dither never reached its light tone; at 2.0 it is about
+  0.9). Auto-exposure (off by default): gain eased in the log
+  domain so the EMA of the 95th percentile luminance approaches 0.85,
+  time constant 3 s. The final luminance is written to the scene's alpha;
+  a 160 x 90 probe of it is read back every 10 frames for the GUI
+  histogram (32 bins, ImGui::PlotHistogram) and the auto-exposure.
+- Shape-aware ASCII: per glyph cell, the structure tensor of the
+  luminance gradient summed over the cell's pixels, in projector space
+  after the warp (`sceneEdges.frag`). Chosen over Sobel on a
+  difference-of-Gaussians because it integrates over exactly the cell the
+  glyph covers, keeps thin bright strokes on black (the gradients on the
+  stroke's two sides have opposite signs and cancel in a plain sum, not in
+  the quadratic tensor), and gives orientation and a coherence-based
+  strength (sqrt(l1 - l2)) directly, for the same cost. Above the edge
+  threshold (0.05 luminance/px), the stroke angle (perpendicular to the
+  dominant gradient) is quantised to four screen directions: "-", "\",
+  "|", "/" (y down: "\" runs down-right), light or heavy by luminance
+  ("-"/"=", "\", "!"/"|", "/"; editable); otherwise the luminance ramp.
+  Debug view: edge cells cyan / amber / magenta / white by direction.
+- Dither: palette on by default, 3 stops, preset Green (#020806 near black,
+  #2F7A55, #CFE8D2); the dot's luminance is quantised to 3 levels with the
+  Bayer threshold and the quantised value mapped through the palette, so
+  every dot is one of exactly three tones (the reference's two-tone look on
+  black; previously the palette colour was quantised per channel, which
+  brought the grey dots back). Per-channel mode remains (palette off).
+  Optional horizontal line screen (threshold by pixel row, period 2 px).
+  Both: glyphs over the dither in cells brighter than 0.25.
+- Live terrain range: an "Elevation range" setting as Prototype 3's
+  (calibrated ceiling / Vegetation panel / custom), saved in the Scene
+  preset; terrain stops (0.40, 0.78) and the grass band (0.48 .. 0.66) are
+  fractions of it. Calibrated range: the repository's
+  `kinectProjectorSettings.xml` holds the untrained defaults (base plane
+  870, max offset 570: ceiling 300 mm, range +-300); this box's real
+  calibrated ceiling (DEVLOG, 2026-09) is 142.606 mm, so +-142.6 mm, which
+  the preview uses (flat sand 9 mm = 0.53).
+- Ripples: drop radius in mm (sigma 6 mm), ripple grid 1 x (1.9 mm cells).
+  Found while measuring the ring width: drops and disturbance impulses
+  were added to the new step only, i.e. as a velocity kick, which kept
+  deepening the depression every substep until the clamp (a plateau, not
+  a ring; also a reason the first version ran away). They are now added
+  to both stored steps (a displacement at rest), which spreads as a proper
+  ring. Drop size 1.0, max height 1.0, ripple normal gain 12, shimmer 0.8,
+  highlight max 0.7.
+
+Checks (`tools/scene_preview`, the real shader files on Mesa llvmpipe; this
+box's calibrated range +-142.6 mm; 1280 x 800 projector at 1.15 px/mm;
+cells 5 x 9 px):
+- Frame sequences (mock terrain, a 20 mm press beside the basin at 4 s;
+  six zoomed frames each, our own renders, beside which the reference
+  clips can be watched): `docs/prototype4_scene/step1b_sequence_ascii.png`,
+  `_dither.png`, `_both.png`. ASCII: blades read as leaning "|", "\", "/"
+  strokes; the press starts a ring drawn as curves of "/", "=", "-", "\"
+  that spreads and fades over about 1.5 s. Dither (Green): blades are
+  strokes of mid and pale dots on black; the ring is a pale band moving
+  through the dot screen. Before the press, the share of output pixels
+  that change per 0.1 s (wind, dapple drift, drops): ASCII 9.8 %, Dither
+  2.4 %, Both 7.7 %.
+- Ring scale (one drop on still water): the bright band (|slope| above
+  half its maximum) is 17 to 19 mm wide, >= 2 cell heights (15.6 mm) and
+  >= 3 dots (5.2 mm); the ripple grid (1.9 mm cells) resolves it with
+  about 9 cells across.
+- GL2 vs GL3: identical in all four styles (max channel difference 0).
+- Runaway stress (live water from the real stepFlow, every cell injecting,
+  20 s, exposure 1.0): wave height <= 0.88, 0 % of water pixels above
+  luminance 0.9 (p99 0.72).
+- Scene statistics (mock, exposure 2.0): 67 % of scene pixels above the
+  black point (the mock's grass band covers most of the box; between the
+  blades it is black), 95th percentile 0.90; cell edge strength median
+  0.078, 90th percentile 0.195 (threshold 0.05).
+- Timing on llvmpipe (4 CPU cores, 1280 x 800, scene 1038 x 590, ripples
+  519 x 295), per frame: input 8.9 ms, ripples 5.7, scene 671, warp 11.3,
+  stylise (cell means + structure tensor + glyph/dither) 11.0 (step 1,
+  without the tensor: 7.1).
+- Noise test (frozen, +-1 mm), stylise sub-pass timing and the stress test
+  at exposure 2.0: in the next entry (running at this commit).
+Not compiled with openFrameworks, not hardware-tested.
+
+Hardware checklist (step 1b; `git pull`, Release build, delete or rename
+an old `bin/data/settings/scenePreset.xml` first, it would restore step-1
+values):
+1. From about 1 m, individual blades read as strokes in ASCII and in
+   Dither; note the blade length, width and cell size that read best.
+2. Most of the sand is dark; light patches, blade tips, glints and ripple
+   rings are the bright parts.
+3. The histogram in the Scene panel uses most of the range on the real sand.
+4. Ripple rings read as curves of directional glyphs ("Debug: edge cells
+   by direction" shows which cells are directional).
+5. With "Freeze animation" on, no glyph flicker over 60 s.
