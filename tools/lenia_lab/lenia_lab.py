@@ -896,7 +896,8 @@ def cmd_gradient(args):
         a = lab.read()[..., 0]
         _, keep = components(a)
         if args.gif and tag in ("off", "growth bias 0.05", "drift 1.0 cells/unit"):
-            rec.save(os.path.join(DOCS, "gradient_%s.gif" % tag.split()[0] + ("" if tag == "off" else "_" + tag.split()[-1].replace("/", ""))))
+            fname = "gradient_" + ("off" if tag == "off" else tag.split()[0] + "_" + tag.split()[2 if tag.startswith("growth") else 1].replace(".", "p"))
+            rec.save(os.path.join(DOCS, fname + ".gif"))
         print("%-26s after %.0f s: along +x %6.1f mm, up the gradient (+y) %6.1f mm, mass %.1f, blobs %d"
               % (tag, args.seconds, disp[0] * CELL_MM, disp[1] * CELL_MM, a.sum(), len(keep)))
     # Flow-Lenia: the example rule, affinity bias and drift
