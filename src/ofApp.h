@@ -38,6 +38,7 @@ deer/human population.
 #include "Games/VegetationField.h"
 #include "Games/WaterFlowField.h"
 #include "Common/DitherFilter.h"
+#include "Games/LeniaLab.h"
 
 class ofApp : public ofBaseApp {
 
@@ -83,6 +84,16 @@ private:
 	// (src/Common/DitherFilter.h); display only. On by default here.
 	DitherFilter sandboxDither;
 	bool ditherActive() const { return sandboxDither.params.enabled && !sandboxDither.shadersFailed(); }
+
+	// Display mode (prototype/6-lenia): Sandbox (everything above, unchanged)
+	// or "Lenia lab" (src/Games/LeniaLab.h): Lenia organisms alone on black;
+	// while it is shown the sandbox simulation is paused (not updated, not
+	// drawn) and only the Kinect keeps running.
+	enum { DISPLAY_SANDBOX = 0, DISPLAY_LENIA_LAB = 1 };
+	int displayMode = DISPLAY_SANDBOX;
+	LeniaLab leniaLab;
+	bool leniaLabShown() const { return displayMode == DISPLAY_LENIA_LAB; }
+	void drawDisplayModeGui();
 
 	// Main window ROI
 	ofRectangle mainWindowROI;

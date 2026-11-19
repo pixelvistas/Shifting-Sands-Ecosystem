@@ -1,0 +1,944 @@
+{
+ "format": "Shifting Sands Lenia lab species v1",
+ "about": "Presets for the Lenia lab (src/Games/LeniaLab.*, LeniaSpecies.*). status: published = copied from the source named; sampled = drawn by published code from a seed, not a curated creature; tuned = chosen in this lab. Written by tools/lenia_lab/make_species.py; edit that script, not this file.",
+ "species": [
+  {
+   "id": "orbium",
+   "name": "Orbium unicaudatus (O2u)",
+   "status": "published",
+   "source": "Chan B. W.-C. (2019) Lenia: Biology of Artificial Life. Complex Systems 28(3), 251-286; params and cells copied from github.com/Chakazul/Lenia Python/animals.json, code 'O2u', name 'Orbium unicaudatus' (master as fetched 2026-11-19; first entry with R=13).",
+   "notes": "The standard glider. kn/gn 1 = polynomial core and growth, as LeniaND.py computes them.",
+   "model": "lenia",
+   "R": 13,
+   "T": 10,
+   "kernels": [
+    {
+     "from": 0,
+     "to": 0,
+     "shape": "shells",
+     "b": "1",
+     "kn": 1,
+     "m": 0.15,
+     "s": 0.015,
+     "h": 1,
+     "gn": 1
+    }
+   ],
+   "cells": "7.MD6.qL$6.pKqEqFURpApBRAqQ$5.VqTrSsBrOpXpWpTpWpUpCrQ$4.CQrQsTsWsApITNPpGqGvL$3.IpIpWrOsGsBqXpJ4.LsFrL$A.DpKpSpJpDqOqUqSqE5.ExD$qL.pBpTT2.qCrGrVrWqM5.sTpP$.pGpWpD3.qUsMtItQtJ6.tL$.uFqGH3.pXtOuR2vFsK5.sM$.tUqL4.GuNwAwVxBwNpC4.qXpA$2.uH5.vBxGyEyMyHtW4.qIpL$2.wV5.tIyG3yOxQqW2.FqHpJ$2.tUS4.rM2yOyJyOyHtVpPMpFqNV$2.HsR4.pUxAyOxLxDxEuVrMqBqGqKJ$3.sLpE3.pEuNxHwRwGvUuLsHrCqTpR$3.TrMS2.pFsLvDvPvEuPtNsGrGqIP$4.pRqRpNpFpTrNtGtVtStGsMrNqNpF$5.pMqKqLqRrIsCsLsIrTrFqJpHE$6.RpSqJqPqVqWqRqKpRXE$8.OpBpIpJpFTK!"
+  },
+  {
+   "id": "orbium_bicaudatus",
+   "name": "Orbium bicaudatus (O2b)",
+   "status": "published",
+   "source": "Chan B. W.-C. (2019) Lenia: Biology of Artificial Life. Complex Systems 28(3), 251-286; params and cells copied from github.com/Chakazul/Lenia Python/animals.json, code 'O2b', name 'Orbium bicaudatus' (master as fetched 2026-11-19; first entry with R=13).",
+   "notes": "Two-tailed Orbium. kn/gn 1 = polynomial core and growth, as LeniaND.py computes them.",
+   "model": "lenia",
+   "R": 13,
+   "T": 10,
+   "kernels": [
+    {
+     "from": 0,
+     "to": 0,
+     "shape": "shells",
+     "b": "1",
+     "kn": 1,
+     "m": 0.15,
+     "s": 0.014,
+     "h": 1,
+     "gn": 1
+    }
+   ],
+   "cells": "13.pK$14.qV$6.VpA.MpEpKpITqV$4.BpPpNrIrEqDpWpOpLpUqNvT$4.IqRrNsPsKqHJ3.GqOuC$4.TrLsTrPrLpS6.uUD$3.SpWqNrBqLpRqPqE6.vA$2.FpTpMLpHqPqHrVsPrS5.qUqA$K.pCpRG.ErFsRsVuSuPqN4.CrR$pA.pTU3.rWuBuRvXwTwKpF4.rCH$.tPqHH3.qFvAwUwVyJyKwNL2.DqLR$.pGsGA4.vPxSyDxE2yOuHS.XqJT$2.xIE4.sCyHyOvLvRyFxCsGpVpXqGP$2.VsU4.DxQyOvVuSwDwQuBrMqSqCF$3.vG5.tEyKwVvIvKvMtVrXqTpM$4.sU4.qFvDwMvNuUuDsUrKqDO$4.qCrDJ2.pPsKuGuHtOsQrNqKpC$5.pTqTpVpNqFrJsGsKrVrDqFpFD$6.QqCqJqPqVqXqRqHpOTC$8.LWpFpEXPG!"
+  },
+  {
+   "id": "gyrorbium",
+   "name": "Gyrorbium gyrans (OG2g)",
+   "status": "published",
+   "source": "Chan B. W.-C. (2019) Lenia: Biology of Artificial Life. Complex Systems 28(3), 251-286; params and cells copied from github.com/Chakazul/Lenia Python/animals.json, code 'OG2g', name 'Gyrorbium gyrans' (master as fetched 2026-11-19; first entry with R=13).",
+   "notes": "Glides on a curved path. kn/gn 1 = polynomial core and growth, as LeniaND.py computes them.",
+   "model": "lenia",
+   "R": 13,
+   "T": 10,
+   "kernels": [
+    {
+     "from": 0,
+     "to": 0,
+     "shape": "shells",
+     "b": "1",
+     "kn": 1,
+     "m": 0.156,
+     "s": 0.0224,
+     "h": 1,
+     "gn": 1
+    }
+   ],
+   "cells": "10.EL2QLE$7.TpU2qHqCpXpUpNpFL$4.JrVtTuKuPuKtLrXqTqHqCpPpDG$3.qWtDqRpKqEsMuXvBtGrApXpUpSpIO$2.rQrN4.pAuAvRtTrIpUpIpKpFO$.pSsM6.tJwFuNsPsFrVpPpDL$.uFB6.tJ2yO2yLyOyDsKL$pDuC6.pFxW3yOwIwD2xPqH$rNtV5.EsMxCyIyOwXtJsMtJwFuX$sHuSV3.EpDvOwFxEwQsRqR2qHsFvWE$rQvJsWpPQpKpSqCvEvBuCpD3.BpDtGrQ$pXuKvMuPtLsWsCrIuCtBrS6.qWrQ$EsKvEwXyBwLtVrVsCrDqH6.pXrG$.qHtVxJyOwQrQpNqJpPV6.qJqE$.JsUxMyOrX10.pFqRJ$2.rQxPwIpI9.pKqJT$2.qJxEuPpKB7.qCpP$2.EvOvMpPO5.TrGqH$3.sCyOqEpIOEBOqHqEsRtG$4.xMsMqJqCpXqJqRpIqOuCtBsF$5.xPrAqTqMpSE.rSsMrLqRqHV.TpS$6.vErDE2.VpPB$7.pIrNqHpKQ!"
+  },
+  {
+   "id": "scutium",
+   "name": "Scutium solidus (S1s)",
+   "status": "published",
+   "source": "Chan B. W.-C. (2019) Lenia: Biology of Artificial Life. Complex Systems 28(3), 251-286; params and cells copied from github.com/Chakazul/Lenia Python/animals.json, code 'S1s', name 'Scutium solidus' (master as fetched 2026-11-19; first entry with R=13).",
+   "notes": "Shield shape, slower. kn/gn 1 = polynomial core and growth, as LeniaND.py computes them.",
+   "model": "lenia",
+   "R": 13,
+   "T": 10,
+   "kernels": [
+    {
+     "from": 0,
+     "to": 0,
+     "shape": "shells",
+     "b": "1",
+     "kn": 1,
+     "m": 0.29,
+     "s": 0.045,
+     "h": 1,
+     "gn": 1
+    }
+   ],
+   "cells": "5.pGQ$6.sUsDqRR$4.VpXrJwKvNtXrW$2.ApVrGrWsIwKyOyDwTuNO$2.qArOrIqIpPpTxH2yOyIvKqG$rVpIrNrJpH4.xP3yOvFqWA$sKvNsKqE5.pI4yOuHqPC$sNxBuMpD5.JuN3yOwXsUpN$sGxFyOT5.pCtIyF3yOuKqUH$rPwXyOxT5.qKtSxS3yOvIrQT$pQwK2yOtWXJXqHsGuWxW3yOvPsApC$.vQ3yOuVsLsGsXuMwOyK3yOvHrVpC$.rKyK3yOxEwBwCwXyE3yOxQuMrJU$.WvC5yOyM5yOwFtJqOL$2.rVwO9yOwWuMsApOC$2.pLtBwK6yOyJwQuTsQqLP$3.qHsWvEwUxTyCxRwWvRuGsNqSpA$3.HqBrUtHuGuPuLtVsXrSqIXB$4.DpDqEqW2rIqWqGpJN$6.ENTUPHA!"
+  },
+  {
+   "id": "scutium_serratus",
+   "name": "Scutium serratus fluens (2S1f)",
+   "status": "published",
+   "source": "Chan B. W.-C. (2019) Lenia: Biology of Artificial Life. Complex Systems 28(3), 251-286; params and cells copied from github.com/Chakazul/Lenia Python/animals.json, code '2S1f', name 'Scutium serratus fluens' (master as fetched 2026-11-19; first entry with R=15).",
+   "notes": "Two shells (b 1/2, 1). kn/gn 1 = polynomial core and growth, as LeniaND.py computes them.",
+   "model": "lenia",
+   "R": 15,
+   "T": 10,
+   "kernels": [
+    {
+     "from": 0,
+     "to": 0,
+     "shape": "shells",
+     "b": "1/2,1",
+     "kn": 1,
+     "m": 0.31,
+     "s": 0.0575,
+     "h": 1,
+     "gn": 1
+    }
+   ],
+   "cells": "15.2BA$13.DQpCpFpCSJC$13.UpWqRrCqXqLpTpCLC$12.JpUrHsMtDtEsPrSqRpSWJC$11.DpQrItCuNvKvNvAtXsRrLqJpMVKC$9.DpFqOsEuBvWxLyHyGxNwHuVtJsCrAqFpMUF$7.pAqRsFtOuXwNyJ6yOxEvLtWsRrSqVpXpBG$6.qTtWwO12yOxPvUuKtHsIrHqCXD$5.rEwLyH14yOxRwCuTtPsMrEpTN$4.pXvIxQ16yOxMwBuStMsCqOpCD$4.tLwGyE9yOyLyM6yOxCvQuGsRrDpNI$3.rJuDwPyI5yOyJyBxQxExDxSyK5yOxXwKuTtErLpUM$2.pPrVuHwTyL3yOwKvCuRuMuCuAuWwMxVyN5yOxDvGtJrOpWO$.HqCsCuNxF2yOyAsApWpTqBqCqFrAsRvAxByH5yOxWvQtOrPpWN$.RqLsQvLyByOwKD6.OqUtLvVxQyL5yOwEtSrQpVM$.pGrLuEwXyOuRS8.pBrUuMwRyC5yOwRuCrTpVL$.qJtDvVyAsXqKE9.qItEvRxOyM4yOxFuKsApWL$WrUuOuHsOrVpRD9.pNsMvJxMyM4yOxMuQsEqAL$qAsFpQrGsDrQpUG9.qBtIwJyE5yOxLuRsFqAL$2.pFqUrXrWqLR8.IrUvOyA6yOwXuKsBpVJ$2.NqIrUsLrOpQF7.qCuFxO6yOyKvXtTrPpPG$3.pQrMsTsPqWXA6.sIwR7yOwHuKsSqWpDB$3.UqTsJsUrVqCP5.rCwF6yOyKvOtTsPrKpXO$4.pPrHsHsFrHqCpBKEDtFyI6yOyEuPsMrKqSqApAC$4.JpXrGrXsCrUrNrMvF9yOuDrHpVpIpCSE$5.QqDrFsAsRwI10yOuKqRP$6.VqCtHwTwSwRwUxIxXyJ3yOyNuTqQA$7.tPtVtR2tMtXuWvXwVxKxQxOuDqL$6.qCqNqPqOqPrArRsPtOuIuTuErPpG$9.HSpFpSqGqDS!"
+  },
+  {
+   "id": "kronium",
+   "name": "Kronium solidus (K4s)",
+   "status": "published",
+   "source": "Chan B. W.-C. (2019) Lenia: Biology of Artificial Life. Complex Systems 28(3), 251-286; params and cells copied from github.com/Chakazul/Lenia Python/animals.json, code 'K4s', name 'Kronium solidus' (master as fetched 2026-11-19; first entry with R=18).",
+   "notes": "Two shells (b 1, 1/3). kn/gn 1 = polynomial core and growth, as LeniaND.py computes them.",
+   "model": "lenia",
+   "R": 18,
+   "T": 10,
+   "kernels": [
+    {
+     "from": 0,
+     "to": 0,
+     "shape": "shells",
+     "b": "1,1/3",
+     "kn": 1,
+     "m": 0.24,
+     "s": 0.029,
+     "h": 1,
+     "gn": 1
+    }
+   ],
+   "cells": "9.GL2OGB$6.BpPrIsM2tDsPrVqTpPO$5.pKsRvRyD4yOxHvRtVrVpUE$4.qEuS10yOwFtLqRJ$3.OuF6yOyL5yOxHuCqTE$3.sFyG3yOxEuCtDtTvJxHyL3yOxHtQpX$2.pPwX3yOsC3.BqHtBvWyG3yOwIsFO$2.uP3yO7.pIsMvRyG2yOyLuFpS$.qMyI2yO9.pPtBwN3yOvWrA$.vGyOwN4.qJsHrQqEB2.qTuNyB2yOxCrSB$pPxMyOpN3.yLwSqMpUrIrA2.TsUxC2yOxRsFG$sHyGvEJ2.xWxC3.GrXL2.rQwL2yOxRsCE$sUxEtVJ.tVuXpN4.sPO2.qWwN2yOxErN$rIvRuFpFrIqRsHpU3.pDtT3.rAxP2yOvWqM$pItTuUwFqMrAsFrQpD2.yBqE3.tG3yOuApF$.tVyGwFvMtBrVrXsHtQyOsK3.ByG2yOxUrQB$.sWtVyLyOvBqTpFvJwDpD4.yB3yOuCpF$2.tBxCyOvJpDqWqM5.4yOwAqE$2.qTuUwVuAsRTB.BLsW4yOwLqM$3.rGsHvWuAsUsCsPuI4yOxHuNpX$4.2sCuIvMwSyLyOyLxWvWtJqOB$6.qJsKuKuStTsHpP$7.B!"
+  },
+  {
+   "id": "paraptera",
+   "name": "Paraptera arcus labens (P4al)",
+   "status": "published",
+   "source": "Chan B. W.-C. (2019) Lenia: Biology of Artificial Life. Complex Systems 28(3), 251-286; params and cells copied from github.com/Chakazul/Lenia Python/animals.json, code 'P4al', name 'Paraptera arcus labens' (master as fetched 2026-11-19; first entry with R=13).",
+   "notes": "Larger, winged. kn/gn 1 = polynomial core and growth, as LeniaND.py computes them.",
+   "model": "lenia",
+   "R": 13,
+   "T": 10,
+   "kernels": [
+    {
+     "from": 0,
+     "to": 0,
+     "shape": "shells",
+     "b": "1",
+     "kn": 1,
+     "m": 0.347,
+     "s": 0.057,
+     "h": 1,
+     "gn": 1
+    }
+   ],
+   "cells": "10.C2DC$7.KpBpOpXqDqCpUpMpAMD$5.JpOqVrWsQtAtBsVsMrXrGqMpPTE$4.TqTsUuLvLvXwAvSvIuUuFtOsSrTqRpOPA$3.SrPuKwSyH2yOyJxRxEwPwDvNuTtUsSrMqGpCH$3.rOvFyJ6yOyMyGxXxLwRvTuQtLsEqWpRQA$2.qMuU13yOxRwNvHuCsUrOqGpCG$.JtGxX6yO2yDyL5yOyGxAvTuPtKsDqVpON$.qOvQxQyM4yOwRwBwMxLyI5yOyHxBvXuWtWsSrKqBVD$.sMvLwXyI3yOvNtJtLuLvUxGyH4yOyLxHwLvVvHuKtFrWqMpFG$VsOuHwIyF2yOwKrFqJrGsOuCvRxAxTyCyBxWwUwCvXwDwEvSuXtSsHqUpMJ$pLrCtHvUyB2yOrL.BpIqUsLtVvCvRvTvNuNtTtUuOvSwRxBwOvLuCsPrDpRN$.pXsOvKxTyOvJK3.pEqQrWsRsVsPrSqVqTrOtCvFxGyJyExEvVuJsWrKpVP$.pDsAuVxIyDrSpF4.SpQpWpQW2.JpTsAuWxX3yOxNwCuPtDrOqAQ$.MrKuDwNsUrUqMpAD10.NrLvGxV4yOxNwBuRtFrQqBR$2.qRtEqUqMrJrNqWqDpKpBMC7.rQvHxR4yOyIxAvTuPtFrRqAQ$2.pSK.RpWqUrJrNrOrHqSpRN6.sFvPxRyKyN2yOxWwXwHvOuPtGrQqAQ$7.UpPqGqRrCrHrEqKpFH3.pXtXwRxSxUxOxHwUwAvUwBwDvRuRtGrPpXP$10.FUpOqMrCrAqKpVpNqTuTxPyJxPwGvDuLtMtJuDvIwKwRwBuTtFrOpVM$13.QpUqSrFrMsEwO3yOwQtKrUqOqIrBsLuOwRxSxKwHuUtDrLpRH$15.SpOqEuTxUyI2yOuPpW3.pDrHuDxF2yOxUwHuRtArDpHB$17.rCuWvRwXyHyGrT5.qOuFxT3yOxUwDuJsOqPS$17.rTsMtSvLxMvBpW5.qNuRxN4yOxKvQtVrWpSD$16.FpIqLsDuGtVrOqMG4.rAuKxF4yOyMwQuXtBqTQ$18.TqUrFpHqXrDpD4.qWuAwNyD4yOxLvUuBrTpI$19.K2.qArFqJN3.qNtHvJwXyC3yOyDwQuXsQpXD$22.TqLrBqDM2.pWsDtUvHwPxTyM2yOxLvTtKqNH$23.pCqQrDqBI.VqPsCtMuVwKxV2yOyHwPuArAM$24.pJrDrFpH2.VqHrQtFvExI3yOxJuMrEO$24.DqGrPqIF2.KpXrWuLxJ3yOxXuPrDM$25.pIrJrDV3.NrEvAyL3yOyGuLqSH$25.JqQrNqCJ2.FsQxX4yOxVtTqCB$26.pQrHrFpWUJrWyI5yOwTsOpE$26.KqIrMrNrDtN7yOuXqWF$27.pAqPrTuF7yOwQsMpA$28.pCrNxMxSxTxRxPxSyCxGtIpQ$29.uHvD3vJvOwFwOtFpQ$28.qDsBsIsKsLsStMuPrXV$28.WpHpKpLpRqKrQqA$33.L!"
+  },
+  {
+   "id": "hydrogeminium",
+   "name": "Hydrogeminium natans (3GH2n)",
+   "status": "published",
+   "source": "Chan B. W.-C. (2019) Lenia: Biology of Artificial Life. Complex Systems 28(3), 251-286; params and cells copied from github.com/Chakazul/Lenia Python/animals.json, code '3GH2n', name 'Hydrogeminium natans' (master as fetched 2026-11-19; first entry with R=18).",
+   "notes": "Three shells; large. kn/gn 1 = polynomial core and growth, as LeniaND.py computes them.",
+   "model": "lenia",
+   "R": 18,
+   "T": 10,
+   "kernels": [
+    {
+     "from": 0,
+     "to": 0,
+     "shape": "shells",
+     "b": "1/2,1,2/3",
+     "kn": 1,
+     "m": 0.26,
+     "s": 0.036,
+     "h": 1,
+     "gn": 1
+    }
+   ],
+   "cells": "37.BEG3JGE$35.JpApPqCqJqOqMqEpUpKpAQG$33.BVqCrLsPtLtVuCtTtJsPrVrDqJpPTB$33.pIrAsRuIvWwXxMxPxHwQvTuStTsUrSqOpFG$32.pKrXuIwFxU6yOyLxJwFvBtVsPrDpNJ$31.TsCvT11yOyIwXvTuNsWrDpKG$31.rIwA14yOxHvWuKsRqTpDB$30.rQwS16yOxHvRuArXpXL$29.tG7yOyL4yOyL6yOwXvBsWqTpDB$28.tT7yOxUwSwIwVxHxJxMxUyI4yOyIwIuArNpNG$27.sW7yOxMvOtQsPtBuIvJwAwQxPyL4yOxPvBsHpXL$26.qTyL4yOxMvMuUtTrXqCpKqErStLuSvRwVyB5yOwFtDqMQ$25.pKuPyD3yOwVpS7.pIrQtJuSwDxPyL4yOxHuCrAV$24.QrXvOyB3yOqH9.pDrLtGvBxCyL4yOyBuSrLpA$23.rItDvMxU3yOtV11.pArGtLwIyI4yOyIvBrQpD$22.BuIwSyI2yOvE14.pNrXvMyG4yOyGvBrQpD$23.tJyD2yOpU15.VrNvEyB4yOxPuKrIpA$22.pItVyL2yO16.pSsRwAyD4yOwQtLqRQ$21.rLvJxW2yOsP16.rLvExPyL4yOvMsKpXG$20.tOxJ3yOwLsMJ15.sWxC5yOyBuCrIpF$20.wDyLyOyGuCsHrLpU15.tQyB5yOwLsPqEO$19.sCwS2yOtTpDLpNqHO14.uCyL5yOuFrApDB$16.JtTwNxCyG2yOtG2.BVG13.qRwF5yOuXrQpIG$16.rL6yOxUpD15.qJvRyB5yOuNrQpF$16.tJ7yOvO15.7yOtVqOV$14.pFrX3yOuXTtT3yOG13.rQ6yOvBpF$12.uI6yOtD2.xEyOxH14.6yOvJQ$9.JqEtB8yO2.JsKqR9.pFqErNuC3yOyLyGyLsU$9.tG4yOyD.rG3yOtO8.qCqE3.qT6yOxEtLB$8.wV5yO3.wS2yOtL7.qRwQuFE2.sU5yOxMtT$7.sCyL4yOwFJ3.xUxR8.vG2yOrS2.2yOuUuXyGxEtQ$4.tTvWuFvT2yO2.vWvMpU10.rA2.sR7yOsWsCvMqO$4.vGwNwLxRyOpI2.pIxWuC9.2yOrN.J7yOqM$4.uPwXxMyIyOV2.EyOuS8.uF2yOwV2.6yOuS$4.uSuUvB2yOqEB.JE9.vG3yOrArV2yOuIuPyOwV$4.sP2vRwXyOyGqJL8.O3.yG6yOrLqMvB$3.pFtT2xM3yOsMJ7.rGtQ3.xH6yO$3.rAvM4yOwIqW8.sFwDtQ2.xE5yOrG$.pPqTsHvOyL2yOwQsKV8.pAtT2uCwDyL4yOuP$rGtBsRsUuPxHyOwSuFqWO9.rIvJyB4yOvJuCpFJ$qJtQtOtBuAuFuUuPtTrQpIGEVvTyOV3.rIxC4yOuAsPrGpPB$.rGsRrGpUqWsCsWtQtGrQqCpPqWvWyOsKB2.uI4yOtJrAV$5.pKrDsFtQvMvTuUtDrQqTsW2uIvOyI4yOuUrL$5.OrLtOvGxWyLyOwVsHpPpNyD7yOvRpI$6.sKxC2yIyLyOxWuPrIuN7yOuUqJ$5.QuNyB2yOyLyIyL7yOyIpK$5.GsUxJ2yOyGwSvWwNxW4yOyLG$6.pKuAxHxUwNuCsRtBuSxCyG2yLsK$8.qJsRsWsCrApXqCsUqWG$10.TqHqMpN$11.QqHpK!"
+  },
+  {
+   "id": "flow_example_1111",
+   "name": "Flow-Lenia example rule (seed 1111, 3 channels)",
+   "status": "sampled",
+   "source": "Plantec E., Hamon G., Etcheverry M., Oudeyer P.-Y., Moulin-Frier C., Chan B. W.-C. (2023) Flow-Lenia: Towards open-ended evolution in cellular automata through mass conservation and parameter localization. ALIFE 2023 (arXiv 2212.07906); code github.com/erwanplantec/FlowLenia; rule drawn by the published examples/example_fl.py (FlowLenia(cfg, key=jr.key(1111)), C=3, M=[[3,1,0],[0,3,1],[1,0,3]], X=Y=128), draws reproduced with jax.random (threefry) by tools/lenia_lab/flowlenia_seeds.py.",
+   "notes": "A random rule from the published example, not a curated creature. theta = C = 3 as in flowlenia.py; dt 0.2, dd 5, sigma 0.65 (code defaults). Seeded as the example: a 40 x 40 uniform-noise square.",
+   "model": "flow",
+   "R": 2.2797884941101074,
+   "dt": 0.2,
+   "dd": 5,
+   "sigma": 0.65,
+   "theta": 3.0,
+   "channels": 3,
+   "kernels": [
+    {
+     "from": 0,
+     "to": 0,
+     "shape": "rings",
+     "r": 0.26748210191726685,
+     "a": [
+      0.2382063865661621,
+      0.5313577651977539,
+      0.45973050594329834
+     ],
+     "b": [
+      0.5174757242202759,
+      0.9626213312149048,
+      0.7249181270599365
+     ],
+     "w": [
+      0.09579122066497803,
+      0.25596117973327637,
+      0.14557155966758728
+     ],
+     "m": 0.09781037271022797,
+     "s": 0.05306713283061981,
+     "h": 0.52273029088974,
+     "gn": 2
+    },
+    {
+     "from": 0,
+     "to": 0,
+     "shape": "rings",
+     "r": 0.4280078113079071,
+     "a": [
+      0.7961772680282593,
+      0.1975696086883545,
+      0.5882411003112793
+     ],
+     "b": [
+      0.2503005564212799,
+      0.45122504234313965,
+      0.13943377137184143
+     ],
+     "w": [
+      0.46200621128082275,
+      0.4030613303184509,
+      0.21817199885845184
+     ],
+     "m": 0.051445122808218,
+     "s": 0.027998747304081917,
+     "h": 0.9644867181777954,
+     "gn": 2
+    },
+    {
+     "from": 0,
+     "to": 0,
+     "shape": "rings",
+     "r": 0.6610161066055298,
+     "a": [
+      0.998559832572937,
+      0.04131793975830078,
+      0.39673519134521484
+     ],
+     "b": [
+      0.5912020802497864,
+      0.9783374071121216,
+      0.8483022451400757
+     ],
+     "w": [
+      0.21892838180065155,
+      0.160381481051445,
+      0.2730134427547455
+     ],
+     "m": 0.22206638753414154,
+     "s": 0.11221327632665634,
+     "h": 0.3543085753917694,
+     "gn": 2
+    },
+    {
+     "from": 0,
+     "to": 1,
+     "shape": "rings",
+     "r": 0.6012154817581177,
+     "a": [
+      0.8363927602767944,
+      0.05646097660064697,
+      0.13411343097686768
+     ],
+     "b": [
+      0.8424065709114075,
+      0.43134069442749023,
+      0.33124858140945435
+     ],
+     "w": [
+      0.4051794409751892,
+      0.4719935357570648,
+      0.35114917159080505
+     ],
+     "m": 0.2765825092792511,
+     "s": 0.14637519419193268,
+     "h": 0.9438248872756958,
+     "gn": 2
+    },
+    {
+     "from": 1,
+     "to": 1,
+     "shape": "rings",
+     "r": 0.8337814211845398,
+     "a": [
+      0.6267319917678833,
+      0.627242922782898,
+      0.3249548673629761
+     ],
+     "b": [
+      0.10153953731060028,
+      0.5746036767959595,
+      0.48171401023864746
+     ],
+     "w": [
+      0.3771737813949585,
+      0.19134849309921265,
+      0.4274848699569702
+     ],
+     "m": 0.37326937913894653,
+     "s": 0.08065944910049438,
+     "h": 0.5838919281959534,
+     "gn": 2
+    },
+    {
+     "from": 1,
+     "to": 1,
+     "shape": "rings",
+     "r": 0.5354243516921997,
+     "a": [
+      0.06018364429473877,
+      0.25392961502075195,
+      0.9580917358398438
+     ],
+     "b": [
+      0.0685165748000145,
+      0.07305188477039337,
+      0.024215420708060265
+     ],
+     "w": [
+      0.15415722131729126,
+      0.3065413236618042,
+      0.010459297336637974
+     ],
+     "m": 0.4300673305988312,
+     "s": 0.1759287565946579,
+     "h": 0.10566261410713196,
+     "gn": 2
+    },
+    {
+     "from": 1,
+     "to": 1,
+     "shape": "rings",
+     "r": 0.29990464448928833,
+     "a": [
+      0.5918630361557007,
+      0.8245333433151245,
+      0.7365444898605347
+     ],
+     "b": [
+      0.22527699172496796,
+      0.1342320293188095,
+      0.8651469349861145
+     ],
+     "w": [
+      0.030409520491957664,
+      0.13410219550132751,
+      0.020517122000455856
+     ],
+     "m": 0.1347002387046814,
+     "s": 0.07809767872095108,
+     "h": 0.3806600272655487,
+     "gn": 2
+    },
+    {
+     "from": 1,
+     "to": 2,
+     "shape": "rings",
+     "r": 0.8069158792495728,
+     "a": [
+      0.248724102973938,
+      0.1881464719772339,
+      0.7236747741699219
+     ],
+     "b": [
+      0.104731984436512,
+      0.07105247676372528,
+      0.9052647948265076
+     ],
+     "w": [
+      0.20533111691474915,
+      0.37592369318008423,
+      0.36497876048088074
+     ],
+     "m": 0.05670241266489029,
+     "s": 0.09058734029531479,
+     "h": 0.6108525991439819,
+     "gn": 2
+    },
+    {
+     "from": 2,
+     "to": 0,
+     "shape": "rings",
+     "r": 0.4464126527309418,
+     "a": [
+      0.40742504596710205,
+      0.4392176866531372,
+      0.537595272064209
+     ],
+     "b": [
+      0.6050922870635986,
+      0.489376038312912,
+      0.2515486180782318
+     ],
+     "w": [
+      0.4909153878688812,
+      0.38294610381126404,
+      0.4333944022655487
+     ],
+     "m": 0.26213231682777405,
+     "s": 0.17863446474075317,
+     "h": 0.7703487873077393,
+     "gn": 2
+    },
+    {
+     "from": 2,
+     "to": 2,
+     "shape": "rings",
+     "r": 0.42724838852882385,
+     "a": [
+      0.4909989833831787,
+      0.7983255386352539,
+      0.4979604482650757
+     ],
+     "b": [
+      0.9069782495498657,
+      0.6285161375999451,
+      0.44557827711105347
+     ],
+     "w": [
+      0.34400665760040283,
+      0.062226954847574234,
+      0.08267578482627869
+     ],
+     "m": 0.31189414858818054,
+     "s": 0.15379202365875244,
+     "h": 0.8138513565063477,
+     "gn": 2
+    },
+    {
+     "from": 2,
+     "to": 2,
+     "shape": "rings",
+     "r": 0.8084980845451355,
+     "a": [
+      0.6025222539901733,
+      0.27362632751464844,
+      0.30831658840179443
+     ],
+     "b": [
+      0.5544635057449341,
+      0.060143113136291504,
+      0.2928811013698578
+     ],
+     "w": [
+      0.4141260087490082,
+      0.01025561336427927,
+      0.016384199261665344
+     ],
+     "m": 0.41760122776031494,
+     "s": 0.03596431016921997,
+     "h": 0.03871629759669304,
+     "gn": 2
+    },
+    {
+     "from": 2,
+     "to": 2,
+     "shape": "rings",
+     "r": 0.6927492022514343,
+     "a": [
+      0.5106375217437744,
+      0.08449757099151611,
+      0.6636862754821777
+     ],
+     "b": [
+      0.6614372730255127,
+      0.03434319794178009,
+      0.8985514640808105
+     ],
+     "w": [
+      0.14295725524425507,
+      0.40091952681541443,
+      0.45318299531936646
+     ],
+     "m": 0.05416397005319595,
+     "s": 0.0039451345801353455,
+     "h": 0.9076119065284729,
+     "gn": 2
+    }
+   ],
+   "noisePatch": 40
+  },
+  {
+   "id": "flow_search_1006",
+   "name": "Flow-Lenia rule 1006 (found by search)",
+   "status": "tuned",
+   "source": "Found in this lab (prototype/6-lenia) by random search over the rule space of the published Flow-Lenia code (FlowLenia.__init__ ranges; Plantec E., Hamon G., Etcheverry M., Oudeyer P.-Y., Moulin-Frier C., Chan B. W.-C. (2023) Flow-Lenia: Towards open-ended evolution in cellular automata through mass conservation and parameter localization. ALIFE 2023 (arXiv 2212.07906); code github.com/erwanplantec/FlowLenia): tools/lenia_lab/flowlenia_search.py, numpy seed 1006, C=1, 6 kernels. Not published.",
+   "notes": "Net drift in the search 0.071 cells per time unit (96 x 96 torus, 600 steps): close to stationary. Seeded with a uniform-noise square.",
+   "model": "flow",
+   "R": 9.749192972174964,
+   "dt": 0.2,
+   "dd": 5,
+   "sigma": 0.65,
+   "theta": 1.0,
+   "channels": 1,
+   "kernels": [
+    {
+     "from": 0,
+     "to": 0,
+     "shape": "rings",
+     "r": 0.6806855550397239,
+     "a": [
+      0.25799946457099765,
+      0.08459928399832273,
+      0.17128128711814206
+     ],
+     "b": [
+      0.539972547630371,
+      0.3988011903627801,
+      0.28302378997997224
+     ],
+     "w": [
+      0.17634069696705312,
+      0.4591731186974411,
+      0.14428683081018873
+     ],
+     "m": 0.21039605697687946,
+     "s": 0.08423675639363519,
+     "h": 0.9713399965337192,
+     "gn": 2
+    },
+    {
+     "from": 0,
+     "to": 0,
+     "shape": "rings",
+     "r": 0.4382650395273404,
+     "a": [
+      0.08661581105951921,
+      0.9406980190070102,
+      0.1923533148652935
+     ],
+     "b": [
+      0.31854586644807065,
+      0.3916405981387791,
+      0.7898244214425293
+     ],
+     "w": [
+      0.08716052662865605,
+      0.35811168747188515,
+      0.28253332374256745
+     ],
+     "m": 0.3536842746746673,
+     "s": 0.14329405626068054,
+     "h": 0.14871013986683862,
+     "gn": 2
+    },
+    {
+     "from": 0,
+     "to": 0,
+     "shape": "rings",
+     "r": 0.3900579557564585,
+     "a": [
+      0.7481828143135966,
+      0.6443430547672812,
+      0.5062654528409837
+     ],
+     "b": [
+      0.6774780727461269,
+      0.6353442594199367,
+      0.2897429167194798
+     ],
+     "w": [
+      0.10628969403563508,
+      0.1109236667407353,
+      0.4210285285349559
+     ],
+     "m": 0.2700255331449602,
+     "s": 0.0045736649633949565,
+     "h": 0.7924039935614507,
+     "gn": 2
+    },
+    {
+     "from": 0,
+     "to": 0,
+     "shape": "rings",
+     "r": 0.8398158849325916,
+     "a": [
+      0.18143117306275436,
+      0.4785310294956927,
+      0.3091526144010579
+     ],
+     "b": [
+      0.5132726375247767,
+      0.23232196045249018,
+      0.9026874753421883
+     ],
+     "w": [
+      0.08767089860175643,
+      0.19914455991891314,
+      0.09978759039096465
+     ],
+     "m": 0.4383101439472424,
+     "s": 0.07239442130936573,
+     "h": 0.8720351234674717,
+     "gn": 2
+    },
+    {
+     "from": 0,
+     "to": 0,
+     "shape": "rings",
+     "r": 0.46803612415625234,
+     "a": [
+      0.25240108599294453,
+      0.2081057523064338,
+      0.13113479343823864
+     ],
+     "b": [
+      0.6150564785575411,
+      0.8545247862151457,
+      0.690038979774048
+     ],
+     "w": [
+      0.3555592177828465,
+      0.2301332173011439,
+      0.24985085396478798
+     ],
+     "m": 0.397339477585702,
+     "s": 0.1598272921896595,
+     "h": 0.5012732433527479,
+     "gn": 2
+    },
+    {
+     "from": 0,
+     "to": 0,
+     "shape": "rings",
+     "r": 0.5246187114102556,
+     "a": [
+      0.38114704872509597,
+      0.0218088521107902,
+      0.763172464437861
+     ],
+     "b": [
+      0.04602744215953538,
+      0.17583371645183382,
+      0.9932040750204606
+     ],
+     "w": [
+      0.11598367864889104,
+      0.4102064662170052,
+      0.015829517465963547
+     ],
+     "m": 0.08735870897889264,
+     "s": 0.09961456749786633,
+     "h": 0.5054906172249283,
+     "gn": 2
+    }
+   ],
+   "noisePatch": 20
+  },
+  {
+   "id": "flow_search_1003",
+   "name": "Flow-Lenia rule 1003 (found by search)",
+   "status": "tuned",
+   "source": "Found in this lab (prototype/6-lenia) by random search over the rule space of the published Flow-Lenia code (FlowLenia.__init__ ranges; Plantec E., Hamon G., Etcheverry M., Oudeyer P.-Y., Moulin-Frier C., Chan B. W.-C. (2023) Flow-Lenia: Towards open-ended evolution in cellular automata through mass conservation and parameter localization. ALIFE 2023 (arXiv 2212.07906); code github.com/erwanplantec/FlowLenia): tools/lenia_lab/flowlenia_search.py, numpy seed 1003, C=1, 6 kernels. Not published.",
+   "notes": "Net drift in the search 0.048 cells per time unit (96 x 96 torus, 600 steps): close to stationary. Seeded with a uniform-noise square.",
+   "model": "flow",
+   "R": 6.3184194701785685,
+   "dt": 0.2,
+   "dd": 5,
+   "sigma": 0.65,
+   "theta": 1.0,
+   "channels": 1,
+   "kernels": [
+    {
+     "from": 0,
+     "to": 0,
+     "shape": "rings",
+     "r": 0.4053646481750577,
+     "a": [
+      0.7164335060813415,
+      0.5066277282471301,
+      0.13504082128158024
+     ],
+     "b": [
+      0.5921372613924786,
+      0.18935308581501684,
+      0.9808289121399819
+     ],
+     "w": [
+      0.33409918368456465,
+      0.2581493020520748,
+      0.2768373181399895
+     ],
+     "m": 0.3188932648241703,
+     "s": 0.1554574480394451,
+     "h": 0.11828375592815872,
+     "gn": 2
+    },
+    {
+     "from": 0,
+     "to": 0,
+     "shape": "rings",
+     "r": 0.5957434617510811,
+     "a": [
+      0.8997083341117353,
+      0.15905588473374177,
+      0.3543872583458809
+     ],
+     "b": [
+      0.4528194273935948,
+      0.048663352076924946,
+      0.7544045753334118
+     ],
+     "w": [
+      0.08822607169630729,
+      0.17671868934360807,
+      0.29622990870763005
+     ],
+     "m": 0.4867597006304326,
+     "s": 0.07072510361354245,
+     "h": 0.9704123740883579,
+     "gn": 2
+    },
+    {
+     "from": 0,
+     "to": 0,
+     "shape": "rings",
+     "r": 0.7286332459873484,
+     "a": [
+      0.5188196459316057,
+      0.37462238905562883,
+      0.565661483750557
+     ],
+     "b": [
+      0.948913080910039,
+      0.9358992507303279,
+      0.2561609518768178
+     ],
+     "w": [
+      0.41429197622671193,
+      0.08164174981918128,
+      0.20386549240692065
+     ],
+     "m": 0.36801686321001903,
+     "s": 0.021542143487853382,
+     "h": 0.7142561682313752,
+     "gn": 2
+    },
+    {
+     "from": 0,
+     "to": 0,
+     "shape": "rings",
+     "r": 0.8016902893408615,
+     "a": [
+      0.9311965792647683,
+      0.1459729046066609,
+      0.5928230034323192
+     ],
+     "b": [
+      0.22144608907556487,
+      0.6600319376782657,
+      0.963722823781047
+     ],
+     "w": [
+      0.17123507002818025,
+      0.1777886904245369,
+      0.02773184257837604
+     ],
+     "m": 0.1476656309595526,
+     "s": 0.09686943765693092,
+     "h": 0.09413850648227984,
+     "gn": 2
+    },
+    {
+     "from": 0,
+     "to": 0,
+     "shape": "rings",
+     "r": 0.7784782945117414,
+     "a": [
+      0.18488258818670378,
+      0.7047548820283535,
+      0.6372678828322231
+     ],
+     "b": [
+      0.04644733173171153,
+      0.9838578783543398,
+      0.03183907476093333
+     ],
+     "w": [
+      0.3068829513909505,
+      0.1819651275173308,
+      0.04371372428429716
+     ],
+     "m": 0.11331513922779472,
+     "s": 0.09551562068895957,
+     "h": 0.8391344285148402,
+     "gn": 2
+    },
+    {
+     "from": 0,
+     "to": 0,
+     "shape": "rings",
+     "r": 0.47234975960326414,
+     "a": [
+      0.3083558937605674,
+      0.30706321668237446,
+      0.32961420369537286
+     ],
+     "b": [
+      0.9723865407479525,
+      0.3504368038506814,
+      0.4048267716554982
+     ],
+     "w": [
+      0.08423240070756978,
+      0.16364378996999804,
+      0.23833463707961347
+     ],
+     "m": 0.3682388730322687,
+     "s": 0.1495378434269211,
+     "h": 0.4826375491256215,
+     "gn": 2
+    }
+   ],
+   "noisePatch": 20
+  }
+ ],
+ "worlds": [
+  {
+   "id": "two_orbium_repel",
+   "name": "Two Orbium species that repel (tuned)",
+   "status": "tuned",
+   "source": "Lab construction (prototype/6-lenia): two published Orbium unicaudatus in channels 0 and 1, plus two relative cross kernels (lab extension). Cross-kernel values chosen in the lab, not published.",
+   "notes": "Each sees the other through an Orbium-sized kernel (R 13); Gaussian growth with m 0, s 0.02, h 0.5, relative: no effect when the other is absent, inhibition where it is present. Head-on: they deflect.",
+   "model": "lenia",
+   "channels": [
+    "orbium",
+    "orbium"
+   ],
+   "crossKernels": [
+    {
+     "from": 1,
+     "to": 0,
+     "shape": "shells",
+     "b": "1",
+     "kn": 1,
+     "R": 13,
+     "m": 0.0,
+     "s": 0.02,
+     "h": 0.5,
+     "gn": 2,
+     "relative": true
+    },
+    {
+     "from": 0,
+     "to": 1,
+     "shape": "shells",
+     "b": "1",
+     "kn": 1,
+     "R": 13,
+     "m": 0.0,
+     "s": 0.02,
+     "h": 0.5,
+     "gn": 2,
+     "relative": true
+    }
+   ]
+  },
+  {
+   "id": "two_orbium_prey",
+   "name": "Orbium prey and predator (tuned)",
+   "status": "tuned",
+   "source": "Lab construction (prototype/6-lenia): two published Orbium unicaudatus, relative cross kernels (lab extension), values chosen in the lab, not published.",
+   "notes": "Channel 0 (prey) is inhibited by channel 1 (m 0, s 0.02, h 1); channel 1 grows a little near channel 0 (m 0.08, s 0.03, h 0.3). On contact the prey dissolves.",
+   "model": "lenia",
+   "channels": [
+    "orbium",
+    "orbium"
+   ],
+   "crossKernels": [
+    {
+     "from": 1,
+     "to": 0,
+     "shape": "shells",
+     "b": "1",
+     "kn": 1,
+     "R": 13,
+     "m": 0.0,
+     "s": 0.02,
+     "h": 1.0,
+     "gn": 2,
+     "relative": true
+    },
+    {
+     "from": 0,
+     "to": 1,
+     "shape": "shells",
+     "b": "1",
+     "kn": 1,
+     "R": 13,
+     "m": 0.08,
+     "s": 0.03,
+     "h": 0.3,
+     "gn": 2,
+     "relative": true
+    }
+   ]
+  },
+  {
+   "id": "flow_embed",
+   "name": "Two Flow-Lenia rules sharing matter (embedding, tuned)",
+   "status": "tuned",
+   "source": "Lab construction (prototype/6-lenia): parameter embedding as in Plantec et al. (2023) (flowlenia_params.py: P travels with the matter, mixed at collisions), with two rules found by the lab's search (not published).",
+   "notes": "One matter channel; slot 0 and slot 1 carry the two rules. Where their matter meets, P mixes (average or stochastic pick) and the local rule changes with it.",
+   "model": "flow",
+   "embed": true,
+   "channels": [
+    "flow_search_1006",
+    "flow_search_1003"
+   ]
+  }
+ ]
+}

@@ -252,6 +252,8 @@
     <ClCompile Include="src\Games\EcologyParams.cpp" />
     <ClCompile Include="src\Games\SuccessionModel.cpp" />
     <ClCompile Include="src\Games\PlantLayer.cpp" />
+    <ClCompile Include="src\Games\LeniaSpecies.cpp" />
+    <ClCompile Include="src\Games\LeniaLab.cpp" />
     <ClCompile Include="src\Games\SeedParticles.cpp" />
     <ClCompile Include="src\Games\SeedLayer.cpp" />
     <ClCompile Include="src\Common\DitherFilter.cpp" />
@@ -321,6 +323,8 @@
     <ClInclude Include="src\Games\EcologyParams.h" />
     <ClInclude Include="src\Games\SuccessionModel.h" />
     <ClInclude Include="src\Games\PlantLayer.h" />
+    <ClInclude Include="src\Games\LeniaSpecies.h" />
+    <ClInclude Include="src\Games\LeniaLab.h" />
     <ClInclude Include="src\Games\SeedParticles.h" />
     <ClInclude Include="src\Games\SeedLayer.h" />
     <ClInclude Include="src\Common\DitherFilter.h" />

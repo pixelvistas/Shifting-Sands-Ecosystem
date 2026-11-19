@@ -89,6 +89,10 @@ void ofApp::setup() {
 	if (ofFile::doesFileExist("settings/sandboxDither.xml"))
 		sandboxDither.loadPreset();
 
+	// Lenia lab (display only; prototype/6-lenia). GL objects are made on
+	// first use, in update() (main window context).
+	leniaLab.setup((int)projRes.x, (int)projRes.y);
+
 	imgui.setup();
 
 }
@@ -97,6 +101,12 @@ void ofApp::setup() {
 void ofApp::update() {
     // Call kinectProjector->update() first during the update function()
 	kinectProjector->update();
+	if (leniaLabShown()) {
+		// Lenia lab: nothing of the sandbox is updated (paused) or read.
+		leniaLab.setProjectorSize((int)projWindow->getWidth(), (int)projWindow->getHeight());
+		leniaLab.update(ofGetLastFrameTime());
+		return;
+	}
 	// Display only: with the dither filter on, the sand is drawn for it
 	// (flat plants + stage code in alpha, solid contour diagonals).
 	sandSurfaceRenderer->setDitherFilterActive(ditherActive());
@@ -151,12 +161,38 @@ void ofApp::update() {
 }
 
 
+void ofApp::drawDisplayModeGui()
+{
+	ImGui::Begin("Display");
+	static const char * modes[] = { "Sandbox", "Lenia lab" };
+	int mode = displayMode;
+	if (ImGui::Combo("Display mode", &mode, modes, 2))
+		displayMode = mode;
+	if (leniaLabShown())
+		ImGui::Text("Sandbox paused; Lenia lab panel open.");
+	ImGui::End();
+}
+
 void ofApp::draw()
 {
 	float x = mainWindowROI.x;
 	float y = mainWindowROI.y;
 	float w = mainWindowROI.width;
 	float h = mainWindowROI.height;
+
+	if (leniaLabShown()) {
+		// Preview of the projector output, fitted into the main-window area.
+		const ofRectangle r = leniaLab.previewRectFor(mainWindowROI);
+		leniaLab.setPreviewRect(r);
+		leniaLab.drawOutput(r.x, r.y, r.width, r.height);
+		imgui.begin();
+			drawDisplayModeGui();
+			kinectProjector->drawGui();
+			leniaLab.drawGui();
+		imgui.end();
+		imgui.draw();
+		return;
+	}
 
 	if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING)
 	{
@@ -182,6 +218,7 @@ void ofApp::draw()
 	kinectProjector->drawMainWindow(x, y, w, h);
 
 	imgui.begin();
+		drawDisplayModeGui();
 		kinectProjector->drawGui();
 		if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING) {
 			sandSurfaceRenderer->drawGui();
@@ -199,6 +236,18 @@ void ofApp::draw()
 
 void ofApp::drawProjWindow(ofEventArgs &args)
 {
+	if (leniaLabShown()) {
+		// Lenia lab on black; optional dither filter (the lab's own instance).
+		const float pw = (float)projWindow->getWidth(), ph = (float)projWindow->getHeight();
+		const bool dither = leniaLab.dither.params.enabled && !leniaLab.dither.shadersFailed()
+			&& leniaLab.dither.begin((int)pw, (int)ph);
+		leniaLab.drawOutput(0, 0, pw, ph);
+		if (dither) {
+			leniaLab.dither.end();
+			leniaLab.dither.drawCaptured(0, 0);
+		}
+		return;
+	}
 	if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING)
 	{
 		// Sandbox dither filter (display only): the same four layers,
@@ -238,6 +287,10 @@ void ofApp::exit()
 
 void ofApp::keyPressed(int key)
 {
+	if (leniaLabShown()) {
+		leniaLab.keyPressed(key);
+		return;
+	}
 	if (key == 'c')
 	{
 		kinectProjector->SaveKinectColorImage();
@@ -272,6 +325,11 @@ void ofApp::mouseMoved(int x, int y) {
 }
 
 void ofApp::mouseDragged(int x, int y, int button) {
+	if (leniaLabShown()) {
+		if (!ImGui::GetIO().WantCaptureMouse)
+			leniaLab.mouseDragged((float)x, (float)y, button);
+		return;
+	}
 
 	// We assume that we only use this during ROI annotation
 	kinectProjector->mouseDragged(x - mainWindowROI.x, y - mainWindowROI.y, button);
@@ -279,6 +337,11 @@ void ofApp::mouseDragged(int x, int y, int button) {
 
 void ofApp::mousePressed(int x, int y, int button)
 {
+	if (leniaLabShown()) {
+		if (!ImGui::GetIO().WantCaptureMouse)
+			leniaLab.mousePressed((float)x, (float)y, button);
+		return;
+	}
 	if (mainWindowROI.inside((float)x, (float)y))
 	{
 		kinectProjector->mousePressed(x-mainWindowROI.x, y-mainWindowROI.y, button);
@@ -286,6 +349,10 @@ void ofApp::mousePressed(int x, int y, int button)
 }
 
 void ofApp::mouseReleased(int x, int y, int button) {
+	if (leniaLabShown()) {
+		leniaLab.mouseReleased((float)x, (float)y, button);
+		return;
+	}
 	// We assume that we only use this during ROI annotation
 	kinectProjector->mouseReleased(x - mainWindowROI.x, y - mainWindowROI.y, button);
 }
