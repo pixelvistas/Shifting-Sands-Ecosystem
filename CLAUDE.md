@@ -14,7 +14,8 @@ Sand, ported to openFrameworks 0.12.1 with an ofxImGui GUI (`README.md`,
 
 ## Branches
 
-- `ss/plant-grain` (current work): grain-dither plants and seed particles
+- `ss/dither-baseline` (current work, on `ss/plant-grain`): Sandbox dither filter, on by default.
+- `ss/plant-grain`: grain-dither plants and seed particles
   (display only), on `ss/land-lines`.
 - `ss/land-lines`: land lines, band fill, flat fade, Kinect driver stack; on `ss/water-lines`.
 - `ss/water-lines` (water lines) on `ss/succession-feedback` (succession) on `ss/dewitz-flow`.
@@ -103,6 +104,11 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   water particles): seeds where cover grew over a 0.5 s window closed on whole
   multiples of UPDATE_INTERLEAVE (no striping), top 10 % pioneer growth only, cap
   1500, soft slow motes; additive on black, "over" on the fill. Test: `tools/grain_seed_harness/`.
+- `src/Common/DitherFilter.*`: screen-space dither of a rect texture (shaders `bin/data/shaders/dither/GL2|GL3`;
+  preset `settings/sandboxDither.xml`; GUI at the end of the Sand Surface Renderer panel). Filter on: Grain
+  becomes plantDisplay 3 (flat colour by cover, stage code in alpha 254/253/252), the filter draws stages
+  with dots x1/x2/x4 (pyramid), contour diagonals solid; `ofApp` copies the sand unblended, later layers
+  colour-only (glColorMask). Off: as ss/plant-grain. Test: `tools/sandbox_dither_preview/`.
 
 ## Hydrology (`VegetationField::stepFlow()`)
 

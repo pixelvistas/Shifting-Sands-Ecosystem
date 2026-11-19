@@ -4297,3 +4297,176 @@ now also renders band fill on: colour map + soil tint + grain at brightness
   seeds only" off: mean 0.18 ms, p99 1.51 ms, one frame 2.93 ms (a window
   close with three full pools in that worst case).
 Not compiled with openFrameworks, not hardware-tested.
+
+## 2026-11-19 - Dither baseline: the filter as the only dither in Sandbox (`ss/dither-baseline`)
+
+Display only: no simulation, model or other display mode changes
+(`git diff ss/plant-grain -- src/Games src/KinectProjector` is empty).
+
+Branches (checked before starting):
+- The `ss/*` Sandbox line is one chain:
+  `ss/ecosim-model-visuals-kiqw12` < `ss/terrain-reference-visuals` <
+  `ss/dewitz-flow` < `ss/succession-feedback` < `ss/water-lines` <
+  `ss/land-lines` (`ss/current-drivers` is also inside it) <
+  `ss/plant-grain` (79997fd). Every one is an ancestor of `ss/plant-grain`.
+- Built on `ss/plant-grain`: `prototype/2-mycorrhiza` < `prototype/2-mycelium`,
+  `prototype/3-ascii` < `prototype/4-scene`, and `ss/sandbox-dither`
+  (from dd22ee2). Outside `src/Prototypes` they change only the `ofApp`
+  mode hooks (plus one read-only getter, `VegetationField::getElevationRange`).
+- So `ss/plant-grain` is the most complete Sandbox line.
+- `main` (690aa62) shares no commit with the `ss/*` line, which starts from
+  a fresh snapshot (54f63d0, 2026-09-24). `main` is the pre-ecosystem Magic
+  Sand fork: puck tracking, sonic waves, the mycelium network, map/boid
+  games, plus later uploads (reference images, a screen recording,
+  `tools/mycelium_lookdev`). It lacks all the ecosystem work: ELF
+  vegetation, hydrology, succession, water and land lines, plants and seeds,
+  the Kinect driver stack and the headless tools. The same holds for
+  `ss/ecosystem-module-design-hvbso0`, `claude/ecosim-model-visuals-kiqw12`
+  and `chore/compliance-and-housekeeping`.
+- Nothing was merged, deleted or rewritten.
+
+Port: by hand, not by cherry-pick (the commits on `ss/sandbox-dither` also
+touch the Prototype 3/4 hooks). Copied as they were at d757704:
+`src/Common/DitherFilter.*` and `bin/data/shaders/dither/` (both then
+extended, below). The `ofApp` hook and GUI were rewritten for a branch
+without display modes. The project-file entries were added fresh.
+`tools/sandbox_dither_preview/` was made self-contained, because it
+imported `tools/ascii_preview`, which is Prototype 3's. Filter defaults are
+those of d757704, with these changes:
+- the filter is on;
+- stage classes are on, with multipliers x1 / x2 / x4.
+Design notes from the `ss/sandbox-dither` entry still hold (line
+detection, own preset file, MSAA-matched capture, lazy GL objects in the
+projector context).
+
+One dither:
+- Height shader: new `plantDisplay` 3, "flat for the filter". It is used
+  only while the filter is on and the Plant display is Grain; Discs and Off
+  stay as chosen.
+  - Colour = land x (1 - total cover) + the sum over stages of
+    cover x grainColour(stage colour, soil S). Same colours, soil mixing
+    and grainBrightness as the grain; no grain.
+  - Alpha = the dominant stage (largest cover; ties go to the later stage)
+    where total cover > 0.04: 254 pioneer, 253 intermediate, 252 climax,
+    otherwise 255.
+  - `contourSolid`: contour diagonal (two-edge) pixels are drawn solid
+    instead of on the 2-px checkerboard. I read "checkerboard off" as
+    "the lines stay, drawn solid" rather than "diagonal pixels dropped",
+    which would break the diagonals.
+- Passing the stage: in the alpha of the Sandbox FBO, not a second colour
+  attachment.
+  - Why alpha: it needs no change to SandSurfaceRenderer's FBO or to its
+    draw buffers. A second attachment would use oF's multiple-render-target
+    API (not compilable here) and, in GL2, `gl_FragData` throughout the
+    shader instead of `gl_FragColor`. Alpha is written the same way in both
+    GL variants.
+  - Codes 252..254 are within 3/255 of opaque, so wherever the sand FBO is
+    still alpha-blended the error is at most 1.2 %. Both such places are
+    handled anyway: with the filter on, `ofApp` draws the sand (projector
+    capture and main window) with blending disabled.
+  - The three layers drawn after the sand (seeds, flow particles, critters)
+    set their own blend functions (ALPHA, ADD, SeedLayer's
+    ONE/ONE_MINUS_SRC_ALPHA and ONE/ONE), which would change destination
+    alpha. `ofApp` therefore draws them under `glColorMask(1, 1, 1, 0)`.
+    The colour mask holds whatever blend function a layer sets, and none of
+    them touches it (grep).
+  - GL2 and GL3: the preview runs both paths. The stage codes, colours and
+    filtered output are identical bit for bit.
+- Filter (generic, "dot classes"): pass 2 reads the class from the source
+  alpha. Class c uses dots of dotSize x classMult[c] pixels, taken from a
+  pyramid of 2 x 2 averages of the base dots (`ditherDown`, levels x2, x4,
+  x8). The threshold is taken on that coarser dot grid. Multipliers are
+  powers of two, so every grid is a refinement of the coarser ones. GUI:
+  "Dot size by class", with Pioneer / Intermediate / Climax dots x1 / x2 /
+  x4 / x8 (names set by `ofApp`, `setClassNames`); saved in the preset.
+- Filter off: Grain (`plantDisplay` 1), the checkerboard and alpha 1 are as
+  before, and the same four draw calls run without the FBO.
+
+Checks (headless, `tools/sandbox_dither_preview`, Mesa llvmpipe):
+- Filter off, height shader against `ss/plant-grain`'s (from git), GL3 and
+  GL2: identical bit for bit (RGBA) with defaults, band fill off, "every N
+  mm" lines, plants off, and contour lines on. The preview's contour
+  texture is empty, so that last case does not draw any contour pixels;
+  the contour expression with `contourSolid` 0 is the old one by
+  inspection.
+- Succession and water: no simulation file changed. The filter only sets
+  two height-shader uniforms, and no simulation code reads anything drawn,
+  so their outputs are bit-identical with the filter on or off. This
+  follows from the code; no separate run was made.
+- Stages told apart by dot size: the measured dot is the largest k with
+  >= 95 % one-colour k x k blocks in a patch interior.
+
+    old grain:   pioneer 1 px, intermediate 2, climax 4 (all covers)
+    new, dot 1:  1 / 2 / 4 px
+    new, dot 2:  2 / 4 / 8 px
+    new, dot 4:  4 / 8 / 16 px (climax at cover 0.2: too few dots to measure)
+    new, dot 8:  8 / 16-32 / 16 (the dots approach the patch size)
+
+  The exception: intermediate at cover 0.70 is solid (32 px) at every dot
+  size. Its mean luminance (0.488) sits on a quantisation level (0.5 with
+  levels 3), so every dot rounds to the same level. In general, any flat
+  colour whose luminance is close to k / (levels - 1) comes out nearly
+  solid, so its dot size cannot be seen. In this frame only intermediate
+  at 0.70 was measured solid; climax at 0.20 (luminance 0.53) keeps its
+  8 px dots but shows only a few of them. See the question in the report.
+- Colours: patch mean colour, flat source vs dots vs old grain, within
+  0.025 luminance and 0.5 deg hue (e.g. climax 0.95: 0.279 / 0.282 / 0.283).
+- Line protection, default "Bright and dark lines", threshold 0.10.
+
+                                land   water  particles  planted  plain
+    old (grain re-dithered)     17.4%  48.1%  66.0%      16.30%   0.45%
+    new (flat, dot classes)     14.2%  48.1%  61.2%       0.19%   0.45%
+
+  Plants are no longer caught (16.3 % -> 0.19 %). Land and water lines are
+  unchanged apart from where they cross plants. The land-line percentages
+  count every pixel the lines change by more than 0.06, most of them faint
+  halo.
+- No beat: low-pass luminance error (Gaussian sigma 3 px) in the 0.45
+  patches and on plain sand, dot sizes 1-6 and 8. The strongest spectral
+  peak is always at the dither's own period: 4 dots of that patch's size
+  (for example 14.7 px for intermediate at dot 2, 4 px dots; 44 px is the
+  region limit). Nothing else in the frame is periodic now (no grain;
+  contour diagonals solid), so nothing can beat with it. With power-of-two
+  multipliers the class grids are refinements of each other at any base
+  dot size, so dot 3, 5 and 6 do not beat either (3 / 6 / 12 px grids).
+  The error rises with dot size only because the dots grow.
+- GL2 vs GL3: identical for the old and new height shader, both
+  composites, all 12 mode x pattern combinations and dot sizes 1, 3, 8.
+- Cost at 1280 x 800:
+  - The pyramid adds 3 small passes (1/4, 1/16 and 1/64 of the dot grid)
+    and pass 2 adds one source alpha fetch per pixel.
+  - On llvmpipe (software, 4 cores), filter including upload and
+    read-back: dot 2, 14.2 ms without classes and 16.1 ms with them; dot 1,
+    17.3 / 20.1 ms. This says nothing about the installation PC.
+  - Estimate on a discrete GPU: about 14 M texel fetches per frame, well
+    under 1 ms. The panel shows the real GPU time (capture + filter).
+- GLSL read line by line:
+  - Height shader: GL2 = GL3 apart from texture2DRect and
+    gl_FragColor/outputColor.
+  - ditherDown and ditherOut: GL2 = GL3 apart from version, texture2DRect,
+    varying/in and gl_FragColor (diffed). Constant loop bounds; exp2 and
+    float uniform arrays are valid in GLSL 1.20.
+- C++: `DitherFilter.cpp` compiled `-fsyntax-only` against stub oF and
+  ImGui headers (typos only). `ofApp` and `SandSurfaceRenderer` were not
+  compiled. Not compiled with openFrameworks, not hardware-tested.
+- Crops in `docs/dither_baseline/`:
+  - `sheet_stages.png`, rows: old grain, ss/sandbox-dither (grain
+    re-dithered), new dot 2, new dot 4;
+  - `sheet_stage_zoom.png`;
+  - `sheet_lines.png` (mound and water, same rows);
+  - `sheet_modes_patterns.png` (rows hue / per channel / palette; columns
+    Bayer 4, Bayer 8, lines, halftone);
+  - `new_stage_code.png` (alpha code as colour);
+  - `protected_old.png`, `protected_new.png`.
+
+Hardware checklist (first: branch `ss/dither-baseline` pulled, Release
+build, elevation range reset to the calibrated ceiling; the filter is on by
+default, under Sand Surface Renderer -> Dither filter):
+1. With the filter on, pioneer, intermediate and climax patches can be told
+   apart from about 1 m by their dot size. Also note whether a patch ever
+   turns solid (see the quantisation-level case above).
+2. No beat or crawling in planted areas, including while cover grows.
+3. Land and water lines still glow as lines.
+4. Note the dot size and pattern that read best; these become the
+   baseline's saved defaults ("Save preset").
+Also: "Dither filter on" off gives the old grain display for comparison.

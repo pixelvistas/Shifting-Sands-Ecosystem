@@ -1,49 +1,57 @@
 #!/usr/bin/env python3
-"""Headless preview and checks for the Sandbox dither filter (DitherFilter).
+"""Headless preview and checks for the Sandbox dither filter (DitherFilter),
+branch ss/dither-baseline.
 
 A Sandbox frame is rendered with the app's own height-map shader
-(bin/data/shaders/shadersGL3|GL2/heightMapShader.*), unchanged, through a
-stand-in calibration (pinhole Kinect 640 x 480 with the ROI 519 x 295, a
-projector 1280 x 800 seeing the box at ~1.17 px/mm, rotated 1.5 deg), on the
-synthetic terrain of tools/ascii_preview (flat sand at 9 mm, a mound to
-71 mm, a basin dug to -36 mm and a ramp -40..70 mm through every band), with
-simulated water where the bed is below the water table (surface -14 mm),
-plant cover (grain dither, the default) and soil. Shader uniforms are the
-SandSurfaceRenderer defaults (header, plus the repository's
-sandSurfaceRendererSettings.xml). The seed and flow-particle layers are
-stand-ins composited with the app's blend equations (seeds: premultiplied
-"over" at 0.7 on the fill; Dewitz particles: 1-px streaks, additive);
-critters default to 0 and are not drawn.
+(bin/data/shaders/shadersGL3|GL2/heightMapShader.*) through a stand-in
+calibration (pinhole Kinect 640 x 480 with the ROI 519 x 295, a projector
+1280 x 800 seeing the box at ~1.17 px/mm, rotated 1.5 deg) on a synthetic
+terrain: flat sand at 9 mm, a mound to 71 mm (every land band, band-edge
+lines), a basin dug to -36 mm (simulated water below the table, water
+lines), and a grid of plant patches on flat sand: rows pioneer,
+intermediate, climax; columns cover 0.2, 0.45, 0.7, 0.95 (soil S 0.7).
+Shader uniforms are the SandSurfaceRenderer defaults (header, plus the
+repository's sandSurfaceRendererSettings.xml). Seeds and Dewitz particles
+are stand-ins composited with the app's blend equations; with the filter
+on they write colour only (as ofApp's glColorMask), so the sand's alpha
+(stage code) is kept. Critters default to 0 and are not drawn.
 
-The frame then goes through bin/data/shaders/dither (both passes, as
-DitherFilter::draw), with the defaults parsed from src/Common/DitherFilter.cpp.
+"Old" = filter off: plantDisplay 1 (grain), as ss/plant-grain.
+"New" = filter on: plantDisplay 3 (flat, stage code in alpha), contour
+diagonals solid, then bin/data/shaders/dither (dots, pyramid, output) with
+the defaults parsed from src/Common/DitherFilter.cpp.
 
-    python3 sandbox_dither_preview.py frames   # out/: off, every mode x pattern, zoomed crops, sheets
-    python3 sandbox_dither_preview.py lines    # line protection: hit rate on lines, false hits elsewhere
-    python3 sandbox_dither_preview.py colour   # band colours kept (hue, luminance) per band
-    python3 sandbox_dither_preview.py moire    # low-pass beat energy, grain x dots, per dot size
-    python3 sandbox_dither_preview.py compare  # GL2 vs GL3 (height shader and filter)
-    python3 sandbox_dither_preview.py timing   # filter passes on this GL (software: not the installation PC)
+    python3 sandbox_dither_preview.py frames    # out/: old, new, sheets (zoomed crops)
+    python3 sandbox_dither_preview.py stages    # dot size measured per patch, old and new
+    python3 sandbox_dither_preview.py identity  # filter off: height shader = ss/plant-grain's, bit for bit
+    python3 sandbox_dither_preview.py lines     # line protection per pixel kind (--save: map; --fill-off)
+    python3 sandbox_dither_preview.py colour    # band hue and luminance kept
+    python3 sandbox_dither_preview.py moire     # low-pass error in the planted patches, dot sizes 1..8
+    python3 sandbox_dither_preview.py compare   # GL2 vs GL3
+    python3 sandbox_dither_preview.py timing    # on this software GL, not the installation PC
 
 Needs numpy, Pillow, PyOpenGL and an EGL driver (Mesa: surfaceless).
 """
 
 import argparse
+import ctypes
 import math
 import os
 import re
+import subprocess
 import sys
+import tempfile
 import time
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, "..", "ascii_preview"))
-import ascii_preview as A  # EGL Context, rect_tex, fbo_for, ortho, Sandbox heightmap
+os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
+os.environ.setdefault("EGL_PLATFORM", "surfaceless")
 
 import numpy as np
 from PIL import Image
-from OpenGL import GL
+from OpenGL import EGL, GL
 
-REPO = A.REPO
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.normpath(os.path.join(HERE, "..", ".."))
 OUT = os.path.join(HERE, "out")
 R = GL.GL_TEXTURE_RECTANGLE
 PW, PH = 1280, 800
@@ -75,7 +83,8 @@ def dither_defaults():
              "PATTERN_LINES": 2, "PATTERN_HALFTONE": 3, "PROTECT_OFF": 0, "PROTECT_BRIGHT": 1,
              "PROTECT_BRIGHT_DARK": 2, "PALETTE_GOLD": 0, "PALETTE_NIGHT": 1, "PALETTE_GREEN": 2}
     d = {}
-    for n, v in re.findall(r"p\.(\w+) = ([^;]+);", body):
+    for n, idx, v in re.findall(r"p\.(\w+)(?:\[(\d)\])? = ([^;]+);", body):
+        n = n + idx
         v = v.strip()
         if v in ("true", "false"):
             d[n] = v == "true"
@@ -132,32 +141,48 @@ def colour_map_texture(keys, n=512):
 
 
 # ------------------------------------------------------------ the box
+# Plant patches on flat sand: rows (grid y centre) by stage, columns by cover.
+PATCH_ROWS = {"pioneer": 152.0, "intermediate": 204.0, "climax": 256.0}
+PATCH_COLS = {0.2: 335.0, 0.45: 383.0, 0.7: 431.0, 0.95: 479.0}
+PATCH_HALF = 20.0                    # cells (~45 projector px)
+
+
+def smoothstep(e0, e1, x):
+    t = np.clip((x - e0) / (e1 - e0), 0, 1)
+    return t * t * (3 - 2 * t)
+
+
 class Box:
     def __init__(self, seed=5):
         rng = np.random.default_rng(seed)
-        sb = A.Sandbox()
         self.cols, self.rows = ROI[2], ROI[3]
-        h = sb.heightmap().astype(np.float64)
         gy, gx = np.mgrid[0:self.rows, 0:self.cols].astype(np.float64)
+        g = lambda x0, y0, s: np.exp(-((gx - x0) ** 2 + (gy - y0) ** 2) / (2 * s * s))
+        h = 9.0 + 62.0 * g(110, 160, 42) - 45.0 * g(250, 95, 34)
         h += rng.uniform(-0.4, 0.4, h.shape)                       # filtered-depth noise
         self.h = h
         depth = WATER_SURFACE - h
         self.water = depth > 0.3
         code = np.where(self.water, 1.0 + 248.0 * np.clip(depth / FULL_DEPTH_MM, 0, 1), 0.0)
-        g = lambda x0, y0, s: np.exp(-((gx - x0) ** 2 + (gy - y0) ** 2) / (2 * s * s))
-        pioneer = 0.75 * g(250, 160, 45) + 0.55 * g(330, 60, 30)
-        inter = 0.6 * g(150, 205, 28) + 0.45 * g(95, 95, 25)
-        climax = 0.7 * g(200, 260, 22)
-        tot = pioneer + inter + climax
-        k = np.where(tot > 1.0, 1.0 / np.maximum(tot, 1e-6), 1.0)
+        cover = {k: np.zeros_like(h) for k in PATCH_ROWS}
+        for stage, yc in PATCH_ROWS.items():
+            for c, xc in PATCH_COLS.items():
+                d = np.maximum(np.abs(gx - xc), np.abs(gy - yc))
+                cover[stage] += c * (1 - smoothstep(PATCH_HALF - 4, PATCH_HALF, d))
+        # Plants on the mound too (under the band-edge lines).
+        cover["pioneer"] += 0.5 * g(150, 200, 18)
+        cover["intermediate"] += 0.4 * g(75, 120, 16)
         land = ~self.water
-        self.cover = [climax * k * land, pioneer * k * land, inter * k * land]   # R, G, B as the texture
+        tot = cover["pioneer"] + cover["intermediate"] + cover["climax"]
+        k = np.where(tot > 1.0, 1.0 / np.maximum(tot, 1e-6), 1.0) * land
+        self.stage_cover = {st: cover[st] * k for st in cover}
+        self.cover = [self.stage_cover["climax"], self.stage_cover["pioneer"], self.stage_cover["intermediate"]]
         veg = np.zeros((self.rows, self.cols, 4), np.uint8)
-        for i in range(3):
+        for i in range(3):   # R climax, G pioneer, B intermediate (VegetationField's texture)
             veg[..., i] = np.clip(self.cover[i] * 255, 0, 255).astype(np.uint8)
         veg[..., 3] = code.astype(np.uint8)
         self.veg = veg
-        soil = np.clip(0.15 + 0.7 * g(200, 180, 80), 0, 1)
+        soil = np.where((gx > 305) & (gy > 122), 0.7, 0.4)
         site = np.zeros((self.rows, self.cols, 4), np.float32)
         site[..., 0] = soil
         site[..., 1] = np.clip(1.0 - np.abs(h + 14.0) / 40.0, 0, 1)
@@ -179,8 +204,66 @@ def matrices():
 
 
 # ------------------------------------------------------------ GL
+class Context:
+    """One EGL display; GL 3.2 core (GL3 shaders) or compatibility (GL2) contexts."""
+    def __init__(self):
+        self.display = EGL.eglGetDisplay(EGL.EGL_DEFAULT_DISPLAY)
+        ma, mi = EGL.EGLint(), EGL.EGLint()
+        if not EGL.eglInitialize(self.display, ctypes.pointer(ma), ctypes.pointer(mi)):
+            raise RuntimeError("eglInitialize failed")
+        cfg, n = EGL.EGLConfig(), EGL.EGLint()
+        att = (EGL.EGLint * 5)(EGL.EGL_SURFACE_TYPE, EGL.EGL_PBUFFER_BIT,
+                               EGL.EGL_RENDERABLE_TYPE, EGL.EGL_OPENGL_BIT, EGL.EGL_NONE)
+        if not EGL.eglChooseConfig(self.display, att, ctypes.pointer(cfg), 1, ctypes.pointer(n)) or n.value < 1:
+            raise RuntimeError("no EGL config")
+        self.config = cfg
+        EGL.eglBindAPI(EGL.EGL_OPENGL_API)
+        self.surface = EGL.eglCreatePbufferSurface(self.display, cfg,
+                                                   (EGL.EGLint * 5)(EGL.EGL_WIDTH, 16, EGL.EGL_HEIGHT, 16, EGL.EGL_NONE))
+
+    def create(self, gl2):
+        if gl2:
+            ca = (EGL.EGLint * 3)(EGL.EGL_CONTEXT_OPENGL_PROFILE_MASK,
+                                  EGL.EGL_CONTEXT_OPENGL_COMPATIBILITY_PROFILE_BIT, EGL.EGL_NONE)
+        else:
+            ca = (EGL.EGLint * 7)(EGL.EGL_CONTEXT_MAJOR_VERSION, 3, EGL.EGL_CONTEXT_MINOR_VERSION, 2,
+                                  EGL.EGL_CONTEXT_OPENGL_PROFILE_MASK, EGL.EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT,
+                                  EGL.EGL_NONE)
+        c = EGL.eglCreateContext(self.display, self.config, EGL.EGL_NO_CONTEXT, ca)
+        if not c:
+            raise RuntimeError("eglCreateContext failed")
+        EGL.eglMakeCurrent(self.display, self.surface, self.surface, c)
+        return c
+
+
+def rect_tex(w, h, internal, fmt, typ, data=None):
+    t = GL.glGenTextures(1)
+    GL.glBindTexture(R, t)
+    GL.glTexParameteri(R, GL.GL_TEXTURE_MIN_FILTER, GL.GL_NEAREST)
+    GL.glTexParameteri(R, GL.GL_TEXTURE_MAG_FILTER, GL.GL_NEAREST)
+    GL.glTexParameteri(R, GL.GL_TEXTURE_WRAP_S, GL.GL_CLAMP_TO_EDGE)
+    GL.glTexParameteri(R, GL.GL_TEXTURE_WRAP_T, GL.GL_CLAMP_TO_EDGE)
+    GL.glPixelStorei(GL.GL_UNPACK_ALIGNMENT, 1)
+    GL.glTexImage2D(R, 0, internal, w, h, 0, fmt, typ, data)
+    return t
+
+
+def fbo_for(tex):
+    f = GL.glGenFramebuffers(1)
+    GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, f)
+    GL.glFramebufferTexture2D(GL.GL_FRAMEBUFFER, GL.GL_COLOR_ATTACHMENT0, R, tex, 0)
+    assert GL.glCheckFramebufferStatus(GL.GL_FRAMEBUFFER) == GL.GL_FRAMEBUFFER_COMPLETE
+    return f
+
+
+def ortho(w, h):
+    """Column-major projection: x, y (y down) -> texel row y (oF FBO convention)."""
+    m = np.array([[2.0 / w, 0, 0, -1], [0, 2.0 / h, 0, -1], [0, 0, -1, 0], [0, 0, 0, 1]], np.float32)
+    return m.T.copy()
+
+
 def tex2d(w, h, internal, fmt, typ, data, linear=False):
-    t = A.rect_tex(w, h, internal, fmt, typ, data)
+    t = rect_tex(w, h, internal, fmt, typ, data)
     if linear:
         GL.glTexParameteri(R, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR)
         GL.glTexParameteri(R, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
@@ -213,8 +296,8 @@ class Target:
     def __init__(self, w, h, internal):
         self.w, self.h = w, h
         fmt_t = GL.GL_FLOAT if internal != GL.GL_RGBA8 else GL.GL_UNSIGNED_BYTE
-        self.tex = A.rect_tex(w, h, internal, GL.GL_RGBA, fmt_t)
-        self.fbo = A.fbo_for(self.tex)
+        self.tex = rect_tex(w, h, internal, GL.GL_RGBA, fmt_t)
+        self.fbo = fbo_for(self.tex)
 
     def begin(self, clear=(0, 0, 0, 0)):
         GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, self.fbo)
@@ -229,28 +312,29 @@ class Target:
 
 
 class Renderer:
-    def __init__(self, ctx, gl2):
+    def __init__(self, ctx, gl2, height_dir=None):
         self.gl2 = gl2
         self.glctx = ctx.create(gl2)
-        ctx.make_current(self.glctx)
         v = "GL2" if gl2 else "GL3"
         sh = os.path.join(REPO, "bin", "data", "shaders")
-        self.p_height = compile_program(gl2, os.path.join(sh, "shaders" + v, "heightMapShader.vert"),
-                                        os.path.join(sh, "shaders" + v, "heightMapShader.frag"))
+        hd = height_dir or os.path.join(sh, "shaders" + v)
+        self.p_height = compile_program(gl2, os.path.join(hd, "heightMapShader.vert"),
+                                        os.path.join(hd, "heightMapShader.frag"))
         dv = os.path.join(sh, "dither", v)
         self.p_dots = compile_program(gl2, os.path.join(dv, "dither.vert"), os.path.join(dv, "ditherDots.frag"))
+        self.p_down = compile_program(gl2, os.path.join(dv, "dither.vert"), os.path.join(dv, "ditherDown.frag"))
         self.p_out = compile_program(gl2, os.path.join(dv, "dither.vert"), os.path.join(dv, "ditherOut.frag"))
         if not gl2:
             GL.glBindVertexArray(GL.glGenVertexArrays(1))
         GL.glDisable(GL.GL_BLEND)
         self.sand = Target(PW, PH, GL.GL_RGBA8)
         self.out = Target(PW, PH, GL.GL_RGBA8)
-        self.src_tex = A.rect_tex(PW, PH, GL.GL_RGBA8, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE)
+        self.src_tex = rect_tex(PW, PH, GL.GL_RGBA8, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE)
         self.dots = {}
 
     # -- geometry
     def draw(self, prog, pos, texc, idx, w, h, mode=GL.GL_TRIANGLES):
-        mvp = A.ortho(w, h)
+        mvp = ortho(w, h)
         pos = np.ascontiguousarray(pos, np.float32)
         texc = np.ascontiguousarray(texc, np.float32)
         idx = np.ascontiguousarray(idx, np.uint32)
@@ -321,7 +405,7 @@ class Renderer:
         t_depth = tex2d(KW, KH, GL.GL_R32F, GL.GL_RED, GL.GL_FLOAT, box.depth, linear=True)
         t_veg = tex2d(box.cols, box.rows, GL.GL_RGBA8, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, box.veg, linear=True)
         t_site = tex2d(box.cols, box.rows, GL.GL_RGBA32F, GL.GL_RGBA, GL.GL_FLOAT, box.site, linear=True)
-        t_contour = A.rect_tex(PW + 1, PH + 1, GL.GL_RGBA8, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE)
+        t_contour = rect_tex(PW + 1, PH + 1, GL.GL_RGBA8, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE)
         world, proj = matrices()
         p = self.p_height
         self.sand.begin((0, 0, 0, 1))
@@ -336,8 +420,9 @@ class Renderer:
         self.u(p, "heightColorMapTransformation", hm_scale, hm_offset)
         self.u(p, "depthTransformation", 1.0, 0.0)
         self.u(p, "basePlaneEq", 0.0, 0.0, 1.0, -Z0)
-        self.u(p, "contourLineFactor", 1.0)
+        self.u(p, "contourLineFactor", d.get("contourLineFactor", 1.0))
         self.u(p, "drawContourLines", int(d["drawContourLines"]), i=True)
+        self.u(p, "contourSolid", int(d.get("contourSolid", 0)), i=True)
         self.u(p, "heightMapNumEntries", float(n))
         self.u(p, "time", 0.0)
         wl_den = hm_scale * max(0.1, d["waterLineDistance"])
@@ -398,24 +483,46 @@ class Renderer:
         GL.glPixelStorei(GL.GL_UNPACK_ALIGNMENT, 1)
         GL.glTexSubImage2D(R, 0, 0, 0, PW, PH, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, np.ascontiguousarray(frame8))
         ds = int(max(1, min(8, prm["dotSize"])))
+        level_of = lambda m: 0 if m < 2 else 1 if m < 4 else 2 if m < 8 else 3
+        class_level = [0.0, 0.0, 0.0, 0.0]
+        nlev = 1
+        if prm["classesOn"]:
+            for c in (1, 2, 3):
+                class_level[c] = float(level_of(int(prm["classMult%d" % c])))
+                nlev = max(nlev, int(class_level[c]) + 1)
         cols, rows = (PW + ds - 1) // ds, (PH + ds - 1) // ds
-        if (cols, rows) not in self.dots:
-            self.dots[(cols, rows)] = Target(cols, rows, GL.GL_RGBA16F)
-        dots = self.dots[(cols, rows)]
+        levels = []
+        for k in range(nlev):
+            if (cols, rows) not in self.dots:
+                self.dots[(cols, rows)] = Target(cols, rows, GL.GL_RGBA16F)
+            levels.append(self.dots[(cols, rows)])
+            cols, rows = (cols + 1) // 2, (rows + 1) // 2
         ex, co, sa = prm["exposure"], prm["contrast"], prm["saturation"]
         p = self.p_dots
+        dots = levels[0]
         dots.begin()
         GL.glUseProgram(p)
         self.tex(p, "srcTex", 0, self.src_tex)
         self.u(p, "srcSize", float(PW), float(PH))
         self.u(p, "dotSize", float(ds))
         self.u(p, "exposure", ex); self.u(p, "contrast", co); self.u(p, "saturation", sa)
-        self.quad(p, cols, rows)
+        self.quad(p, dots.w, dots.h)
+        for k in range(1, nlev):
+            p = self.p_down
+            levels[k].begin()
+            GL.glUseProgram(p)
+            self.tex(p, "lowerTex", 0, levels[k - 1].tex)
+            self.u(p, "lowerSize", float(levels[k - 1].w), float(levels[k - 1].h))
+            self.quad(p, levels[k].w, levels[k].h)
         p = self.p_out
         self.out.begin()
         GL.glUseProgram(p)
         self.tex(p, "srcTex", 0, self.src_tex)
         self.tex(p, "dotTex", 1, dots.tex)
+        for k in (1, 2, 3):
+            self.tex(p, "dotTex%d" % k, 1 + k, levels[k].tex if k < nlev else dots.tex)
+        self.u(p, "classesOn", int(bool(prm["classesOn"])), i=True)
+        GL.glUniform1fv(GL.glGetUniformLocation(p, "classLevel"), 4, np.array(class_level, np.float32))
         self.u(p, "srcSize", float(PW), float(PH))
         self.u(p, "dotSize", float(ds))
         self.u(p, "exposure", ex); self.u(p, "contrast", co); self.u(p, "saturation", sa)
@@ -494,7 +601,7 @@ def compose(sand8, box, rng):
     colour = np.array([0.75, 0.92, 1.0])
     for k in sel:
         gx, gy = xs[k] + rng.uniform(), ys[k] + rng.uniform()
-        ang = math.atan2(gy - 110, gx - 290) + math.pi / 2  # a slow swirl round the basin centre
+        ang = math.atan2(gy - 95, gx - 250) + math.pi / 2  # a slow swirl round the basin centre
         L = rng.uniform(6, 14)
         for t in np.linspace(0, 1, 24):
             x, y = to_proj(gx - math.cos(ang) * L * t / 2.2, gy - math.sin(ang) * L * t / 2.2)
@@ -505,12 +612,41 @@ def compose(sand8, box, rng):
     out = np.round(out * 255).astype(np.uint8)
     img = np.zeros((PH, PW, 4), np.uint8)
     img[..., :3] = out
-    img[..., 3] = 255
+    img[..., 3] = sand8[..., 3]   # colour-only layers (glColorMask): the sand's alpha stays
     return img
 
 
 # ------------------------------------------------------------ helpers
-CROPS = {"mound": (180, 260, 160, 100), "water": (560, 250, 160, 100), "ramp": (960, 480, 160, 100)}
+def proj_rect(gx0, gy0, gx1, gy1):
+    """Axis-aligned projector rectangle inside the grid rectangle (rotation 1.5 deg)."""
+    pts = [to_proj(x, y) for x, y in ((gx0, gy0), (gx1, gy0), (gx0, gy1), (gx1, gy1))]
+    xs = sorted(p[0] for p in pts)
+    ys = sorted(p[1] for p in pts)
+    x0, x1, y0, y1 = int(math.ceil(xs[1])), int(xs[2]), int(math.ceil(ys[1])), int(ys[2])
+    return x0, y0, x1 - x0, y1 - y0
+
+
+def patch_rect(stage, cover, inset=7.0):
+    """Projector rectangle of a patch's flat interior, snapped to multiples of 16 px."""
+    yc, xc = PATCH_ROWS[stage], PATCH_COLS[cover]
+    x, y, w, h = proj_rect(xc - PATCH_HALF + inset, yc - PATCH_HALF + inset, xc + PATCH_HALF - inset, yc + PATCH_HALF - inset)
+    x1, y1 = (x + w) // 16 * 16, (y + h) // 16 * 16
+    x, y = (x + 15) // 16 * 16, (y + 15) // 16 * 16
+    return x, y, x1 - x, y1 - y
+
+
+CROPS = {}
+
+
+def init_crops():
+    CROPS["stages"] = proj_rect(PATCH_COLS[0.2] - PATCH_HALF - 2, PATCH_ROWS["pioneer"] - PATCH_HALF - 2,
+                                PATCH_COLS[0.95] + PATCH_HALF + 2, PATCH_ROWS["climax"] + PATCH_HALF + 2)
+    x, y = to_proj(150, 175)
+    CROPS["mound"] = (int(x) - 80, int(y) - 50, 160, 100)
+    x, y = to_proj(250, 95)
+    CROPS["water"] = (int(x) - 40, int(y) - 50, 160, 100)
+    x, y = to_proj(PATCH_COLS[0.45], PATCH_ROWS["intermediate"])
+    CROPS["patch"] = (int(x) - 60, int(y) - 100, 120, 200)
 
 
 def save(img, name, d=OUT):
@@ -524,11 +660,11 @@ def crop(img, key, zoom=4):
     return np.repeat(np.repeat(c, zoom, 0), zoom, 1)
 
 
-def sheet(rows, labels):
-    """rows: list of lists of zoomed crops; a 6-px black gutter."""
-    g = 6
+def sheet(rows, gutter=6):
+    """rows: list of lists of images (same height per row); black gutters."""
+    g = gutter
     h = sum(r[0].shape[0] for r in rows) + g * (len(rows) + 1)
-    w = sum(c.shape[1] for c in rows[0]) + g * (len(rows[0]) + 1)
+    w = max(sum(c.shape[1] for c in r) + g * (len(r) + 1) for r in rows)
     s = np.zeros((h, w, 3), np.uint8)
     y = g
     for r in rows:
@@ -541,18 +677,23 @@ def sheet(rows, labels):
 
 
 FILL_OFF = False
+OLD = {"plantDisplay": 1, "contourSolid": 0}           # filter off (ss/plant-grain)
+NEW = {"plantDisplay": 3, "contourSolid": 1}           # filter on
 
 
-def setup(gl2=False, seed=5):
-    ctx = A.Context()
-    rnd = Renderer(ctx, gl2)
+def setup(gl2=False, seed=5, height_dir=None):
+    ctx = Context()
+    rnd = Renderer(ctx, gl2, height_dir)
     box = Box(seed)
     rd = renderer_defaults()
     if FILL_OFF:
         rd["bandFill"] = False
-    sand = rnd.sandbox(box, rd)
-    frame = compose(sand, box, np.random.default_rng(seed))
-    return ctx, rnd, box, rd, sand, frame
+    init_crops()
+    sand_old = rnd.sandbox(box, rd, OLD)
+    sand_new = rnd.sandbox(box, rd, NEW)
+    old = compose(sand_old, box, np.random.default_rng(seed))
+    new = compose(sand_new, box, np.random.default_rng(seed))
+    return ctx, rnd, box, rd, (sand_old, old), (sand_new, new)
 
 
 def prefilter_np(c, ex, co, sa):
@@ -566,143 +707,189 @@ def prefilter_np(c, ex, co, sa):
     return np.where(m > 1, c / np.maximum(m, 1e-9), c)
 
 
+def label(img, text):
+    """A black strip with text above an image (PIL default font)."""
+    from PIL import ImageDraw
+    strip = Image.new("RGB", (img.shape[1], 18), (0, 0, 0))
+    ImageDraw.Draw(strip).text((4, 3), text, fill=(230, 230, 230))
+    return np.concatenate([np.asarray(strip), img], 0)
+
+
 # ------------------------------------------------------------ commands
 def cmd_frames(args):
-    ctx, rnd, box, rd, sand, frame = setup(args.gl2)
+    ctx, rnd, box, rd, (so, old), (sn, new) = setup(args.gl2)
     d = dither_defaults()
-    save(frame, "off.png")
-    print("defaults:", d)
-    rows = [[crop(frame, k) for k in CROPS]]
-    configs = []
+    print("filter defaults:", d)
+    save(old, "old_filter_off.png")
+    save(new, "new_source_flat.png")
+    a = np.zeros_like(new)
+    code = 255 - new[..., 3].astype(int)
+    for c, col in ((1, (201, 219, 110)), (2, (94, 155, 76)), (3, (47, 94, 52))):
+        a[code == c, :3] = col
+    save(a, "new_stage_code.png")
+    old_on = rnd.dither(old, dict(d, classesOn=False))          # ss/sandbox-dither behaviour (grain re-dithered)
+    imgs = {"old: grain, filter off": old, "ss/sandbox-dither: grain + filter, dot 2": old_on}
+    for ds in (2, 4):
+        img = rnd.dither(new, dict(d, dotSize=ds))
+        imgs["new: flat + filter, dot %d (x1/x2/x4)" % ds] = img
+        save(img, "new_filter_dot%d.png" % ds)
+    rows = [[label(crop(v, "stages", 3), k)] for k, v in imgs.items()]
+    save(sheet(rows), "sheet_stages.png")
+    rows = [[label(crop(v, "patch", 4), k.split(":")[0] + (" d" + k[-12] if "dot" in k else ""))
+             for k, v in imgs.items()]]
+    save(sheet(rows), "sheet_stage_zoom.png")
+    rows = [[crop(v, k2) for k2 in ("mound", "water")] for v in imgs.values()]
+    save(sheet(rows), "sheet_lines.png")
+    rows = []
     for m in (0, 1, 2):
-        for pt in (0, 1, 2, 3):
-            prm = dict(d, mode=m, pattern=pt)
-            img = rnd.dither(frame, prm)
-            name = "on_%s_%s.png" % (MODES[m], PATTERNS[pt])
-            save(img, name)
-            configs.append(name)
-            rows.append([crop(img, k) for k in CROPS])
-    s = sheet(rows[:5], None)
-    save(s, "sheet_hue.png")
-    save(sheet([rows[0]] + rows[5:9], None), "sheet_channel.png")
-    save(sheet([rows[0]] + rows[9:13], None), "sheet_palette.png")
-    # Line protection off vs on, hue / Bayer 4 (defaults otherwise).
-    lp = [[crop(frame, k) for k in CROPS],
-          [crop(rnd.dither(frame, dict(d, lineProtect=0)), k) for k in CROPS],
-          [crop(rnd.dither(frame, d), k) for k in CROPS]]
-    save(sheet(lp, None), "sheet_line_protection.png")
-    # Dot sizes 1..4 (hue, Bayer 4).
-    ds = [[crop(rnd.dither(frame, dict(d, dotSize=k)), "mound") for k in (1, 2, 3, 4)]]
-    save(sheet(ds, None), "sheet_dot_sizes.png")
-    print("wrote", len(configs) + 1, "frames and 5 sheets to", OUT)
+        rows.append([crop(rnd.dither(new, dict(d, mode=m, pattern=pt)), "patch", 2) for pt in (0, 1, 2, 3)])
+    save(sheet(rows), "sheet_modes_patterns.png")
+    print("wrote frames and sheets to", OUT)
 
 
-def line_masks(rnd, box, rd):
-    """Pixels the land and water lines change by > 0.06 luminance (and > 0.25)."""
-    base = rnd.sandbox(box, rd, {"drawLandLines": False, "drawWaterLines": False})
-    full = rnd.sandbox(box, rd)
-    dl = np.abs(lum(full[..., :3] / 255.0) - lum(base[..., :3] / 255.0))
-    return dl > 0.06, dl > 0.25
+def block_size(img, rect, sizes=(1, 2, 4, 8, 16, 32)):
+    """Largest k such that >= 95 % of the k x k blocks (aligned to the
+    projector grid) inside rect are one colour; and the uniform share per k."""
+    x, y, w, h = rect
+    c = img[y:y + h, x:x + w, :3].astype(np.int32)
+    key = (c[..., 0] << 16) | (c[..., 1] << 8) | c[..., 2]
+    share = {}
+    for k in sizes:
+        hh, ww = (h // k) * k, (w // k) * k
+        if hh < k or ww < k:
+            break
+        b = key[:hh, :ww].reshape(hh // k, k, ww // k, k)
+        uni = (b == b[:, :1, :, :1]).all(axis=(1, 3))
+        share[k] = uni.mean()
+    best = max([k for k, v in share.items() if v >= 0.95] or [0])
+    return best, share
 
 
-def line_kinds(rnd, box, rd):
-    """Land-line and water-line pixels (each changes luminance by > 0.06)."""
-    full = lum(rnd.sandbox(box, rd)[..., :3] / 255.0)
-    no_land = lum(rnd.sandbox(box, rd, {"drawLandLines": False})[..., :3] / 255.0)
-    no_water = lum(rnd.sandbox(box, rd, {"drawWaterLines": False})[..., :3] / 255.0)
+def cmd_stages(args):
+    ctx, rnd, box, rd, (so, old), (sn, new) = setup(args.gl2)
+    d = dither_defaults()
+    outs = {"old grain (filter off)": old}
+    for ds in (1, 2, 4, 8):
+        outs["new, dot %d" % ds] = rnd.dither(new, dict(d, dotSize=ds))
+    print("Measured dot (or grain) size per patch: largest k with >= 95 % one-colour k x k blocks")
+    print("(projector-aligned, patch interior). Old: the grain cells; new: the filter's dots.")
+    print("%-24s %-13s %s" % ("", "", "  ".join("cover %.2f" % c for c in PATCH_COLS)))
+    for name, img in outs.items():
+        for st in PATCH_ROWS:
+            cells = []
+            for c in PATCH_COLS:
+                k, share = block_size(img, patch_rect(st, c))
+                cells.append("%2d px     " % k)
+            print("%-24s %-13s %s" % (name, st, "  ".join(cells)))
+    # Stage code coverage of the new source in each patch.
+    code = 255 - new[..., 3].astype(int)
+    print("stage code in the patch interiors (share of pixels with the patch's own stage):")
+    for si, st in enumerate(PATCH_ROWS):
+        r = []
+        for c in PATCH_COLS:
+            x, y, w, h = patch_rect(st, c)
+            r.append("%.3f" % (code[y:y + h, x:x + w] == si + 1).mean())
+        print("  %-13s %s" % (st, "  ".join(r)))
+
+
+def cmd_identity(args):
+    """Filter off: the height shader on this branch against ss/plant-grain's
+    (git show), same uniforms, GL3 and GL2, a few settings; bit for bit, RGBA."""
+    tmp = tempfile.mkdtemp()
+    for v in ("GL2", "GL3"):
+        os.makedirs(os.path.join(tmp, v))
+        for f in ("heightMapShader.vert", "heightMapShader.frag"):
+            src = subprocess.check_output(["git", "-C", REPO, "show", "origin/ss/plant-grain:bin/data/shaders/shaders%s/%s" % (v, f)])
+            open(os.path.join(tmp, v, f), "wb").write(src)
+    variants = {"defaults": {}, "band fill off": {"bandFill": False}, "contour lines on": {"drawContourLines": True, "contourLineFactor": 0.1},
+                "every N mm lines": {"landLineMode": 1}, "plants off": {"plantDisplay": 2}}
+    for gl2 in (False, True):
+        ref = setup(gl2, height_dir=os.path.join(tmp, "GL2" if gl2 else "GL3"))
+        cur = setup(gl2)
+        for name, ov in variants.items():
+            o = dict(OLD); o.update(ov)
+            a = ref[1].sandbox(ref[2], ref[3], o)
+            b = cur[1].sandbox(cur[2], cur[3], o)
+            diff = np.abs(a.astype(int) - b.astype(int))
+            print("%s, %-18s identical to ss/plant-grain: %s (max difference %d, RGBA)"
+                  % ("GL2" if gl2 else "GL3", name, bool(diff.max() == 0), diff.max()))
+
+
+def line_kinds(rnd, box, rd, base):
+    full = lum(rnd.sandbox(box, rd, base)[..., :3] / 255.0)
+    o = dict(base); o["drawLandLines"] = False
+    no_land = lum(rnd.sandbox(box, rd, o)[..., :3] / 255.0)
+    o = dict(base); o["drawWaterLines"] = False
+    no_water = lum(rnd.sandbox(box, rd, o)[..., :3] / 255.0)
     return np.abs(full - no_land) > 0.06, np.abs(full - no_water) > 0.06
 
 
 def cmd_lines(args):
-    """Share of pixels drawn undithered (protected) per kind of pixel. A pixel
-    is protected if the output equals its pre-filtered colour while the
-    unprotected output does not."""
-    ctx, rnd, box, rd, sand, frame = setup(args.gl2)
+    """Share of pixels drawn undithered (protected): output equals the
+    pre-filtered source while the unprotected output does not."""
+    ctx, rnd, box, rd, (so, old), (sn, new) = setup(args.gl2)
     d = dither_defaults()
-    line_any, line_strong = line_masks(rnd, box, rd)
-    no_grain = rnd.sandbox(box, rd, {"plantDisplay": 2})
-    grain = np.any(no_grain[..., :3] != sand[..., :3], -1) & ~line_any
-    detail = (np.abs(lum(frame[..., :3] / 255.0) - lum(sand[..., :3] / 255.0)) > 0.06) & ~line_any
-    inside = np.zeros(line_any.shape, bool)
-    inside[1:-1, 1:-1] = sand[1:-1, 1:-1, :3].sum(-1) > 0          # inside the projected box
-    near_grain = grain.copy()
-    for _ in range(3):  # grain and its gaps (3 px)
-        g = near_grain.copy()
-        g[1:] |= near_grain[:-1]; g[:-1] |= near_grain[1:]; g[:, 1:] |= near_grain[:, :-1]; g[:, :-1] |= near_grain[:, 1:]
-        near_grain = g
-    grain = near_grain & ~line_any & ~detail
-    plain = inside & ~(line_any | detail | grain)
-    src = prefilter_np(frame[..., :3] / 255.0, d["exposure"], d["contrast"], d["saturation"])
-    src8 = np.round(src * 255)
-    raw = rnd.dither(frame, dict(d, lineProtect=0))
-    raw_same = np.all(np.abs(raw[..., :3].astype(int) - src8) <= 1, -1)
-    print("pixels: lines %d (strong %d), particles/seeds %d, plant grain and its gaps %d, plain %d"
-          % (line_any.sum(), line_strong.sum(), detail.sum(), grain.sum(), plain.sum()))
-    land, water = line_kinds(rnd, box, rd)
-    print("land-line pixels %d (darker than the fill: %.0f %%), water-line pixels %d"
-          % (land.sum(), 100 * (lum(sand[..., :3] / 255.0)[land] < lum(no_grain[..., :3] / 255.0)[land] + 1e-9).mean(), water.sum()))
-    print("mode  threshold  lines  strong lines  land   water  particles/seeds  grain   plain (false)")
-    for lp in (1, 2):
-        for th in (0.06, 0.08, 0.10, 0.12, 0.15, 0.20, 0.30):
-            img = rnd.dither(frame, dict(d, lineProtect=lp, lineThreshold=th))
+    for name, frame, sand, base, prm in (("ss/sandbox-dither (grain re-dithered)", old, so, OLD, dict(d, classesOn=False)),
+                                          ("new (flat plants, dot classes)", new, sn, NEW, d)):
+        land, water = line_kinds(rnd, box, rd, base)
+        lines = land | water
+        detail = (np.abs(lum(frame[..., :3] / 255.0) - lum(sand[..., :3] / 255.0)) > 0.06) & ~lines
+        planted = (box_cover_proj(rnd, box, rd) > 0.04) & ~lines & ~detail
+        inside = sand[..., :3].sum(-1) > 0
+        plain = inside & ~(lines | detail | planted)
+        src8 = np.round(prefilter_np(frame[..., :3] / 255.0, d["exposure"], d["contrast"], d["saturation"]) * 255)
+        raw = rnd.dither(frame, dict(prm, lineProtect=0))
+        raw_same = np.all(np.abs(raw[..., :3].astype(int) - src8) <= 1, -1)
+        print("== %s: land-line px %d, water-line px %d, particles/seeds %d, planted %d, plain %d"
+              % (name, land.sum(), water.sum(), detail.sum(), planted.sum(), plain.sum()))
+        print("   mode threshold  land    water   particles  planted  plain")
+        for lp in (1, 2):
+            for th in (0.06, 0.10, 0.15, 0.20):
+                img = rnd.dither(frame, dict(prm, lineProtect=lp, lineThreshold=th))
+                prot = np.all(np.abs(img[..., :3].astype(int) - src8) <= 1, -1) & ~raw_same
+                print("   %d    %.2f      %5.1f%%  %5.1f%%  %5.1f%%     %5.2f%%   %5.2f%%"
+                      % (lp, th, 100 * prot[land].mean(), 100 * prot[water].mean(), 100 * prot[detail].mean(),
+                         100 * prot[planted].mean(), 100 * prot[plain].mean()))
+        if args.save:
+            img = rnd.dither(frame, prm)
             prot = np.all(np.abs(img[..., :3].astype(int) - src8) <= 1, -1) & ~raw_same
-            print("%d     %.2f      %5.1f %%  %5.1f %%       %5.1f %% %5.1f %% %5.1f %%          %5.1f %%  %5.2f %%"
-                  % (lp, th, 100 * prot[line_any].mean(), 100 * prot[line_strong].mean(),
-                     100 * prot[land].mean(), 100 * prot[water].mean(),
-                     100 * prot[detail].mean(), 100 * prot[grain].mean(), 100 * prot[plain].mean()))
-    if args.save:
-        img = rnd.dither(frame, d)
-        prot = np.all(np.abs(img[..., :3].astype(int) - src8) <= 1, -1) & ~raw_same
-        vis = (frame[..., :3] * 0.35).astype(np.uint8)
-        vis[prot] = [255, 210, 0]
-        save(vis, "protected_pixels.png")
+            vis = (frame[..., :3] * 0.35).astype(np.uint8)
+            vis[prot] = [255, 210, 0]
+            save(vis, "protected_%s.png" % ("old" if frame is old else "new"))
 
 
-def band_regions(box):
-    keys = colour_keys()
-    edges = [keys[i][0] for i in range(1, len(keys)) if not np.array_equal(keys[i][1], keys[i - 1][1])]
-    return edges
+def box_cover_proj(rnd, box, rd):
+    """Plant cover per projector pixel: the stage-code-free way, rendering
+    the flat mode with and without plants and taking where it differs."""
+    a = rnd.sandbox(box, rd, NEW)
+    o = dict(NEW); o["plantDisplay"] = 2
+    b = rnd.sandbox(box, rd, o)
+    return np.abs(a[..., :3].astype(int) - b[..., :3].astype(int)).max(-1) / 255.0 * 25.0
 
 
 def cmd_colour(args):
-    """Per band: mean colour of the frame vs the dithered frame over plain
-    pixels (no lines), in 8 x 8 blocks; hue angle and luminance ratio."""
-    ctx, rnd, box, rd, sand, frame = setup(args.gl2)
+    """Mean colour per patch: the flat source vs the filtered frame (dot 2)."""
+    ctx, rnd, box, rd, (so, old), (sn, new) = setup(args.gl2)
     d = dither_defaults()
-    base = rnd.sandbox(box, rd, {"drawLandLines": False, "drawWaterLines": False})
-    line_any = np.abs(lum(sand[..., :3] / 255.0) - lum(base[..., :3] / 255.0)) > 0.02
-    q = (frame[..., :3] // 8).astype(np.int32)
-    key = q[..., 0] * 1024 + q[..., 1] * 32 + q[..., 2]
-    vals, counts = np.unique(key[~line_any], return_counts=True)
-    top = vals[np.argsort(-counts)][:12]
+    img = rnd.dither(new, d)
 
     def hue(c):
         mx, mn = c.max(), c.min()
         if mx - mn < 1e-6:
             return float("nan")
         r, g, b = c
-        if mx == r:
-            h = ((g - b) / (mx - mn)) % 6
-        elif mx == g:
-            h = (b - r) / (mx - mn) + 2
-        else:
-            h = (r - g) / (mx - mn) + 4
+        h = ((g - b) / (mx - mn)) % 6 if mx == r else (b - r) / (mx - mn) + 2 if mx == g else (r - g) / (mx - mn) + 4
         return 60 * h
-
-    for m in (0, 1, 2):
-        img = rnd.dither(frame, dict(d, mode=m))
-        print("mode %s (Bayer 4, dot %d, levels %d)" % (MODES[m], d["dotSize"], d["levels"]))
-        print("  colour (frame)   px      hue frame  hue dots  d-hue   lum frame  lum dots")
-        for k in top:
-            mask = (key == k) & ~line_any
-            if mask.sum() < 2000:
-                continue
-            a = frame[..., :3][mask].mean(0) / 255
-            b = img[..., :3][mask].mean(0) / 255
-            ha, hb = hue(a), hue(b)
-            dh = ((hb - ha + 180) % 360) - 180 if not (math.isnan(ha) or math.isnan(hb)) else float("nan")
-            print("  #%02X%02X%02X       %6d   %6.1f    %6.1f   %+5.1f    %.3f      %.3f"
-                  % (*(np.round(a * 255).astype(int)), mask.sum(), ha, hb, dh, lum(a[None])[0], lum(b[None])[0]))
+    print("patch                source     hue src  hue dots  lum src  lum dots   old grain mean")
+    for st in PATCH_ROWS:
+        for c in PATCH_COLS:
+            x, y, w, h = patch_rect(st, c)
+            a = new[y:y + h, x:x + w, :3].reshape(-1, 3).mean(0) / 255
+            b = img[y:y + h, x:x + w, :3].reshape(-1, 3).mean(0) / 255
+            o = old[y:y + h, x:x + w, :3].reshape(-1, 3).mean(0) / 255
+            print("%-12s %.2f  #%02X%02X%02X   %6.1f   %6.1f    %.3f    %.3f      #%02X%02X%02X lum %.3f"
+                  % (st, c, *np.round(a * 255).astype(int), hue(a), hue(b), lum(a[None])[0], lum(b[None])[0],
+                     *np.round(o * 255).astype(int), lum(o[None])[0]))
 
 
 def gauss(img, s):
@@ -715,75 +902,76 @@ def gauss(img, s):
 
 
 def cmd_moire(args):
-    """Low-frequency error of the dots against the frame (Gaussian sigma 3 px,
-    ~2.6 mm on the sand: structure the eye still resolves at ~1 m), in a
-    grain region and in a plain-fill region; and its spectrum peak period."""
-    ctx, rnd, box, rd, sand, frame = setup(args.gl2)
+    """Beat check in the planted patches: low-pass (Gaussian sigma 3 px) error
+    of the dots against the flat source, and the period of its strongest
+    spectral peak, per dot size; a plain-fill patch of sand for reference.
+    A beat shows as error well above the plain fill at a period longer than
+    the filter's own (4 dots x the largest dot of the patch's class)."""
+    ctx, rnd, box, rd, (so, old), (sn, new) = setup(args.gl2)
     d = dither_defaults()
-    regions = {"grain (pioneer 1 px + intermediate 2 px + climax 4 px)": (150, 300, 260, 180),
-               "plain fill (no plants)": (560, 120, 200, 110)}
-    src = lum(frame[..., :3] / 255.0)
-    for gs in (1.0, 1.5, 2.0):
-        fr = frame if gs == 1.0 else compose(rnd.sandbox(box, rd, {"grainScale": gs}), box, np.random.default_rng(5))
-        src = lum(fr[..., :3] / 255.0)
-        print("grainScale %.1f" % gs)
-        print("  dot  pattern   " + "  ".join("%-12s" % n.split(" ")[0] for n in regions) + "  (RMS low-pass luminance error; peak period px)")
-        for ds in (1, 2, 3, 4, 6):
-            for pt in (0, 1):
-                img = rnd.dither(fr, dict(d, dotSize=ds, pattern=pt, lineProtect=0))
-                out = lum(img[..., :3] / 255.0)
-                cells = []
-                for n, (x, y, w, h) in regions.items():
-                    e = gauss(out[y:y + h, x:x + w], 3.0) - gauss(src[y:y + h, x:x + w], 3.0)
-                    e = e[12:-12, 12:-12]
-                    spec = np.abs(np.fft.rfft2(e - e.mean()))
-                    spec[0, 0] = 0
-                    iy, ix = np.unravel_index(np.argmax(spec), spec.shape)
-                    fy = (iy if iy <= e.shape[0] // 2 else iy - e.shape[0]) / e.shape[0]
-                    fx = ix / e.shape[1]
-                    per = 1.0 / max(math.hypot(fx, fy), 1e-9)
-                    cells.append("%.4f/%5.1f" % (np.sqrt((e ** 2).mean()), per))
-                print("  %d    %-8s  %s" % (ds, PATTERNS[pt], "  ".join("%-12s" % c for c in cells)))
+    src = lum(new[..., :3] / 255.0)
+    x, y = to_proj(390, 60)
+    regions = {"plain sand": (int(x) - 48, int(y) - 32, 96, 64)}
+    for st in PATCH_ROWS:
+        regions[st + " 0.45"] = patch_rect(st, 0.45, inset=3)
+    print("dot  " + "  ".join("%-17s" % n for n in regions) + "   (RMS low-pass error / peak period px)")
+    for ds in (1, 2, 3, 4, 5, 6, 8):
+        img = rnd.dither(new, dict(d, dotSize=ds, lineProtect=0))
+        out = lum(img[..., :3] / 255.0)
+        cells = []
+        for n, (rx, ry, rw, rh) in regions.items():
+            e = gauss(out[ry:ry + rh, rx:rx + rw], 3.0) - gauss(src[ry:ry + rh, rx:rx + rw], 3.0)
+            e = e[10:-10, 10:-10]
+            spec = np.abs(np.fft.rfft2(e - e.mean()))
+            spec[0, 0] = 0
+            iy, ix = np.unravel_index(np.argmax(spec), spec.shape)
+            fy = (iy if iy <= e.shape[0] // 2 else iy - e.shape[0]) / e.shape[0]
+            per = 1.0 / max(math.hypot(ix / e.shape[1], fy), 1e-9)
+            cells.append("%.4f / %5.1f" % (np.sqrt((e ** 2).mean()), per))
+        print("%d    %s" % (ds, "  ".join("%-17s" % c for c in cells)))
 
 
 def cmd_compare(args):
     out = []
     for gl2 in (False, True):
-        ctx, rnd, box, rd, sand, frame = setup(gl2)
+        ctx, rnd, box, rd, (so, old), (sn, new) = setup(gl2)
         d = dither_defaults()
-        imgs = [sand, frame]
+        imgs = [so, sn, old, new]
         for m in (0, 1, 2):
             for pt in (0, 1, 2, 3):
-                imgs.append(rnd.dither(frame, dict(d, mode=m, pattern=pt)))
+                imgs.append(rnd.dither(new, dict(d, mode=m, pattern=pt)))
+        for ds in (1, 3, 8):
+            imgs.append(rnd.dither(new, dict(d, dotSize=ds)))
         out.append(imgs)
-    names = ["height shader", "composite"] + ["%s/%s" % (MODES[m], PATTERNS[p]) for m in (0, 1, 2) for p in (0, 1, 2, 3)]
+    names = ["height shader old", "height shader new (flat + code)", "composite old", "composite new"] + \
+        ["%s/%s" % (MODES[m], PATTERNS[p]) for m in (0, 1, 2) for p in (0, 1, 2, 3)] + ["hue dot 1", "hue dot 3", "hue dot 8"]
     for n, a, b in zip(names, out[0], out[1]):
         diff = np.abs(a.astype(int) - b.astype(int))
-        print("GL2 vs GL3, %-18s identical %s (max channel difference %d, pixels differing %.4f %%)"
-              % (n, bool(diff.max() == 0), diff.max(), 100 * np.any(diff > 0, -1).mean()))
+        print("GL2 vs GL3, %-32s identical %s (max channel difference %d)" % (n, bool(diff.max() == 0), diff.max()))
 
 
 def cmd_timing(args):
-    ctx, rnd, box, rd, sand, frame = setup(args.gl2)
+    ctx, rnd, box, rd, (so, old), (sn, new) = setup(args.gl2)
     d = dither_defaults()
     for ds in (1, 2, 4, 8):
-        prm = dict(d, dotSize=ds)
-        rnd.dither(frame, prm)
-        GL.glFinish()
-        n = 10
-        t = time.perf_counter()
-        for _ in range(n):
-            rnd.dither(frame, prm)
-        GL.glFinish()
-        print("dot %d: %.1f ms per filter (upload + 2 passes + read-back), %s" % (ds, 1000 * (time.perf_counter() - t) / n,
-              GL.glGetString(GL.GL_RENDERER).decode()))
+        for classes in (False, True):
+            prm = dict(d, dotSize=ds, classesOn=classes)
+            rnd.dither(new, prm)
+            GL.glFinish()
+            n = 10
+            t = time.perf_counter()
+            for _ in range(n):
+                rnd.dither(new, prm)
+            GL.glFinish()
+            print("dot %d, classes %-5s: %.1f ms per filter (upload + passes + read-back), %s"
+                  % (ds, classes, 1000 * (time.perf_counter() - t) / n, GL.glGetString(GL.GL_RENDERER).decode()))
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["frames", "lines", "colour", "moire", "compare", "timing"])
+    ap.add_argument("cmd", choices=["frames", "stages", "identity", "lines", "colour", "moire", "compare", "timing"])
     ap.add_argument("--gl2", action="store_true")
-    ap.add_argument("--save", action="store_true", help="lines: also write out/protected_pixels.png")
+    ap.add_argument("--save", action="store_true", help="lines: also write out/protected_*.png")
     ap.add_argument("--fill-off", action="store_true", help="Band fill off (dark-room look)")
     a = ap.parse_args()
     globals()["FILL_OFF"] = a.fill_off
