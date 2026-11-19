@@ -31,6 +31,9 @@
 		<ClCompile Include="src\Games\SeedLayer.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
+		<ClCompile Include="src\Common\DitherFilter.cpp">
+			<Filter>src\Common</Filter>
+		</ClCompile>
 		<ClCompile Include="src\Games\WaterFlowField.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
@@ -206,6 +209,9 @@
 	<ItemGroup>
 		<Filter Include="src">
 			<UniqueIdentifier>{d8376475-7454-4a24-b08a-aac121d3ad6f}</UniqueIdentifier>
+		</Filter>
+		<Filter Include="src\Common">
+			<UniqueIdentifier>{6D3F2A41-8C1B-4E7A-9F25-3B7C1D2E4A05}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="src\Games">
 			<UniqueIdentifier>{AA87C14C--613-5-48-6B-9-17E-2F1A2F71D5FB}</UniqueIdentifier>
@@ -766,6 +772,9 @@
 		</ClInclude>
 		<ClInclude Include="src\Games\SeedLayer.h">
 			<Filter>src\Games</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Common\DitherFilter.h">
+			<Filter>src\Common</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Games\WaterFlowField.h">
 			<Filter>src\Games</Filter>

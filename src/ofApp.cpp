@@ -81,6 +81,14 @@ void ofApp::setup() {
 
 	lastKinectROI = kinectROI;
 
+	// Sandbox dither filter (display only): its own preset file (Save/Load
+	// in the Sand Surface Renderer panel); on by default on this branch.
+	// GL objects are made on first use, in the projector window.
+	sandboxDither.setPresetFile("settings/sandboxDither.xml");
+	sandboxDither.setClassNames("Pioneer", "Intermediate", "Climax");
+	if (ofFile::doesFileExist("settings/sandboxDither.xml"))
+		sandboxDither.loadPreset();
+
 	imgui.setup();
 
 }
@@ -89,6 +97,9 @@ void ofApp::setup() {
 void ofApp::update() {
     // Call kinectProjector->update() first during the update function()
 	kinectProjector->update();
+	// Display only: with the dither filter on, the sand is drawn for it
+	// (flat plants + stage code in alpha, solid contour diagonals).
+	sandSurfaceRenderer->setDitherFilterActive(ditherActive());
    	sandSurfaceRenderer->update();
 
 	if (kinectProjector->getKinectROI() != lastKinectROI)
@@ -153,7 +164,16 @@ void ofApp::draw()
 		// patches blended on top (see heightMapShader.frag and
 		// VegetationField.h), plus the ELF deer/human population - see
 		// ofApp.h's header note on what has been removed from this branch.
-		sandSurfaceRenderer->drawMainWindow(x, y, w, h);
+		if (ditherActive()) {
+			// The sand's alpha carries the stage code (252..255): copy it,
+			// do not blend it (the main window shows it undithered).
+			ofPushStyle();
+			ofEnableBlendMode(OF_BLENDMODE_DISABLED);
+			sandSurfaceRenderer->drawMainWindow(x, y, w, h);
+			ofPopStyle();
+		} else {
+			sandSurfaceRenderer->drawMainWindow(x, y, w, h);
+		}
 		vegetationField.drawSeedsMainWindow(x, y, w, h);
 		waterFlowField.drawMainWindow(x, y, w, h);
 		critterController.drawMainWindow(x, y, w, h);
@@ -165,6 +185,10 @@ void ofApp::draw()
 		kinectProjector->drawGui();
 		if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING) {
 			sandSurfaceRenderer->drawGui();
+			// Appends to the Sand Surface Renderer panel (same window name).
+			ImGui::Begin("Sand Surface Renderer");
+			sandboxDither.drawGui();
+			ImGui::End();
 			critterController.drawGui();
 			vegetationField.drawGui();
 			waterFlowField.drawGui();
@@ -177,12 +201,35 @@ void ofApp::drawProjWindow(ofEventArgs &args)
 {
 	if (kinectProjector->GetApplicationState() == KinectProjector::APPLICATION_STATE_RUNNING)
 	{
-		sandSurfaceRenderer->drawProjectorWindow();
-		vegetationField.drawSeedsProjectorWindow();
-		waterFlowField.drawProjectorWindow();
-		critterController.drawProjectorWindow();
+		// Sandbox dither filter (display only): the same four layers,
+		// captured in a projector-sized FBO and drawn as dots. The sand is
+		// copied without blending, so its alpha (the stage code for the
+		// filter's dot size) arrives intact; the layers after it write
+		// colour only (glColorMask), so their own blend functions cannot
+		// change that alpha. Off (or shaders missing): straight to the
+		// window, exactly as before.
+		const bool dither = ditherActive()
+			&& sandboxDither.begin((int)projWindow->getWidth(), (int)projWindow->getHeight());
+		if (dither) {
+			ofPushStyle();
+			ofEnableBlendMode(OF_BLENDMODE_DISABLED);
+			sandSurfaceRenderer->drawProjectorWindow();
+			ofPopStyle();
+			glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
+			vegetationField.drawSeedsProjectorWindow();
+			waterFlowField.drawProjectorWindow();
+			critterController.drawProjectorWindow();
+			glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+			sandboxDither.end();
+			sandboxDither.drawCaptured(0, 0);
+		} else {
+			sandSurfaceRenderer->drawProjectorWindow();
+			vegetationField.drawSeedsProjectorWindow();
+			waterFlowField.drawProjectorWindow();
+			critterController.drawProjectorWindow();
+		}
 	}
-	kinectProjector->drawProjectorWindow();
+	kinectProjector->drawProjectorWindow(); // calibration and overlays, never dithered
 }
 
 void ofApp::exit()

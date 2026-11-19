@@ -75,9 +75,19 @@ uniform float plantRadiusScale;   // mm
 // grain is an ordered Bayer 4x4 dither in projector pixels: dot density =
 // cover, grain size = stage (pioneer 1 px, intermediate 2, climax 4, x
 // grainScale), colour mixed from grey to the role colour by soil S.
+// 3 flat for the dither filter (2026-11-19, set only while the filter is
+// on and Grain is chosen): no grain; the colour moves from the land
+// colour to the stage colours (grainColour, same colours and soil
+// mixing) by cover, and the output alpha carries the dominant stage for
+// the filter's dot size: 255 none (or under STAGE_MIN_COVER total cover),
+// 254 pioneer, 253 intermediate, 252 climax. Modes 0..2 leave alpha 1.
 uniform int plantDisplay;
 uniform float grainScale;
 uniform float grainBrightness;
+// Contour lines: 1 draws the two-edge (diagonal) pixels solid instead of
+// on the 2-px checkerboard (set while the dither filter is on).
+uniform int contourSolid;
+const float STAGE_MIN_COVER = 0.04;
 // Water lines (2026-11-05): glowing bathymetric contours on simulated
 // water only, from the same per-pixel elevation as the colour map
 // (depthfrag). waterLineTransform maps depthfrag to elevation / spacing.
@@ -282,6 +292,21 @@ void main()
             color.rgb = grainColour(vec3(0.369, 0.608, 0.298), soilS); // intermediate #5E9B4C
         if (bayer4(floor(fc / (4.0 * g))) < veg.r)
             color.rgb = grainColour(vec3(0.184, 0.369, 0.204), soilS); // climax #2F5E34
+    }
+
+    // Flat for the dither filter (2026-11-19): see plantDisplay above.
+    float plantStage = 0.0;
+    if (plantDisplay == 3 && hasVegetation == 1 && !simWater)
+    {
+        float soilS = (hasSite == 1) ? texture(siteSampler, vegUV).r : 0.0;
+        float total = veg.g + veg.b + veg.r;
+        float k = (total > 1.0) ? 1.0 / total : 1.0;
+        color.rgb = color.rgb * (1.0 - total * k)
+            + grainColour(vec3(0.788, 0.859, 0.431), soilS) * (veg.g * k)  // pioneer #C9DB6E
+            + grainColour(vec3(0.369, 0.608, 0.298), soilS) * (veg.b * k)  // intermediate #5E9B4C
+            + grainColour(vec3(0.184, 0.369, 0.204), soilS) * (veg.r * k); // climax #2F5E34
+        if (total > STAGE_MIN_COVER)
+            plantStage = (veg.r >= veg.b && veg.r >= veg.g) ? 3.0 : ((veg.b >= veg.g) ? 2.0 : 1.0);
     }
 
     // Glowing land lines (2026-11-06), over the land colours, soil tint and
@@ -489,12 +514,14 @@ void main()
         }
 
         /* Check for all cases in which the pixel should be colored as a topographic contour line: */
-        if(numEdges>2||edgeMask==3||edgeMask==12||(numEdges==2&&mod(floor(gl_FragCoord.x)+floor(gl_FragCoord.y),2.0)==0.0))
+        if(numEdges>2||edgeMask==3||edgeMask==12||(numEdges==2&&(contourSolid==1||mod(floor(gl_FragCoord.x)+floor(gl_FragCoord.y),2.0)==0.0)))
         {
             /* Topographic contour lines are rendered in black: */
             color=vec4(0.0,0.0,0.0,1.0);
         }
     }
 
+    if (plantDisplay == 3)
+        color.a = 1.0 - plantStage / 255.0; // stage code for the dither filter
     outputColor = color;
 }

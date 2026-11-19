@@ -73,6 +73,10 @@ public:
     // uniforms. Optional: if never set, the shader's vegetation sampler
     // is simply never bound and the base terrain color shows unmodified.
     void setVegetationField(VegetationField* v) { vegetationField = v; }
+    // Display only (ofApp, each frame before update()): true while the
+    // Sandbox dither filter is drawing. Plants (Grain) are then drawn flat
+    // with the stage code in alpha, and contour diagonals solid.
+    void setDitherFilterActive(bool on) { ditherFilterActive = on; }
 
     // Main loop function
     void setup(bool sdisplayGui);
@@ -198,6 +202,7 @@ private:
     bool drawLandShore = true;         // outline the shoreline on the land side
     float dimUnderPlants = 0.8f;       // line brightness x (1 - this x cover)
     bool bandFill = true;              // false: land starts black (dark room)
+    bool ditherFilterActive = false;   // see setDitherFilterActive()
     float flatFadeAmount = 0.6f;       // "Hide lines on flat ground" 0..1 (x 15 deg); 0.6 from tools/land_lines_preview.py
     std::vector<float> landBandEdges;  // colour-map band boundaries, mm
     void updateLandBandEdges();

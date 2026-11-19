@@ -250,6 +250,9 @@ void SandSurfaceRenderer::drawSandbox() {
     heightMapShader.setUniformTexture("pixelCornerElevationSampler", contourLineFramebufferObject.getTexture(), 3);
     heightMapShader.setUniform1f("contourLineFactor", contourLineFactor);
     heightMapShader.setUniform1i("drawContourLines", drawContourLines);
+    // Dither filter on (ofApp, display only): contour diagonals solid, not
+    // on the 2-px checkerboard.
+    heightMapShader.setUniform1i("contourSolid", ditherFilterActive ? 1 : 0);
     heightMapShader.setUniform1f("heightMapNumEntries", (float)heightMap.getNumEntries());
     heightMapShader.setUniform1f("time", ofGetElapsedTimef());
     // Water lines: u = depthfrag * x + y = elevation (mm) / spacing, the
@@ -331,7 +334,9 @@ void SandSurfaceRenderer::drawSandbox() {
     bool grain = vegetationField && hasVegetation && vegetationField->hasSiteData()
         && PlantLayer::PLANT_DISPLAY == PlantLayer::DISPLAY_GRAIN;
     SeedLayer::BAND_FILL_ON = bandFill; // seeds: "over" on the fill, additive on black
-    heightMapShader.setUniform1i("plantDisplay", grain ? 1 : (PlantLayer::drawDiscs() ? 0 : 2));
+    // Dither filter on: Grain becomes 3, flat colour plus the stage code in
+    // alpha, so the filter draws the stages (DitherFilter dot classes).
+    heightMapShader.setUniform1i("plantDisplay", grain ? (ditherFilterActive ? 3 : 1) : (PlantLayer::drawDiscs() ? 0 : 2));
     heightMapShader.setUniform1f("grainScale", ofClamp(PlantLayer::GRAIN_SCALE, 1.0f, 4.0f));
     heightMapShader.setUniform1f("grainBrightness", ofClamp(bandFill ? PlantLayer::GRAIN_BRIGHTNESS_FILL : PlantLayer::GRAIN_BRIGHTNESS_DARK, 1.0f, 2.0f));
     // Debug aid - see VegetationField::DEBUG_SHOW_SNOW's header note.

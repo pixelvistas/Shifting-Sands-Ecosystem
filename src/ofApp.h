@@ -37,6 +37,7 @@ deer/human population.
 #include "Games/CritterController.h"
 #include "Games/VegetationField.h"
 #include "Games/WaterFlowField.h"
+#include "Common/DitherFilter.h"
 
 class ofApp : public ofBaseApp {
 
@@ -78,6 +79,10 @@ private:
 	// against vegetationField, same ownership convention as
 	// critterController.
 	WaterFlowField waterFlowField;
+	// Optional screen-space dither over the Sandbox projector output
+	// (src/Common/DitherFilter.h); display only. On by default here.
+	DitherFilter sandboxDither;
+	bool ditherActive() const { return sandboxDither.params.enabled && !sandboxDither.shadersFailed(); }
 
 	// Main window ROI
 	ofRectangle mainWindowROI;
