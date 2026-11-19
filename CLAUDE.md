@@ -18,6 +18,7 @@ Sand, ported to openFrameworks 0.12.1 with an ofxImGui GUI (`README.md`,
   (display only), on `ss/land-lines`.
 - `prototype/3-ascii` (on `ss/plant-grain`): "Display mode" Sandbox (0) / ASCII (2; 1 = Mycorrhiza).
 - `prototype/4-scene` (on `prototype/3-ascii` 5213a45): adds Display mode Scene (3).
+- `ss/sandbox-dither` (on `prototype/4-scene` dd22ee2): optional dither over Sandbox's output.
 - `ss/land-lines`: land lines, band fill, flat fade, Kinect driver stack; on `ss/water-lines`.
 - `ss/water-lines` (water lines) on `ss/succession-feedback` (succession) on `ss/dewitz-flow`.
 - `ss/dewitz-flow`: flow particles, water table. Fallback `ss/ecosim-model-visuals-kiqw12`.
@@ -118,6 +119,10 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   per-cell structure tensor/Dither green palette/Both; reuses AsciiFontAtlas). Shaders `bin/data/shaders/scene/GL2|GL3`; preset
   `settings/scenePreset.xml`; acceptance criteria in `CONCEPTS.md`. Test: `tools/scene_preview/`.
   Needs a Kinect to reach the running state (mock terrain is display input only).
+- `src/Common/DitherFilter.*` (`ss/sandbox-dither`): screen-space dither of any rect texture (hue-preserving /
+  per channel / palette; Bayer 4/8, line screen, halftone; pre-filter; line protection). Shaders
+  `bin/data/shaders/dither/GL2|GL3`; preset `settings/sandboxDither.xml`; GUI under Sand Surface Renderer.
+  Sandbox: `drawProjWindow` captures the four layers in an FBO when on (off: no FBO). Test: `tools/sandbox_dither_preview/`.
 
 ## Hydrology (`VegetationField::stepFlow()`)
 

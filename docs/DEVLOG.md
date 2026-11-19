@@ -4642,3 +4642,170 @@ sequence before the dig: 7.5 % of output pixels change per 0.1 s (wind,
 dapple, drops). The 60 s noise test was stopped for this fix and is rerun
 next. Not compiled with openFrameworks, not hardware-tested.
 
+
+## 2026-11-19 - Sandbox dither filter (`ss/sandbox-dither`, from `prototype/4-scene` dd22ee2)
+
+Display only. An optional screen-space dither over the Sandbox mode's own
+projector output; nothing about how Sandbox renders changes, and no
+simulation, model or other display mode is touched (the only non-new files
+changed are `ofApp.*` and the two project files).
+
+Structure and decisions:
+- `src/Common/DitherFilter.*` (new folder): there was no shared display
+  folder. `src/Games` holds simulation-side classes and `src/Prototypes/*`
+  is per prototype, so a filter meant for any mode goes in neither. It does
+  not use `SceneGL` (that would tie it to Prototype 4); it has its own
+  small FBO, quad and GPU-timer helpers. Shaders `bin/data/shaders/dither/
+  GL2|GL3` (`dither.vert`, `ditherDots.frag`, `ditherOut.frag`).
+- Settings are an instance `Params` struct (not statics: several modes may
+  each have a filter later); the defaults live once, in `makeDefaults()` at
+  the top of `DitherFilter.cpp`.
+- Preset: its own file, `settings/sandboxDither.xml` (Save/Load/Defaults
+  buttons; loaded at start if present). Not in
+  `sandSurfaceRendererSettings.xml`: that file is rewritten whole by
+  SandSurfaceRenderer on exit, so the filter would have to live inside
+  SandSurfaceRenderer, which it must not know about. The on/off state is
+  saved with the preset.
+- GUI: "Dither filter" header appended to the "Sand Surface Renderer" panel
+  (ofApp re-opens that ImGui window after `sandSurfaceRenderer->drawGui()`),
+  shown in Sandbox mode only.
+- `ofApp::drawProjWindow`: with the filter on, `sandboxDither.begin()`
+  captures the four layers into a projector-sized FBO, `drawCaptured()`
+  draws it dithered, then `kinectProjector->drawProjectorWindow()` as
+  before, undithered. Off (or shaders missing, `begin()` returns false): the
+  same four calls straight to the window, no FBO; the diff of that block
+  against dd22ee2 is only the `if (dither)` lines. The main-window preview
+  stays undithered.
+
+The four layers in an FBO (checked in the code):
+- All four draw pre-rendered textures (`fboProjWindow`, SeedLayer's FBO,
+  `dewitzFbo`, the critter FBO) at (0, 0) full size; their own FBOs are
+  rendered in `update()`, not while drawing, so nothing binds an FBO inside
+  the capture. The non-default particle modes draw a line mesh, the obstacle
+  overlay a triangle mesh.
+- Blending: ALPHA, ADD, and SeedLayer's (ONE, ONE_MINUS_SRC_ALPHA) and
+  (ONE, ONE): every factor uses source alpha or constants, none destination
+  alpha, so RGB in an RGBA8 FBO equals the window's. The FBO alpha ends up
+  different; the filter ignores it and writes opaque.
+- Clear: the capture is cleared to opaque black, as the window; the sand
+  layer is opaque over the whole projector anyway.
+- Viewport and matrices: `ofFbo::begin()` sets the same screen perspective
+  for the FBO's size as the window has; the FBO is the projector window's
+  size.
+- Multisampling (the one thing handled): oF windows are multisampled by
+  default; meshes drawn into a plain FBO would lose that antialiasing. The
+  capture FBO takes the window's `GL_SAMPLES` (queried before binding) and
+  is resolved on `getTexture()`. Textured full-screen layers are unaffected
+  either way.
+- Contexts: FBOs and timer queries are not shared between the two windows'
+  GL contexts, so the filter creates everything lazily on first use, which
+  happens in the projector window's draw.
+
+The filter (based on SceneStylizer's dither, prototype/4-scene):
+- Pass 1, one texel per dot (RGBA16F): mean of the dot's pre-filtered
+  pixels. Pre-filter: exposure (x colour), contrast (luminance about 0.5),
+  saturation (away from the pixel's grey, luminance unchanged); hue kept; a
+  colour above 1 is divided by its largest channel, not clipped per channel.
+- Pass 2, per pixel: threshold from Bayer 4x4 or 8x8 (per dot), a
+  horizontal line screen (per pixel row, period px), or a clustered-dot
+  halftone (per dot; round spot per cell of N x N dots, default 4, grid
+  rotated by the angle; threshold = 1 - the cell's area fraction nearer the
+  spot centre, so tone is linear in dot area). Fixed in projector space,
+  no time term.
+- Modes: hue-preserving (default; luminance quantised to `levels`, output
+  = hue x tq / lum(hue), hue = c / max(c), divided by its maximum channel if
+  above 1), per channel, palette (2 or 3 stops; Gold, Night, Green). Black
+  point: luminance at or below it gives black (default 0.02).
+- Line protection (default "Bright and dark lines", threshold 0.10).
+  Detection: luminance sampled (dot size + 1) px away on both sides along 4
+  axes. Ridge across axis i = how much the pixel exceeds both samples
+  across it, minus how much it also exceeds both samples along the
+  perpendicular axis; valley likewise for darker. Protected pixels are
+  drawn as their own pre-filtered colour. Why not "brighter than the dot's
+  average", as first specified: a line wider than a dot (the land and water
+  lines are 3 px cores plus halo) fills its dot, so the difference is zero;
+  and the edge of any bright area would count. The first version (brighter
+  than both sides along any axis, without the perpendicular term) marked
+  whole plant-grain patches as lines (1 px Bayer grain: every pixel is a
+  local extreme); the perpendicular term rejects points and textures.
+  "Dark" is needed because with band fill on (default) 94 % of land-line
+  pixels are darker than the fill (lines are mixed in a deepened colour);
+  "Bright lines" alone keeps 2 % of them.
+
+Checks (headless, `tools/sandbox_dither_preview`; Mesa llvmpipe, EGL):
+- The Sandbox frame is the real height-map shader (GL3 and GL2, unchanged)
+  on synthetic terrain through a stand-in calibration, with the
+  SandSurfaceRenderer defaults; seeds and Dewitz particles are stand-ins
+  with the app's blend equations; critters are off (default 0).
+- GL2 vs GL3: identical (max channel difference 0) for the height shader,
+  the composite, and all 12 mode x pattern combinations.
+- Colours kept, hue mode (Bayer 4, dot 2, levels 3; mean over each colour's
+  plain pixels): band hues within 1.3 deg (two soil-tinted greens 5.5 and
+  5.9 deg), luminance within 0.05 (fill green 0.666 -> 0.641, cream 0.843
+  -> 0.832, brown 0.529 -> 0.520, deep water 0.198 -> 0.193). Per channel:
+  hue within 4.4 deg. Palette: by design no hue kept (+41..114 deg).
+- Line protection, band fill on (pixels the lines change by > 0.06 lum,
+  most of them faint halo; "strong" > 0.25 = the cores):
+    threshold  all lines  strong  land  water  particles  grain*  plain
+    0.06       45.0 %     86.2 %  41.4  51.3   70.1       20.2    1.74 %
+    0.10       25.6 %     80.6 %  19.2  36.7   58.9       16.4    1.04 %
+    0.15       12.8 %     71.5 %   3.9  28.4   40.1       12.7    0.46 %
+  (*grain and its gaps within 3 px). Band fill off (dark room), 0.10:
+  lines 43.5 %, strong 58.8 %, plain 1.52 %; "Bright lines" only: lines
+  28.0 %, plain 0.11 %. Where pioneer grain is dense, part of it is drawn
+  undithered (its gaps form a lattice of short lines): the plants then show
+  as their own grain. Map: `docs/sandbox_dither/protected_pixels.png`.
+- Moire, Sandbox grain x filter: the height shader has no dither between
+  colour bands (the map is stepped key pairs); its only dithers are the
+  plant grain (Bayer 4x4 in projector px at 1, 2 and 4 px x grainScale) and
+  the contour lines' 2-px checkerboard (contours off by default). Both
+  grids are in projector pixels, as is the filter's, so at dot 2 (default)
+  each 2 x 2 dot holds one quarter of the grain's 4 x 4 Bayer cell (one
+  threshold from each quartile) or exactly one 2 / 4 px grain cell: dots
+  align with the grain and no beat appears (`sheet_dot_sizes.png`, dots
+  1-4). Dot 3 (and 6) does not divide the grain's 2 and 4 px cells: a
+  blotchy beat in the grain areas, visible in the sheet. Low-pass luminance
+  error (Gaussian sigma 3 px) in the grain region: dot 2 0.040, dot 3
+  0.025, dot 4 0.036, dot 6 0.057; the spectrum shows no short-period peak
+  except the filter's own 4-dot period at dots 4 and 6 (16 and 12 px, also
+  on plain fill), so this metric does not separate the beat: the sheet
+  does. Recommendation: keep the dot size a power of two (1, 2, 4, 8) and
+  grainScale at 1 or 2; if a beat shows on the sand, change Dot size
+  first (2 -> 4), not the pattern. With grainScale 1.5 every dot size
+  misaligns slightly (1.5 / 3 / 6 px cells).
+- Filter off pixel-identical to prototype/4-scene: the off path executes
+  the same four draw calls in the same state (diff above); the layers,
+  their shaders and SandSurfaceRenderer are unchanged
+  (`git diff dd22ee2 --stat` lists only ofApp.*, the project files and new
+  files). Shown by the code, not by a rendered comparison: openFrameworks
+  is not available here.
+- Cost at 1280 x 800, dot 2: extra work = one 1280 x 800 RGBA8 capture (the
+  four layer blits now go there instead of the window) + pass 1 (4 fetches
+  per dot) + pass 2 (10 fetches per pixel with line protection: own pixel,
+  dot, 8 line samples) + the final blit: ~13 M texel fetches and ~8 MB of
+  writes per frame, well under 1 ms on a discrete GPU (estimate). Measured
+  here on llvmpipe (4 CPU cores, software): 13-19 ms per filter for dot
+  sizes 1-8, including upload and read-back, not representative. The panel
+  shows the real GPU time (capture + filter, GL_TIME_ELAPSED).
+- Both GLSL variants read line by line: GL2 = GL3 apart from version,
+  `texture2DRect`, `varying`/`in`, `gl_FragColor`/`outputColor` (diffed).
+  Loops have constant bounds (8, 4); arrays assigned element-wise (GLSL
+  1.20 safe); no derivatives; no time uniform.
+- C++: `DitherFilter.cpp` compiled `-fsyntax-only` against stub oF and
+  ImGui headers (typos only, not the oF API). Not compiled with
+  openFrameworks, not hardware-tested. Crops: `docs/sandbox_dither/`
+  (`sheet_hue.png`: rows off, Bayer 4, Bayer 8, line screen, halftone;
+  `sheet_channel.png`, `sheet_palette.png`, `sheet_line_protection.png`:
+  off / no protection / protection; `sheet_dot_sizes.png`: dot 1-4).
+
+Hardware checklist (Sandbox mode, Sand Surface Renderer panel -> Dither
+filter; first: branch `ss/sandbox-dither` pulled, Release build, elevation
+range reset to the calibrated ceiling):
+1. Filter on: the colours stay (greens, yellow, tan, brown, white, water
+   blues) as dots; with it off, the image is exactly as before.
+2. Water still visibly sloshes; land lines and water lines still glow and
+   read as lines (try Line protection Off / Bright / Bright and dark).
+3. No moire or crawling where the plant grain meets the dots (dot 2 and 4;
+   then dot 3 to see the beat the preview predicts).
+4. From about 1 m: note the dot size and pattern that read best, and the
+   GPU ms readout.
