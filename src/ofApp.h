@@ -39,6 +39,7 @@ deer/human population.
 #include "Games/WaterFlowField.h"
 #include "Prototypes/Ascii/AsciiRenderer.h"
 #include "Prototypes/Scene/SceneRenderer.h"
+#include "Common/DitherFilter.h"
 
 class ofApp : public ofBaseApp {
 
@@ -94,6 +95,9 @@ private:
 	AsciiRenderer ascii;
 	SceneRenderer scene;
 	void drawDisplayModeGui();
+	// Optional screen-space dither over the Sandbox mode's projector output
+	// (src/Common/DitherFilter.h); off by default, display only.
+	DitherFilter sandboxDither;
 
 	// Main window ROI
 	ofRectangle mainWindowROI;

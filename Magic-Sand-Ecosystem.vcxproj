@@ -262,6 +262,7 @@
     <ClCompile Include="src\Prototypes\Scene\RippleField.cpp" />
     <ClCompile Include="src\Prototypes\Scene\SceneStylizer.cpp" />
     <ClCompile Include="src\Prototypes\Scene\SceneRenderer.cpp" />
+    <ClCompile Include="src\Common\DitherFilter.cpp" />
     <ClCompile Include="src\Games\WaterFlowField.cpp" />
     <ClCompile Include="src\Games\LatticeFlow.cpp" />
     <ClCompile Include="src\Games\DewitzFlow.cpp" />
@@ -338,6 +339,7 @@
     <ClInclude Include="src\Prototypes\Scene\RippleField.h" />
     <ClInclude Include="src\Prototypes\Scene\SceneStylizer.h" />
     <ClInclude Include="src\Prototypes\Scene\SceneRenderer.h" />
+    <ClInclude Include="src\Common\DitherFilter.h" />
     <ClInclude Include="src\Games\WaterFlowField.h" />
     <ClInclude Include="src\Games\LatticeFlow.h" />
     <ClInclude Include="src\Games\DewitzFlow.h" />

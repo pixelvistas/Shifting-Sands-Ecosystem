@@ -89,6 +89,11 @@ void ofApp::setup() {
 	// vegetationField; no GL work until the mode is first shown.
 	scene.setup(kinectProjector, &vegetationField);
 	scene.setProjectorRes(projRes);
+	// Sandbox dither filter: its own preset file (Save/Load in the panel);
+	// GL objects are made on first use, in the projector window.
+	sandboxDither.setPresetFile("settings/sandboxDither.xml");
+	if (ofFile::doesFileExist("settings/sandboxDither.xml"))
+		sandboxDither.loadPreset();
 
 	imgui.setup();
 
@@ -193,6 +198,12 @@ void ofApp::draw()
 			if (displayMode == DISPLAY_SCENE)
 				scene.drawGui();
 			sandSurfaceRenderer->drawGui();
+			if (displayMode == DISPLAY_SANDBOX) {
+				// Appends to the Sand Surface Renderer panel (same window name).
+				ImGui::Begin("Sand Surface Renderer");
+				sandboxDither.drawGui();
+				ImGui::End();
+			}
 			critterController.drawGui();
 			vegetationField.drawGui();
 			waterFlowField.drawGui();
@@ -210,13 +221,22 @@ void ofApp::drawProjWindow(ofEventArgs &args)
 		} else if (displayMode == DISPLAY_SCENE) {
 			scene.drawProjectorWindow();
 		} else {
+			// Sandbox dither filter (display only): the same four layers,
+			// captured in a projector-sized FBO and drawn as dots. Off (or
+			// shaders missing): drawn straight to the window, as before.
+			const bool dither = sandboxDither.params.enabled
+				&& sandboxDither.begin((int)projWindow->getWidth(), (int)projWindow->getHeight());
 			sandSurfaceRenderer->drawProjectorWindow();
 			vegetationField.drawSeedsProjectorWindow();
 			waterFlowField.drawProjectorWindow();
 			critterController.drawProjectorWindow();
+			if (dither) {
+				sandboxDither.end();
+				sandboxDither.drawCaptured(0, 0);
+			}
 		}
 	}
-	kinectProjector->drawProjectorWindow();
+	kinectProjector->drawProjectorWindow(); // calibration and overlays, never dithered
 }
 
 void ofApp::drawDisplayModeGui()
