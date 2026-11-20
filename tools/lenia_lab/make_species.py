@@ -145,10 +145,12 @@ def worlds(embed_ids):
         {"id": "two_orbium_repel", "name": "Two Orbium species that repel (tuned)", "status": "tuned",
          "source": "Lab construction (prototype/6-lenia): two published Orbium unicaudatus in channels 0 and 1, "
                    "plus two relative cross kernels (lab extension). Cross-kernel values chosen in the lab, not published.",
-         "notes": "Each sees the other through an Orbium-sized kernel (R 13); Gaussian growth with m 0, s 0.02, h 0.5, "
-                  "relative: no effect when the other is absent, inhibition where it is present. Head-on: they deflect.",
+         "notes": "Each sees the other through an Orbium-sized kernel (R 13); Gaussian growth with m 0, s 0.05, h 0.25, "
+                  "relative: no effect when the other is absent, inhibition where it is present. Chosen by a GPU sweep "
+                  "(h 0.15/0.25/0.5 x s 0.02/0.05 x 3 approach offsets): the only pair where both survived every offset; "
+                  "they deflect. Stronger or narrower values kill both at some offsets.",
          "model": "lenia", "channels": ["orbium", "orbium"],
-         "crossKernels": [rel(1, 0, 0.0, 0.02, 0.5), rel(0, 1, 0.0, 0.02, 0.5)]},
+         "crossKernels": [rel(1, 0, 0.0, 0.05, 0.25), rel(0, 1, 0.0, 0.05, 0.25)]},
         {"id": "two_orbium_prey", "name": "Orbium prey and predator (tuned)", "status": "tuned",
          "source": "Lab construction (prototype/6-lenia): two published Orbium unicaudatus, relative cross kernels "
                    "(lab extension), values chosen in the lab, not published.",
