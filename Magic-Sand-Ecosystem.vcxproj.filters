@@ -34,6 +34,9 @@
 		<ClCompile Include="src\Common\DitherFilter.cpp">
 			<Filter>src\Common</Filter>
 		</ClCompile>
+		<ClCompile Include="src\Common\AsciiFilter.cpp">
+			<Filter>src\Common</Filter>
+		</ClCompile>
 		<ClCompile Include="src\Games\WaterFlowField.cpp">
 			<Filter>src\Games</Filter>
 		</ClCompile>
@@ -774,6 +777,9 @@
 			<Filter>src\Games</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Common\DitherFilter.h">
+			<Filter>src\Common</Filter>
+		</ClInclude>
+		<ClInclude Include="src\Common\AsciiFilter.h">
 			<Filter>src\Common</Filter>
 		</ClInclude>
 		<ClInclude Include="src\Games\WaterFlowField.h">

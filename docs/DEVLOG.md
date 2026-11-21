@@ -4470,3 +4470,241 @@ default, under Sand Surface Renderer -> Dither filter):
 4. Note the dot size and pattern that read best; these become the
    baseline's saved defaults ("Save preset").
 Also: "Dither filter on" off gives the old grain display for comparison.
+
+## 2026-11-21 - ASCII baseline: a second screen-space filter, AsciiFilter (`ss/ascii-baseline`)
+
+Display only. No simulation, model or other display mode changes behaviour.
+`src/Games` gains only read-only getters and one glyph static per layer
+(below); nothing in the simulation reads anything drawn.
+
+Branch: `ss/ascii-baseline` from `origin/ss/dither-baseline` (dd1f9c7).
+Nothing merged into `main`. `prototype/3-ascii` is superseded; none of its
+code was used.
+
+Visual reference: "The Betta Fish in ASCII" by @dwcminh.ascii
+(github.com/dwcminh/ascii-art, BETTA-FISH). Its code is licensed for
+personal, non-commercial use only. It was not cloned, read, ported or
+copied. The filter was written in GLSL from scratch, from a description of
+the technique: dense true-colour characters on black, stroke characters
+along edges, letters by brightness, a double glow and short trails. The
+credit also appears in `AsciiFilter.h` and in the filter's GUI.
+
+Where the inputs already existed (nothing recomputed):
+- Colour: `SandSurfaceRenderer::fboProjWindow`, the projector-sized sand
+  FBO drawn in `update()` (`getProjectorTexture()`). With ASCII on, the
+  layers are not composited into it.
+- Elevation band: the colour map's band edges, `landBandEdges`
+  (`updateLandBandEdges()`), already uploaded to the height shader each
+  frame as `landEdge[16]` / `landEdgeCount`. Band index = how many edges
+  lie at or below the pixel's key height `hMM` (the land lines use the same
+  value).
+- Water: `simWater` in the height shader, from the vegetation texture's
+  alpha (water depth code 1..249, `VegetationField::stepFlow()`), gated by
+  `drawSimWater` as the colour is.
+- Succession stage: the dominant stage `plantDisplay` 3 writes into the
+  colour alpha for `DitherFilter` (254/253/252). The expression is now the
+  function `stageOf()`, used by both; the preview checks that parts stage
+  equals that alpha code at every drawn pixel.
+- Marks: `SeedLayer`'s FBO (premultiplied RGBA), `WaterFlowField`'s
+  `dewitzFbo` (additive RGB) and `CCritterController`'s FBO (straight
+  alpha). All three are projector-sized FBOs the layers already draw into
+  in `update()`. Each class gains `getMarkTexture()` (the FBO, or nullptr
+  when it would draw nothing) and `static char MARK_GLYPH` (seeds `*`,
+  particles `.`, critters `o`). `ofApp` hands the textures to the filter
+  instead of compositing them; the filter's own shader turns each into
+  glyph + colour. Within the stop rule ("more than a change of draw target
+  and a glyph choice"), with one exception, not implemented: the older
+  motion modes (bed slope, pipe velocity, lattice) draw a line mesh
+  straight to the window and have no FBO. Under ASCII they draw nothing. To
+  take part they would need an FBO of their own in `WaterFlowField` (an
+  allocation, a fade and a draw-target change), as Dewitz mode has. The
+  Dewitz obstacle debug overlay is also not drawn under ASCII.
+
+Structure:
+- `src/Common/AsciiFilter.*`, beside `DitherFilter`, in the same style:
+  lazy GL objects in the projector context, a GPU timer, its own preset
+  (`settings/sandboxAscii.xml`, Save / Load / Defaults) and GUI under a
+  collapsing header in the Sand Surface Renderer panel. It knows nothing
+  about Sandbox: generic part fields (R, G, B; G is also the shimmer class)
+  and mark layers with a glyph and a premultiplied flag. Class labels are
+  set by `ofApp` ("Bare land", "Plants", "Water").
+- Shaders `bin/data/shaders/ascii/GL2|GL3`: ascii.vert and 10 fragment
+  passes (cells, parts, marks, markWrite, decide, glyphs, trail, down,
+  blur, out).
+- Font: `bin/data/fonts/JetBrainsMono-Regular.ttf` 2.304, whose name
+  table says SIL OFL 1.1; licence text in `bin/data/fonts/OFL.txt`. (The
+  Debian package's copyright file says Apache-2.0, which is stale for 2.x.
+  The font file itself was followed.)
+- Parts: `SandSurfaceRenderer::drawSandbox()` is now
+  `drawSandboxPass(fbo, parts)`. With ASCII on, it is called a second time
+  into `fboParts` (RGBA8, nearest, no multisampling, cleared to 0 = no
+  part) with the height shader's new `partsPass` = 1. That pass writes
+  R = band, G = layer (0 land, 1 plants, 2 water), B = stage, A = 1, and
+  returns right after the derivatives, so it is cheap. The colour pass
+  sets `partsPass` 0.
+- One setting, `ofApp::screenFilter`: Off / Dither / ASCII, a combo at the
+  top of the filter GUI.
+  - Each filter's `params.enabled` follows it. Ticking a filter's own "on"
+    box, or loading its preset with "on" set, changes the setting.
+  - The setting, "Band outlines replace the Sandbox lines" and the three
+    mark glyphs are saved to `settings/sandboxFilter.xml` whenever they
+    change, and loaded at start-up; they override the presets' own
+    `enabled`.
+  - Default ASCII on this branch.
+- With ASCII on:
+  - Grain plants become `plantDisplay` 3 (flat, as for Dither).
+  - The main window draws the sand unblended (stage alpha), as for Dither.
+  - With "replace lines" on (default), the land lines, water lines,
+    shoreline glow and the old black contour lines are not drawn into the
+    colour; their settings keep their values.
+- `kinectProjector->drawProjectorWindow()` stays last and unfiltered. If
+  the filter cannot draw (shaders, font or parts missing), the frame is
+  drawn as with the filter off.
+
+How a frame is drawn (defaults in `AsciiFilter.cpp`):
+1. Cells (presets 6x10, 7x10 default, 8x12, 10x16 px). Colour sampled at a
+   fixed 4 x 4 grid of points; covered = brightest channel > black
+   threshold 0.04; colour = mean of the covered samples after exposure and
+   saturation; coverage < 0.2 = empty (exact black).
+2. Part: the most common of the centre (2 votes, first) and the 16 samples.
+   "No part" never wins while any sample has a part. Without that rule,
+   cells on the edge of the box took "no part" and drew `+` runs along the
+   border.
+3. Outline: an empty neighbour, or one with a different part (any field),
+   makes the cell an edge. g = the sum of the unit directions to those
+   neighbours (y down). `+` if both |gx| and |gy| are < 0.25; `|` if
+   |gx| > 2.414 |gy|; `_` (boundary below) or `-` (above) if
+   |gy| > 2.414 |gx|; otherwise `/` if gx gy > 0, `\` if < 0. The colour is
+   raised so that its brightest channel is >= 0.85 (the floor), before the
+   coverage scaling of step 5.
+   - With the spec's rule both sides of a boundary are edges, so contour
+     lines are two cells thick (`_` over `-`). A GUI option, "Outline part
+     boundaries on one side only" (default off), draws a part boundary from
+     the side whose part key is higher; empty neighbours still count from
+     both sides.
+   - Band boundaries become the contour lines. Under water, the colour map's
+     five sub-water bands give bed contours. The water/land change in the
+     layer field gives the shoreline, and the stage field outlines plant
+     patches.
+4. Fill: pools `1il!;:`, `rtfjcvxz=+`, `aeoun0{}[]<>`, `08B$#&%Q` by
+   luminance in 4 equal bins. The letter is
+   (floor(hash(cell) x length) + floor(time x rate + hash2(cell))) mod
+   length: each cell steps through its pool at `rate` steps per second, at
+   its own phase, so letters change one cell at a time (no flicker, no
+   synchronised change). Rates by the part's layer, all in the GUI: bare
+   land 0.02, plants 0.2, water 1.5 steps/s.
+5. Marks (the brightest mark pixel anywhere in the cell, every pixel read,
+   so a 1-px particle is not missed): drawn in the mark's own colour,
+   never outlined. Mark threshold 0.25 (GUI). Particles are `.`, not `+`,
+   so they are not mistaken for the `+` outline.
+6. Brightness x (0.30 + 0.70 coverage^0.7); glyph from the atlas x colour.
+7. Trails: max(previous x 0.5, frame) per channel in RGBA16F. Values under
+   1/1024 are set to 0, so a trail always ends at exact 0 (an RGBA8
+   feedback can stick at 1/255).
+8. Glow: tight = 4 x 4 box down to 1/4, Gaussian sigma 1.5 texels;
+   wide = 2 x 2 down from tight to 1/8, sigma 2 texels; added at 0.75 and
+   0.45. The black floor (0.04) is x smoothstep(f, 2f, brightest channel):
+   0 at or below the floor, with no hard step. The glow is also multiplied
+   by the frame's cell mask (1 in drawn cells, fading with the trail, 0 in
+   empty cells) unless "Glow lights empty cells" is on. The floor alone
+   does not keep the near halo off the sand; the mask does (see the
+   checks).
+
+Font atlas: ASCII 32..126, 16 x 6 slots of one cell each, baked when the
+filter first draws and again on a preset change. Font size = 64 x
+min(cell w / advance, cell h / ink height of all 95 characters) at 64 px:
+9 px for 6x10 and 7x10, 11 for 8x12, 15 for 10x16. Baseline and advance
+centred in the slot.
+
+Checks (`tools/sandbox_ascii_preview`, Mesa llvmpipe, real GLSL files):
+- Empty cells exact (0, 0, 0), defaults (glow on, floor 0.04), a still
+  scene after 6 frames (trails settled), every preset: 0 of ~260 000
+  empty-cell pixels non-zero, band fill on and off. With "Glow lights
+  empty cells" on: up to 1838 non-zero pixels (max 14/255, 10x16), all in
+  the halo beside shapes. After the hand trail plus 40 still frames: 0.
+- Off: height shader = `origin/ss/dither-baseline`'s, bit for bit (RGBA),
+  GL3 and GL2, with defaults, band fill off, every N mm, plants off and
+  contour lines on. `partsPass` defaults to 0, and the colour path is
+  unchanged by construction.
+- Dither: the same, with the dither settings (plantDisplay 3, solid
+  contours), band fill on and off. The dither filter output from both is
+  identical. The dither shaders and `DitherFilter.*` are unchanged
+  (`git diff --quiet origin/ss/dither-baseline`). The `ofApp` Dither path
+  is the old one, run when ASCII is not drawing.
+- Succession and water: bit-identical with Off, Dither or ASCII, by the
+  code. No simulation source changed: `src/Games` gains getters and glyph
+  statics only. The filters change only display uniforms, the extra parts
+  draw and what `ofApp` draws; no simulation code reads anything drawn. No
+  separate run was made.
+- Parts (mock box): bands 0..9, layers 0/1/2, stages 0..3 present.
+- GL2 vs GL3: colour, parts and the ASCII output after 4 moving frames,
+  every preset: identical (max difference 0).
+- Frame time at 1280 x 800 (llvmpipe, 4 cores; median of 10 frames,
+  including about 4 ms of texture uploads and read-back):
+
+        cells   defaults   trail and glow off
+        6x10    38.3 ms    24.6 ms
+        7x10    40.5 ms    24.0 ms
+        8x12    40.9 ms    24.4 ms
+        10x16   42.9 ms    26.4 ms
+
+  This is software rendering and says nothing about the installation PC.
+  - Full-resolution work: marks 1 fetch per layer, glyphs 2, trail 2,
+    out 3, plus the parts pass of the height shader (about 10 fetches per
+    texel, early return).
+  - Per-cell passes: about 70 fetches per cell for the marks, about 50 for
+    the rest, over 15 000 cells.
+  - Glow: under 1 fetch per output pixel.
+  - Total: about 15 M fetches per frame, of the order of the dither filter
+    (14 M). Estimated well under 1 ms on a discrete GPU. The panel shows
+    the real GPU time (marks + filter).
+- GLSL read line by line (GL3 written first, GL2 converted, then diffed):
+  - GL2 = GL3 apart from version/extension, texture2DRect, varying/in,
+    gl_FragColor, and the vertex shader's attributes.
+  - Constant loop bounds; dynamic indexing only into uniform arrays and
+    local arrays.
+  - One fix from the read: a local named `step` (a built-in function) was
+    renamed `steps`. Mesa and glslang accepted it; stricter drivers may
+    not.
+  - glslangValidator passes all ascii shaders, GL2 and GL3. The GL2 height
+    shader still has no `#extension GL_ARB_texture_rectangle` line, as
+    before; Mesa and the app accept it.
+- C++: `AsciiFilter.cpp` and `DitherFilter.cpp` compiled with
+  `-fsyntax-only` against stub oF and ImGui headers (stand-ins written for
+  the API used). `ofApp`, `SandSurfaceRenderer` and the layer classes were
+  not compiled. Not compiled with openFrameworks, not hardware-tested.
+- Images in `docs/ascii_baseline/`:
+  - `ascii_7x10_trailOn_glowOn.png`: full frame, defaults;
+  - `sheet_zoom_mound_water.png`: rows = presets; columns = mound and
+    water, trail + glow on, then off;
+  - `sheet_hand_trail.png`;
+  - `sheet_stages_vs_off.png`: ASCII over Off;
+  - `input_parts.png`: R band, G layer, B stage, scaled.
+
+Open points:
+- Dewitz runs 20 000 particles. In flowing water nearly every cell can
+  hold a particle brighter than 0.25, so flowing water may read mostly as
+  `.` marks. Still water keeps its shimmer letters, because particles fade
+  there after 1 s. "Mark threshold" (ASCII panel) and the Dewitz particle
+  count are the controls.
+- Band fill off: the soil tint is not black, so bare land still fills with
+  dim pool-0 letters and outlines in the tint colour. For a dark-room look,
+  raise "Black threshold" or turn "replace lines" off.
+- Stages are told apart by colour and luminance pool only; the patch
+  outline separates them from bare land.
+
+Hardware checklist (first: branch `ss/ascii-baseline` pulled, Release
+build, elevation range reset to the calibrated ceiling; Sand Surface
+Renderer -> Screen filter = ASCII, the default):
+1. From about 1 m, the land reads as letters and the contour lines read as
+   continuous lines. (Also try "Outline part boundaries on one side only".)
+2. The water basin is clearly different from the land, and its shimmer
+   follows the water without strobing.
+3. The sand shows through wherever nothing is drawn (outside the box, and
+   anywhere the panel's "Minimum coverage" leaves empty).
+4. A hand moving over the sand leaves a short soft trail, not a smear.
+5. Note the cell preset and trail amount that read best; these become the
+   saved defaults ("Save preset" in the ASCII section).
+Also: Screen filter Off and Dither for comparison, and "Band outlines
+replace the Sandbox lines" off to compare the Sandbox's own lines with the
+outlines.

@@ -38,6 +38,7 @@ deer/human population.
 #include "Games/VegetationField.h"
 #include "Games/WaterFlowField.h"
 #include "Common/DitherFilter.h"
+#include "Common/AsciiFilter.h"
 
 class ofApp : public ofBaseApp {
 
@@ -79,10 +80,24 @@ private:
 	// against vegetationField, same ownership convention as
 	// critterController.
 	WaterFlowField waterFlowField;
-	// Optional screen-space dither over the Sandbox projector output
-	// (src/Common/DitherFilter.h); display only. On by default here.
+	// Optional screen-space filters over the Sandbox projector output,
+	// display only, mutually exclusive: one setting, Off / Dither / ASCII
+	// (src/Common/DitherFilter.h, src/Common/AsciiFilter.h). Each filter's
+	// own "on" flag follows it. ASCII by default on this branch. Saved,
+	// with the ASCII filter's Sandbox inputs, in settings/sandboxFilter.xml
+	// whenever it changes.
+	enum { FILTER_OFF = 0, FILTER_DITHER = 1, FILTER_ASCII = 2 };
+	int screenFilter = FILTER_ASCII;
+	bool asciiReplacesLines = true; // band outlines replace the Sandbox's own lines
 	DitherFilter sandboxDither;
-	bool ditherActive() const { return sandboxDither.params.enabled && !sandboxDither.shadersFailed(); }
+	AsciiFilter sandboxAscii;
+	bool ditherActive() const { return screenFilter == FILTER_DITHER && !sandboxDither.shadersFailed(); }
+	bool asciiActive() const { return screenFilter == FILTER_ASCII && !sandboxAscii.shadersFailed(); }
+	void syncFilterFlags();
+	void drawFilterGui();
+	bool drawAsciiProjector();
+	void loadFilterSettings();
+	void saveFilterSettings();
 
 	// Main window ROI
 	ofRectangle mainWindowROI;

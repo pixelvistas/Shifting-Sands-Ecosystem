@@ -42,6 +42,10 @@ public:
 	void drawMainWindow(float x, float y, float width, float height);
 	void drawProjectorWindow();
 	void drawGui();
+	// ASCII filter (display only): the critter FBO (straight alpha,
+	// projector size) as a mark layer instead of compositing it.
+	const ofTexture * getMarkTexture() const { return fbo.isAllocated() ? &fbo.getTexture() : nullptr; }
+	static char MARK_GLYPH;      // the character deer and humans draw as under the ASCII filter
 
 	void addDeer(int n);
 	void addHumans(int n);

@@ -77,6 +77,17 @@ public:
     // Sandbox dither filter is drawing. Plants (Grain) are then drawn flat
     // with the stage code in alpha, and contour diagonals solid.
     void setDitherFilterActive(bool on) { ditherFilterActive = on; }
+    // Display only (ofApp, each frame before update()): true while the
+    // Sandbox ASCII filter is drawing. Plants (Grain) are then drawn flat
+    // (as for the dither filter), the sand is drawn a second time into the
+    // parts FBO (heightMapShader partsPass: band, layer, stage), and with
+    // replaceLines the land, water, shoreline and contour lines are not
+    // drawn (the filter's band outlines replace them).
+    void setAsciiFilterActive(bool on, bool replaceLines) { asciiFilterActive = on; asciiReplacesLines = replaceLines; }
+    // The projector-sized sand FBO (drawn in update()) and, while the ASCII
+    // filter is on, its parts FBO (nullptr otherwise). Read only.
+    const ofTexture & getProjectorTexture() const { return fboProjWindow.getTexture(); }
+    const ofTexture * getPartsTexture() const { return (asciiFilterActive && fboParts.isAllocated()) ? &fboParts.getTexture() : nullptr; }
 
     // Main loop function
     void setup(bool sdisplayGui);
@@ -155,6 +166,7 @@ private:
     
     // FBos
     ofFbo   fboProjWindow;    
+    ofFbo   fboParts;          // ASCII filter parts (8-bit, no multisampling, nearest)
     ofFbo   contourLineFramebufferObject;
 
     // Base plane
@@ -203,6 +215,9 @@ private:
     float dimUnderPlants = 0.8f;       // line brightness x (1 - this x cover)
     bool bandFill = true;              // false: land starts black (dark room)
     bool ditherFilterActive = false;   // see setDitherFilterActive()
+    bool asciiFilterActive = false;    // see setAsciiFilterActive()
+    bool asciiReplacesLines = true;
+    void drawSandboxPass(ofFbo & target, bool parts);
     float flatFadeAmount = 0.6f;       // "Hide lines on flat ground" 0..1 (x 15 deg); 0.6 from tools/land_lines_preview.py
     std::vector<float> landBandEdges;  // colour-map band boundaries, mm
     void updateLandBandEdges();

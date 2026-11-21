@@ -14,7 +14,8 @@ Sand, ported to openFrameworks 0.12.1 with an ofxImGui GUI (`README.md`,
 
 ## Branches
 
-- `ss/dither-baseline` (current work, on `ss/plant-grain`): Sandbox dither filter, on by default.
+- `ss/ascii-baseline` (current work, on `ss/dither-baseline`): ASCII filter; Off / Dither / ASCII, ASCII default.
+- `ss/dither-baseline` (on `ss/plant-grain`): Sandbox dither filter.
 - `ss/plant-grain`: grain-dither plants and seed particles
   (display only), on `ss/land-lines`.
 - `ss/land-lines`: land lines, band fill, flat fade, Kinect driver stack; on `ss/water-lines`.
@@ -109,6 +110,11 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   becomes plantDisplay 3 (flat colour by cover, stage code in alpha 254/253/252), the filter draws stages
   with dots x1/x2/x4 (pyramid), contour diagonals solid; `ofApp` copies the sand unblended, later layers
   colour-only (glColorMask). Off: as ss/plant-grain. Test: `tools/sandbox_dither_preview/`.
+- `src/Common/AsciiFilter.*`: screen-space ASCII (look after @dwcminh.ascii; no code used), shaders
+  `bin/data/shaders/ascii/GL2|GL3`, font `bin/data/fonts` (OFL), preset `settings/sandboxAscii.xml`. Inputs: the
+  sand FBO; parts FBO (height shader `partsPass`: band, layer 0/1/2, stage); marks = seed, Dewitz and critter FBOs
+  (`getMarkTexture()`, glyph `MARK_GLYPH`). One setting `screenFilter` + Sandbox inputs in `settings/sandboxFilter.xml`
+  (`ofApp`). ASCII on: Sandbox lines off by default. Test: `tools/sandbox_ascii_preview/`.
 
 ## Hydrology (`VegetationField::stepFlow()`)
 

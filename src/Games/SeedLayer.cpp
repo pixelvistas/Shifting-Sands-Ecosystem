@@ -7,6 +7,7 @@ float SeedLayer::SEED_FADE = 0.125f; // half the former 0.25: longer trails
 float SeedLayer::SEED_BRIGHTNESS = 1.0f;
 float SeedLayer::SEED_OPACITY_ON_FILL = 0.7f;
 bool SeedLayer::BAND_FILL_ON = true;
+char SeedLayer::MARK_GLYPH = '*';
 
 static const int POINT_SEGMENTS = 10; // triangle fan per soft point
 

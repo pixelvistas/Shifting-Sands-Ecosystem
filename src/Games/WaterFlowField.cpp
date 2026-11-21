@@ -7,6 +7,7 @@ bool WaterFlowField::ENABLE_FLOW_FIELD = true;
 float WaterFlowField::VISIBLE_WATER_LINE_MM = -1.5f;
 int WaterFlowField::MASK_MODE = WaterFlowField::MASK_SIMULATED;
 int WaterFlowField::MOTION_MODE = WaterFlowField::MOTION_DEWITZ;
+char WaterFlowField::MARK_GLYPH = '.';
 float WaterFlowField::DEWITZ_FADE = 0.08f;
 float WaterFlowField::DEWITZ_POINT_ALPHA = 0.6f;
 float WaterFlowField::DEWITZ_COLOR[3] = { 0.75f, 0.92f, 1.0f };

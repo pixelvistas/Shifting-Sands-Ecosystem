@@ -32,6 +32,11 @@ public:
 	void drawMainWindow(float x, float y, float w, float h);
 	void drawProjectorWindow();
 	void drawGui(); // inside the Vegetation panel
+	// ASCII filter (display only): the seed FBO (premultiplied, projector
+	// size) as a mark layer instead of compositing it, or nullptr when there
+	// is nothing to draw this frame (same rule as drawProjectorWindow()).
+	const ofTexture * getMarkTexture() const { return drawnThisFrame() ? &fbo.getTexture() : nullptr; }
+	static char MARK_GLYPH;       // the character seeds draw as under the ASCII filter
 
 	static float SEED_SIZE_PX;    // soft point diameter in projector pixels
 	static float SEED_FADE;       // FBO fade per frame ("Seed trail length": lower = longer)

@@ -237,8 +237,39 @@ void SandSurfaceRenderer::drawProjectorWindow(){
 }
 
 void SandSurfaceRenderer::drawSandbox() {
-    fboProjWindow.begin();
-    ofBackground(0);
+    drawSandboxPass(fboProjWindow, false);
+    // ASCII filter on (display only): the same draw again, writing the parts
+    // (band, layer, stage) instead of the colour; nothing else reads it.
+    if (asciiFilterActive) {
+        if (!fboParts.isAllocated() || (int)fboParts.getWidth() != projResX || (int)fboParts.getHeight() != projResY) {
+            ofFboSettings s;
+            s.width = std::max(1, projResX);
+            s.height = std::max(1, projResY);
+            s.internalformat = GL_RGBA;
+            s.textureTarget = GL_TEXTURE_RECTANGLE_ARB;
+            s.minFilter = GL_NEAREST;
+            s.maxFilter = GL_NEAREST;
+            s.wrapModeHorizontal = GL_CLAMP_TO_EDGE;
+            s.wrapModeVertical = GL_CLAMP_TO_EDGE;
+            s.useDepth = false;
+            s.numSamples = 0;
+            fboParts.allocate(s);
+        }
+        drawSandboxPass(fboParts, true);
+    }
+}
+
+// parts false: the colour (as before the ASCII filter); true: the ASCII
+// filter's parts buffer (heightMapShader partsPass), cleared to 0 = no part.
+void SandSurfaceRenderer::drawSandboxPass(ofFbo & target, bool parts) {
+    // With the ASCII filter on and "replace lines", the Sandbox's own lines
+    // are not drawn (display only; the settings keep their values).
+    const bool linesOff = asciiFilterActive && asciiReplacesLines;
+    target.begin();
+    if (parts)
+        ofClear(0, 0, 0, 0);
+    else
+        ofBackground(0);
     kinectProjector->bind();
     heightMapShader.begin();
     heightMapShader.setUniformMatrix4f("kinectProjMatrix",transposedKinectProjMatrix);
@@ -249,7 +280,8 @@ void SandSurfaceRenderer::drawSandbox() {
     heightMapShader.setUniformTexture("heightColorMapSampler",heightMap.getTexture(), 2);
     heightMapShader.setUniformTexture("pixelCornerElevationSampler", contourLineFramebufferObject.getTexture(), 3);
     heightMapShader.setUniform1f("contourLineFactor", contourLineFactor);
-    heightMapShader.setUniform1i("drawContourLines", drawContourLines);
+    heightMapShader.setUniform1i("drawContourLines", (drawContourLines && !linesOff) ? 1 : 0);
+    heightMapShader.setUniform1i("partsPass", parts ? 1 : 0);
     // Dither filter on (ofApp, display only): contour diagonals solid, not
     // on the 2-px checkerboard.
     heightMapShader.setUniform1i("contourSolid", ditherFilterActive ? 1 : 0);
@@ -260,17 +292,17 @@ void SandSurfaceRenderer::drawSandbox() {
     // degenerate, so the shader never divides by zero.
     float wlDen = heightMapScale * std::max(0.1f, waterLineDistance);
     bool wlOk = std::fabs(wlDen) > 1e-9f;
-    heightMapShader.setUniform1i("drawWaterLines", (drawWaterLines && wlOk) ? 1 : 0);
+    heightMapShader.setUniform1i("drawWaterLines", (drawWaterLines && wlOk && !linesOff) ? 1 : 0);
     heightMapShader.setUniform2f("waterLineTransform",
         wlOk ? ofVec2f(1.0f / wlDen, -heightMapOffset / wlDen) : ofVec2f(0.0f, 0.0f));
     heightMapShader.setUniform1f("waterLineGlowPx", std::max(0.0f, waterLineGlowPx));
     heightMapShader.setUniform1f("waterLineBrightness", ofClamp(waterLineBrightness, 0.0f, 1.0f));
-    heightMapShader.setUniform1i("drawShorelineGlow", drawShorelineGlow ? 1 : 0);
+    heightMapShader.setUniform1i("drawShorelineGlow", (drawShorelineGlow && !linesOff) ? 1 : 0);
     // Glowing land lines and the flat-ground fade. heightTransform maps
     // depthfrag to the colour map's key height in mm (the inverse of
     // heightColorMapTransformation, whose elevation is minus key height).
     bool htOk = std::fabs(heightMapScale) > 1e-9f;
-    heightMapShader.setUniform1i("drawLandLines", (drawLandLines && htOk) ? 1 : 0);
+    heightMapShader.setUniform1i("drawLandLines", (drawLandLines && htOk && !linesOff) ? 1 : 0);
     heightMapShader.setUniform1i("landLineMode", landLineMode);
     heightMapShader.setUniform2f("heightTransform",
         htOk ? ofVec2f(-1.0f / heightMapScale, heightMapOffset / heightMapScale) : ofVec2f(0.0f, 0.0f));
@@ -335,8 +367,9 @@ void SandSurfaceRenderer::drawSandbox() {
         && PlantLayer::PLANT_DISPLAY == PlantLayer::DISPLAY_GRAIN;
     SeedLayer::BAND_FILL_ON = bandFill; // seeds: "over" on the fill, additive on black
     // Dither filter on: Grain becomes 3, flat colour plus the stage code in
-    // alpha, so the filter draws the stages (DitherFilter dot classes).
-    heightMapShader.setUniform1i("plantDisplay", grain ? (ditherFilterActive ? 3 : 1) : (PlantLayer::drawDiscs() ? 0 : 2));
+    // alpha, so the filter draws the stages (DitherFilter dot classes). The
+    // ASCII filter uses the same flat colour and the stage in its parts.
+    heightMapShader.setUniform1i("plantDisplay", grain ? ((ditherFilterActive || asciiFilterActive) ? 3 : 1) : (PlantLayer::drawDiscs() ? 0 : 2));
     heightMapShader.setUniform1f("grainScale", ofClamp(PlantLayer::GRAIN_SCALE, 1.0f, 4.0f));
     heightMapShader.setUniform1f("grainBrightness", ofClamp(bandFill ? PlantLayer::GRAIN_BRIGHTNESS_FILL : PlantLayer::GRAIN_BRIGHTNESS_DARK, 1.0f, 2.0f));
     // Debug aid - see VegetationField::DEBUG_SHOW_SNOW's header note.
@@ -359,7 +392,7 @@ void SandSurfaceRenderer::drawSandbox() {
     mesh.draw();
     heightMapShader.end();
     kinectProjector->unbind();
-    fboProjWindow.end();
+    target.end();
 }
 
 void SandSurfaceRenderer::prepareContourLinesFbo()

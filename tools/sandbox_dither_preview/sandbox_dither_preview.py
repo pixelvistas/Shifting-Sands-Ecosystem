@@ -408,7 +408,7 @@ class Renderer:
         t_contour = rect_tex(PW + 1, PH + 1, GL.GL_RGBA8, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE)
         world, proj = matrices()
         p = self.p_height
-        self.sand.begin((0, 0, 0, 1))
+        self.sand.begin((0, 0, 0, 0) if d.get("partsPass") else (0, 0, 0, 1))  # parts (ASCII preview): cleared to "no part"
         GL.glUseProgram(p)
         self.tex(p, "tex0", 0, t_depth)
         self.tex(p, "heightColorMapSampler", 2, t_cmap)
@@ -423,6 +423,7 @@ class Renderer:
         self.u(p, "contourLineFactor", d.get("contourLineFactor", 1.0))
         self.u(p, "drawContourLines", int(d["drawContourLines"]), i=True)
         self.u(p, "contourSolid", int(d.get("contourSolid", 0)), i=True)
+        self.u(p, "partsPass", int(d.get("partsPass", 0)), i=True)        # ASCII filter parts (absent before ss/ascii-baseline)
         self.u(p, "heightMapNumEntries", float(n))
         self.u(p, "time", 0.0)
         wl_den = hm_scale * max(0.1, d["waterLineDistance"])

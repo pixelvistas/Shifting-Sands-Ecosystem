@@ -2,6 +2,8 @@
 #include "ofxImGui.h"
 #include <algorithm>
 
+char CCritterController::MARK_GLYPH = 'o';
+
 void CCritterController::setup(std::shared_ptr<KinectProjector> const& k, VegetationField* v)
 {
 	kinectProjector = k;

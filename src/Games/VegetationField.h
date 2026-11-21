@@ -634,6 +634,8 @@ public:
 	void setProjectorRes(const ofVec2f & r) { seedLayer.setProjectorRes(r); }
 	void drawSeedsMainWindow(float x, float y, float w, float h) { if (VEGETATION_MODEL == MODEL_SITE_FEEDBACK) seedLayer.drawMainWindow(x, y, w, h); }
 	void drawSeedsProjectorWindow() { if (VEGETATION_MODEL == MODEL_SITE_FEEDBACK) seedLayer.drawProjectorWindow(); }
+	// ASCII filter (display only): the seeds as a mark layer, see SeedLayer.
+	const ofTexture * getSeedMarkTexture() const { return (VEGETATION_MODEL == MODEL_SITE_FEEDBACK) ? seedLayer.getMarkTexture() : nullptr; }
 	PlantLayer const & getPlants() const { return plants; }
 	float getMmPerCellValue() const { return mmPerCell; }
 

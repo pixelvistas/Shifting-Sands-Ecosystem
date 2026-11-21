@@ -68,6 +68,12 @@ public:
 	void drawMainWindow(float x, float y, float width, float height);
 	void drawProjectorWindow();
 	void drawGui();
+	// ASCII filter (display only): the Dewitz particle FBO (additive RGB,
+	// projector size) as a mark layer instead of compositing it. nullptr in
+	// the older motion modes, whose trails are a line mesh drawn straight to
+	// the window (no texture to hand over); they draw nothing under ASCII.
+	const ofTexture * getMarkTexture() const { return (MOTION_MODE == MOTION_DEWITZ && dewitzFbo.isAllocated()) ? &dewitzFbo.getTexture() : nullptr; }
+	static char MARK_GLYPH;      // the character particles draw as under the ASCII filter
 
 	// Runtime kill switch, same A/B rationale as ENABLE_SPREAD/ENABLE_FLOW.
 	static bool ENABLE_FLOW_FIELD;

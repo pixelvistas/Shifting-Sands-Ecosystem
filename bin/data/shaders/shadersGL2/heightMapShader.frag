@@ -63,8 +63,8 @@ uniform float plantRadiusScale;   // mm
 // grain is an ordered Bayer 4x4 dither in projector pixels: dot density =
 // cover, grain size = stage (pioneer 1 px, intermediate 2, climax 4, x
 // grainScale), colour mixed from grey to the role colour by soil S.
-// 3 flat for the dither filter (2026-11-19, set only while the filter is
-// on and Grain is chosen): no grain; the colour moves from the land
+// 3 flat for the dither filter (2026-11-19, set only while the dither or
+// ASCII filter is on and Grain is chosen): no grain; the colour moves from the land
 // colour to the stage colours (grainColour, same colours and soil
 // mixing) by cover, and the output alpha carries the dominant stage for
 // the filter's dot size: 255 none (or under STAGE_MIN_COVER total cover),
@@ -76,6 +76,16 @@ uniform float grainBrightness;
 // on the 2-px checkerboard (set while the dither filter is on).
 uniform int contourSolid;
 const float STAGE_MIN_COVER = 0.04;
+// ASCII filter parts (2026-11-21): 1 = this draw writes the parts buffer
+// for AsciiFilter instead of the colour (SandSurfaceRenderer draws the sand
+// a second time into its own FBO while the filter is on; 0 otherwise). Per
+// pixel: R = elevation band index (how many of the colour map's band edges,
+// landEdge, lie at or below this pixel's key height, the same banding as
+// the colour map), G = layer (0 land, 1 plants, 2 simulated water), B =
+// dominant succession stage (stageOf(), the stage code plantDisplay 3
+// writes for the dither filter: 1 pioneer, 2 intermediate, 3 climax, 0
+// none), A = 1. Values / 255.
+uniform int partsPass;
 // Water lines (2026-11-05): glowing bathymetric contours on simulated
 // water only, from the same per-pixel elevation as the colour map
 // (depthfrag). waterLineTransform maps depthfrag to elevation / spacing.
@@ -163,6 +173,18 @@ float bayer4(vec2 p)
 // Grain colour: from a dim grey (the role colour's luminance x 0.45) to the
 // full role colour by soil S, times grainBrightness. Same formula as
 // SeedParticles::roleColour().
+// Dominant succession stage for the filters (2026-11-19): the largest
+// cover (ties go to the later stage) where total cover > STAGE_MIN_COVER;
+// 1 pioneer, 2 intermediate, 3 climax, 0 none. veg: G pioneer, B
+// intermediate, R climax.
+float stageOf(vec4 veg)
+{
+    float total = veg.g + veg.b + veg.r;
+    if (total > STAGE_MIN_COVER)
+        return (veg.r >= veg.b && veg.r >= veg.g) ? 3.0 : ((veg.b >= veg.g) ? 2.0 : 1.0);
+    return 0.0;
+}
+
 vec3 grainColour(vec3 c, float soilS)
 {
     float grey = dot(c, vec3(0.299, 0.587, 0.114)) * 0.45;
@@ -202,6 +224,25 @@ void main()
     // Land lines: key height (mm) and its change per projector pixel.
     float hMM = depthfrag * heightTransform.x + heightTransform.y;
     float hW = fwidth(hMM);
+
+    // ASCII filter parts (2026-11-21): see partsPass above. After the
+    // derivatives, so they stay in uniform control flow.
+    if (partsPass == 1)
+    {
+        float band = 0.0;
+        for (int i = 0; i < 16; i++)
+        {
+            if (i >= landEdgeCount)
+                break;
+            if (hMM >= landEdge[i])
+                band += 1.0;
+        }
+        bool water = drawSimWater == 1 && simWater;
+        float stage = (!water && plantDisplay == 3 && hasVegetation == 1) ? stageOf(veg) : 0.0;
+        float layer = water ? 2.0 : ((stage > 0.0) ? 1.0 : 0.0);
+        gl_FragColor = vec4(band / 255.0, layer / 255.0, stage / 255.0, 1.0);
+        return;
+    }
     // Flat-ground fade: 1 on slopes, 0 where the wide-baseline slope is
     // under half the threshold. Uniform condition, so no derivative issue.
     float flatFade = 1.0;
@@ -293,8 +334,7 @@ void main()
             + grainColour(vec3(0.788, 0.859, 0.431), soilS) * (veg.g * k)  // pioneer #C9DB6E
             + grainColour(vec3(0.369, 0.608, 0.298), soilS) * (veg.b * k)  // intermediate #5E9B4C
             + grainColour(vec3(0.184, 0.369, 0.204), soilS) * (veg.r * k); // climax #2F5E34
-        if (total > STAGE_MIN_COVER)
-            plantStage = (veg.r >= veg.b && veg.r >= veg.g) ? 3.0 : ((veg.b >= veg.g) ? 2.0 : 1.0);
+        plantStage = stageOf(veg);
     }
 
     // Glowing land lines (2026-11-06), over the land colours, soil tint and

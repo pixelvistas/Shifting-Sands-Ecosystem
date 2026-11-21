@@ -88,6 +88,17 @@ void ofApp::setup() {
 	sandboxDither.setClassNames("Pioneer", "Intermediate", "Climax");
 	if (ofFile::doesFileExist("settings/sandboxDither.xml"))
 		sandboxDither.loadPreset();
+	// Sandbox ASCII filter (display only), the same way: its own preset file,
+	// GL objects and font atlas made on first use in the projector window.
+	// Shimmer classes are the parts' layer field (SandSurfaceRenderer).
+	sandboxAscii.setPresetFile("settings/sandboxAscii.xml");
+	sandboxAscii.setClassNames("Bare land", "Plants", "Water");
+	if (ofFile::doesFileExist("settings/sandboxAscii.xml"))
+		sandboxAscii.loadPreset();
+	// The one filter setting (Off / Dither / ASCII) overrides the presets'
+	// own "on" flags.
+	loadFilterSettings();
+	syncFilterFlags();
 
 	imgui.setup();
 
@@ -100,6 +111,9 @@ void ofApp::update() {
 	// Display only: with the dither filter on, the sand is drawn for it
 	// (flat plants + stage code in alpha, solid contour diagonals).
 	sandSurfaceRenderer->setDitherFilterActive(ditherActive());
+	// ASCII filter on: flat plants, the parts pass, and (by default) no
+	// Sandbox lines in the colour (the filter's band outlines replace them).
+	sandSurfaceRenderer->setAsciiFilterActive(asciiActive(), asciiReplacesLines);
    	sandSurfaceRenderer->update();
 
 	if (kinectProjector->getKinectROI() != lastKinectROI)
@@ -164,9 +178,9 @@ void ofApp::draw()
 		// patches blended on top (see heightMapShader.frag and
 		// VegetationField.h), plus the ELF deer/human population - see
 		// ofApp.h's header note on what has been removed from this branch.
-		if (ditherActive()) {
+		if (ditherActive() || asciiActive()) {
 			// The sand's alpha carries the stage code (252..255): copy it,
-			// do not blend it (the main window shows it undithered).
+			// do not blend it (the main window shows it unfiltered).
 			ofPushStyle();
 			ofEnableBlendMode(OF_BLENDMODE_DISABLED);
 			sandSurfaceRenderer->drawMainWindow(x, y, w, h);
@@ -187,7 +201,7 @@ void ofApp::draw()
 			sandSurfaceRenderer->drawGui();
 			// Appends to the Sand Surface Renderer panel (same window name).
 			ImGui::Begin("Sand Surface Renderer");
-			sandboxDither.drawGui();
+			drawFilterGui();
 			ImGui::End();
 			critterController.drawGui();
 			vegetationField.drawGui();
@@ -208,9 +222,17 @@ void ofApp::drawProjWindow(ofEventArgs &args)
 		// colour only (glColorMask), so their own blend functions cannot
 		// change that alpha. Off (or shaders missing): straight to the
 		// window, exactly as before.
-		const bool dither = ditherActive()
+		// Sandbox ASCII filter (display only): the sand FBO is the colour,
+		// its parts FBO the parts, and seeds, Dewitz particles and critters
+		// hand over the FBOs they already draw into as mark layers instead
+		// of compositing them. False (shaders or font missing): drawn as
+		// with the filter off.
+		const bool ascii = asciiActive() && drawAsciiProjector();
+		const bool dither = !ascii && ditherActive()
 			&& sandboxDither.begin((int)projWindow->getWidth(), (int)projWindow->getHeight());
-		if (dither) {
+		if (ascii) {
+			// drawn
+		} else if (dither) {
 			ofPushStyle();
 			ofEnableBlendMode(OF_BLENDMODE_DISABLED);
 			sandSurfaceRenderer->drawProjectorWindow();
@@ -229,7 +251,117 @@ void ofApp::drawProjWindow(ofEventArgs &args)
 			critterController.drawProjectorWindow();
 		}
 	}
-	kinectProjector->drawProjectorWindow(); // calibration and overlays, never dithered
+	kinectProjector->drawProjectorWindow(); // calibration and overlays, never filtered
+}
+
+bool ofApp::drawAsciiProjector()
+{
+	const ofTexture * parts = sandSurfaceRenderer->getPartsTexture();
+	if (!parts)
+		return false;
+	const ofTexture & colour = sandSurfaceRenderer->getProjectorTexture();
+	sandboxAscii.beginMarks((int)colour.getWidth(), (int)colour.getHeight());
+	// Later layers replace earlier ones where they show (critters on top).
+	if (const ofTexture * t = vegetationField.getSeedMarkTexture())
+		sandboxAscii.addMarks(*t, SeedLayer::MARK_GLYPH, true);       // premultiplied
+	if (const ofTexture * t = waterFlowField.getMarkTexture())
+		sandboxAscii.addMarks(*t, WaterFlowField::MARK_GLYPH, true);  // additive RGB
+	if (const ofTexture * t = critterController.getMarkTexture())
+		sandboxAscii.addMarks(*t, CCritterController::MARK_GLYPH, false); // straight alpha
+	return sandboxAscii.draw(colour, *parts, 0, 0);
+}
+
+// Each filter's own "on" flag follows the one setting.
+void ofApp::syncFilterFlags()
+{
+	screenFilter = std::max(0, std::min(2, screenFilter));
+	sandboxDither.params.enabled = screenFilter == FILTER_DITHER;
+	sandboxAscii.params.enabled = screenFilter == FILTER_ASCII;
+}
+
+static const char * MARK_GLYPHS[] = { ".", "+", "*", "o", "x", "~", "'", "^", "#", "@" };
+static const int MARK_GLYPH_COUNT = 10;
+
+static bool markGlyphCombo(const char * label, char & glyph)
+{
+	int item = 0;
+	for (int i = 0; i < MARK_GLYPH_COUNT; i++)
+		if (MARK_GLYPHS[i][0] == glyph)
+			item = i;
+	if (!ImGui::Combo(label, &item, MARK_GLYPHS, MARK_GLYPH_COUNT))
+		return false;
+	glyph = MARK_GLYPHS[item][0];
+	return true;
+}
+
+// Inside the Sand Surface Renderer panel: the one filter setting, then each
+// filter's own section. A filter's own "on" checkbox (or a preset loaded
+// with it on or off) changes the setting too.
+void ofApp::drawFilterGui()
+{
+	const int before = screenFilter;
+	ImGui::Separator();
+	static const char * filters[] = { "Off", "Dither", "ASCII" };
+	ImGui::Combo("Screen filter", &screenFilter, filters, 3);
+	ImGui::Text("(display only; calibration overlays are never filtered)");
+	syncFilterFlags();
+	const bool d0 = sandboxDither.params.enabled, a0 = sandboxAscii.params.enabled;
+	sandboxDither.drawGui();
+	sandboxAscii.drawGui();
+	if (sandboxDither.params.enabled != d0)
+		screenFilter = sandboxDither.params.enabled ? FILTER_DITHER : FILTER_OFF;
+	else if (sandboxAscii.params.enabled != a0)
+		screenFilter = sandboxAscii.params.enabled ? FILTER_ASCII : FILTER_OFF;
+	syncFilterFlags();
+	bool changed = screenFilter != before;
+	ImGui::PushID("AsciiSandbox");
+	if (ImGui::CollapsingHeader("ASCII filter: Sandbox inputs")) {
+		changed |= ImGui::Checkbox("Band outlines replace the Sandbox lines", &asciiReplacesLines);
+		ImGui::Text("(off: land, water and shore lines stay in the colour, for comparison)");
+		ImGui::Text("Mark glyphs (drawn instead of the layer):");
+		changed |= markGlyphCombo("Seeds", SeedLayer::MARK_GLYPH);
+		changed |= markGlyphCombo("Flow particles (Dewitz)", WaterFlowField::MARK_GLYPH);
+		changed |= markGlyphCombo("Deer and humans", CCritterController::MARK_GLYPH);
+		ImGui::Text("(older particle modes draw nothing under ASCII)");
+	}
+	ImGui::PopID();
+	if (changed)
+		saveFilterSettings();
+}
+
+void ofApp::loadFilterSettings()
+{
+	ofXml xml;
+	if (!xml.load("settings/sandboxFilter.xml"))
+		return;
+	auto s = xml.getChild("SANDBOXFILTER");
+	if (!s)
+		return;
+	if (s.getChild("filter")) screenFilter = s.getChild("filter").getIntValue();
+	if (s.getChild("asciiReplacesLines")) asciiReplacesLines = s.getChild("asciiReplacesLines").getIntValue() != 0;
+	auto glyph = [&](const char * name, char & g) {
+		auto c = s.getChild(name);
+		if (!c)
+			return;
+		const int v = c.getIntValue();
+		if (v >= 33 && v <= 126)
+			g = (char)v;
+	};
+	glyph("seedGlyph", SeedLayer::MARK_GLYPH);
+	glyph("particleGlyph", WaterFlowField::MARK_GLYPH);
+	glyph("critterGlyph", CCritterController::MARK_GLYPH);
+}
+
+void ofApp::saveFilterSettings()
+{
+	ofXml xml;
+	auto s = xml.appendChild("SANDBOXFILTER");
+	s.appendChild("filter").set(screenFilter);
+	s.appendChild("asciiReplacesLines").set(asciiReplacesLines ? 1 : 0);
+	s.appendChild("seedGlyph").set((int)(unsigned char)SeedLayer::MARK_GLYPH);
+	s.appendChild("particleGlyph").set((int)(unsigned char)WaterFlowField::MARK_GLYPH);
+	s.appendChild("critterGlyph").set((int)(unsigned char)CCritterController::MARK_GLYPH);
+	xml.save("settings/sandboxFilter.xml");
 }
 
 void ofApp::exit()
