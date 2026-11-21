@@ -110,7 +110,9 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   becomes plantDisplay 3 (flat colour by cover, stage code in alpha 254/253/252), the filter draws stages
   with dots x1/x2/x4 (pyramid), contour diagonals solid; `ofApp` copies the sand unblended, later layers
   colour-only (glColorMask). Off: as ss/plant-grain. Test: `tools/sandbox_dither_preview/`.
-- `src/Common/AsciiFilter.*`: screen-space ASCII (look after @dwcminh.ascii; no code used), shaders
+- `src/Common/AsciiFilter.*`: screen-space ASCII, the technique of "The Betta Fish in ASCII" by @dwcminh.ascii
+  (github.com/dwcminh/ascii-art, BETTA-FISH; personal/non-commercial licence: credit it, never copy its code;
+  DEVLOG 2026-11-21 has the comparison table). Parts R = depth rank (band), G/B = identity. Shaders
   `bin/data/shaders/ascii/GL2|GL3`, font `bin/data/fonts` (OFL), preset `settings/sandboxAscii.xml`. Inputs: the
   sand FBO; parts FBO (height shader `partsPass`: band, layer 0/1/2, stage); marks = seed, Dewitz and critter FBOs
   (`getMarkTexture()`, glyph `MARK_GLYPH`). One setting `screenFilter` + Sandbox inputs in `settings/sandboxFilter.xml`
@@ -158,4 +160,5 @@ duplicate values elsewhere.
   calibrated ceiling ("Reset range to ±calibrated ceiling"), a recurring
   cause of wrong water/snow lines.
 - Measure before tuning (GUI readouts). Avoid `near`/`far` identifiers (Windows macros).
+- Never create branches, commit or push; the user does all git operations.
 - Accessibility: avoid saturated red next to saturated green.

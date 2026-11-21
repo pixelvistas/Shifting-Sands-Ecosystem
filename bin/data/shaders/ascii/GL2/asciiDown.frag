@@ -1,3 +1,6 @@
+// Technique after "The Betta Fish in ASCII" by @dwcminh.ascii,
+// https://github.com/dwcminh/ascii-art (BETTA-FISH, betta_fish.py; free for
+// personal, non-commercial use). Our own GLSL; no code copied from it.
 // AsciiFilter glow: box downsample by `factor` (2 or 4): each texel is the
 // mean of a factor x factor block of the source (only texels inside it).
 // Keep in sync with ../GL3/asciiDown.frag.

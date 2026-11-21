@@ -17,10 +17,17 @@ flat sand over 8 frames, so trails show.
     python3 sandbox_ascii_preview.py frames --fill-off  # the same with band fill off
     python3 sandbox_ascii_preview.py checks             # exact black, Off/Dither identity, GL2 = GL3, parts
     python3 sandbox_ascii_preview.py timing             # software GL: not the installation PC
+    python3 sandbox_ascii_preview.py pairs --before DIR # before / after sheets against an earlier out/ (copied aside first)
 
 The font atlas is baked with Pillow from `bin/data/fonts/JetBrainsMono-Regular.ttf`
-with the same fitting rule as `AsciiFilter::ensureAtlas()`; openFrameworks'
-FreeType rendering will differ by a pixel here and there.
+with the same size and centring rule as `AsciiFilter::ensureAtlas()` (default:
+the reference's, 1.1 x cell height, centred by advance and line box). The app
+uses Consolas or Menlo first if installed, as the reference does; the preview
+always uses the bundled font. openFrameworks' FreeType rendering will differ
+by a pixel here and there.
+
+Technique after "The Betta Fish in ASCII" by @dwcminh.ascii,
+https://github.com/dwcminh/ascii-art (BETTA-FISH); see `docs/DEVLOG.md`.
 
 Needs numpy, Pillow, PyOpenGL and `libegl1 libegl-mesa0 libgl1-mesa-dri`
 (Mesa llvmpipe, surfaceless EGL); `checks` needs git (reads

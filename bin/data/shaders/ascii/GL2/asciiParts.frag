@@ -1,8 +1,14 @@
-// AsciiFilter pass 2: the part of each cell. The parts source holds, per
-// pixel, three part fields in R, G, B (8-bit values; the caller decides
-// what they mean) and A = 1 where anything was drawn (0: no part). The
-// cell is sampled at its centre pixel and at the same 4 x 4 points as
-// pass 1. Output: the dominant sample, i.e. the value shared by the most
+// Technique after "The Betta Fish in ASCII" by @dwcminh.ascii,
+// https://github.com/dwcminh/ascii-art (BETTA-FISH, betta_fish.py; free for
+// personal, non-commercial use). Our own GLSL; no code copied from it.
+// AsciiFilter pass 1: the part of each cell. The parts source holds, per
+// pixel, three part fields in R, G, B (8-bit values) and A = 1 where
+// anything was drawn (0: no part). R is the depth rank (higher = nearer the
+// viewer), G and B the part's identity; G is also the shimmer class
+// (asciiDecide). The cell is sampled at its centre pixel and at a fixed
+// 4 x 4 grid of points ((i + 0.5) / 4 of the cell). The reference keeps the
+// nearest point's part; with no depth inside a cell, the most common part
+// stands in for it. Output: the dominant sample, i.e. the value shared by the most
 // samples; the centre counts twice and is tried first, so it wins ties
 // and is kept wherever it is not outvoted. "No part" never wins while any
 // sample has a part (a cell on the edge of the drawn area takes the part

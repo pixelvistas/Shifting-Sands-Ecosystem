@@ -1,20 +1,30 @@
-// AsciiFilter pass 1: one texel per character cell (cellSize output
-// pixels, grid from the top-left). The colour source is sampled at a
-// fixed 4 x 4 grid of points inside the cell (sample centres at
-// (i + 0.5) / 4 of the cell). A sample is covered when its brightest
-// channel exceeds blackThreshold. Output: RGB = mean of the covered
-// samples after the pre-filter (exposure, then saturation about the
-// sample's luminance; hue kept; a colour brighter than 1 is divided by
-// its maximum channel), A = coverage (covered / samples inside the
-// source). Partial cells at the right and bottom count only samples
-// inside the source.
+// Technique after "The Betta Fish in ASCII" by @dwcminh.ascii,
+// https://github.com/dwcminh/ascii-art (BETTA-FISH, betta_fish.py; free for
+// personal, non-commercial use). Our own GLSL; no code copied from it.
+// AsciiFilter pass 2 (after asciiParts): one texel per character cell
+// (cellSize output pixels, grid from the top-left). Every pixel of the cell
+// is read. A pixel is covered when its brightest channel exceeds
+// blackThreshold. Output:
+//   A = coverage = covered pixels / pixels inside the source (the image
+//       counterpart of the reference's summed point area per cell);
+//   RGB = mean of the covered pixels that belong to the cell's own part
+//       (pass 1), after the pre-filter (exposure, then saturation about the
+//       pixel's luminance; hue kept; a colour brighter than 1 is divided by
+//       its maximum channel). The reference takes the colour of one point,
+//       the nearest; one part's mean is its 2D counterpart (no mixing across
+//       a boundary). If no covered pixel has the cell's part, the mean of all
+//       covered pixels.
+// Cells are at most 16 x 16 pixels.
 // Keep in sync with ../GL3/asciiCells.frag.
 #version 120
 #extension GL_ARB_texture_rectangle : enable
 
 uniform sampler2DRect srcTex;      // colour source, in pixels
+uniform sampler2DRect partsTex;    // parts source, in its own pixels
+uniform sampler2DRect cellPartTex; // pass 1: the part of each cell
 uniform vec2 srcSize;              // pixels
-uniform vec2 cellSize;             // pixels (w, h)
+uniform vec2 partsScale;           // parts pixels per colour pixel
+uniform vec2 cellSize;             // pixels (w, h), <= 16
 uniform float blackThreshold;      // max channel
 uniform float exposure;
 uniform float saturation;
@@ -35,23 +45,42 @@ vec3 prefilter(vec3 c)
 	return (m > 1.0) ? c / m : c;
 }
 
+// One number per part value (exact in a float: < 2^24); -1 = no part.
+float partKey(vec4 p)
+{
+	vec4 q = floor(p * 255.0 + 0.5);
+	return (q.a < 0.5) ? -1.0 : q.r * 65536.0 + q.g * 256.0 + q.b;
+}
+
 void main()
 {
-	vec2 origin = floor(coord) * cellSize;
-	vec3 sum = vec3(0.0);
-	float n = 0.0, k = 0.0;
-	for (int y = 0; y < 4; y++) {
-		for (int x = 0; x < 4; x++) {
-			vec2 p = floor(origin + (vec2(float(x), float(y)) + 0.5) * 0.25 * cellSize);
+	vec2 cell = floor(coord);
+	vec2 origin = cell * cellSize;
+	float own = partKey(texture2DRect(cellPartTex, cell + 0.5));
+	vec3 sumAll = vec3(0.0), sumPart = vec3(0.0);
+	float n = 0.0, k = 0.0, kp = 0.0;
+	for (int y = 0; y < 16; y++) {
+		if (float(y) >= cellSize.y)
+			break;
+		for (int x = 0; x < 16; x++) {
+			if (float(x) >= cellSize.x)
+				break;
+			vec2 p = origin + vec2(float(x), float(y));
 			if (p.x < srcSize.x && p.y < srcSize.y) {
-				vec3 c = texture2DRect(srcTex, p + 0.5).rgb;
 				n += 1.0;
+				vec3 c = texture2DRect(srcTex, p + 0.5).rgb;
 				if (max(c.r, max(c.g, c.b)) > blackThreshold) {
-					sum += prefilter(c);
+					vec3 f = prefilter(c);
+					sumAll += f;
 					k += 1.0;
+					if (partKey(texture2DRect(partsTex, (p + 0.5) * partsScale)) == own) {
+						sumPart += f;
+						kp += 1.0;
+					}
 				}
 			}
 		}
 	}
-	gl_FragColor = vec4((k > 0.0) ? sum / k : vec3(0.0), k / max(1.0, n));
+	vec3 colour = (kp > 0.0) ? sumPart / kp : ((k > 0.0) ? sumAll / k : vec3(0.0));
+	gl_FragColor = vec4(colour, k / max(1.0, n));
 }

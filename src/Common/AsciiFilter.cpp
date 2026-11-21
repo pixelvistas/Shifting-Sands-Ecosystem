@@ -1,31 +1,46 @@
 #include "AsciiFilter.h"
 #include "ofxImGui.h"
+#include <cstring>
 
 const int AsciiFilter::CELL_W[AsciiFilter::CELL_PRESETS] = { 6, 7, 8, 10 };
 const int AsciiFilter::CELL_H[AsciiFilter::CELL_PRESETS] = { 10, 10, 12, 16 };
 
-// Fill pools, dark to bright (chosen by the cell's luminance in 4 equal bins).
+// Fill pools, dark to bright; the pool is chosen by brightness and each is
+// repeated to 12 entries (the reference's pools, by @dwcminh.ascii).
 const char * AsciiFilter::POOLS[4] = { "1il!;:", "rtfjcvxz=+", "aeoun0{}[]<>", "08B$#&%Q" };
 const char * AsciiFilter::FONT_FILE = "fonts/JetBrainsMono-Regular.ttf";
 
-// Defaults (DEVLOG, 2026-11-21; chosen on the headless Sandbox preview,
-// tools/sandbox_ascii_preview, to be confirmed on the sand).
+// The reference's font list (betta_fish.py: Consolas, Menlo, DejaVu Sans
+// Mono, Courier New): system fonts loaded at run time if installed, never
+// bundled. Then the bundled font.
+static const char * FONT_SYSTEM[] = { "C:/Windows/Fonts/consola.ttf", "/System/Library/Fonts/Menlo.ttc" };
+
+// Defaults (DEVLOG, 2026-11-21): the reference's values where it has one
+// (betta_fish.py, @dwcminh.ascii); the mark threshold, glow mask and
+// pre-filter are ours.
 static AsciiFilter::Params makeDefaults()
 {
 	AsciiFilter::Params p;
 	p.enabled = true;
 	p.cellPreset = AsciiFilter::CELLS_7x10;
 	p.blackThreshold = 0.04f;
-	p.minCoverage = 0.2f;
+	p.minCoverage = 0.0f;       // reference: any covered pixel draws the cell
 	p.edgeFloor = 0.85f;
-	p.edgeOneSided = false;
-	p.shimmerRate[0] = 0.02f;   // Sandbox: bare land, nearly still
-	p.shimmerRate[1] = 0.2f;    //          plants, slow
-	p.shimmerRate[2] = 1.5f;    //          water, fastest
+	p.edgeOneSided = true;
+	p.edgeSideOnly = true;
+	p.fillFloor = 0.45f;
+	p.fillStart = 0.42f;
+	p.fillScale = 4.6f;
+	p.fontPx = 0;               // auto: 1.1 x cell height
+	p.glyphCentring = AsciiFilter::GLYPH_CENTRE_LINE_BOX;
+	p.fontChoice = AsciiFilter::FONT_REFERENCE_ORDER;
+	p.shimmerRate[0] = 4.0f;    // reference: 4 steps a second for every cell
+	p.shimmerRate[1] = 4.0f;    // (Sandbox: bare land, plants, water)
+	p.shimmerRate[2] = 4.0f;
 	p.trailAmount = 0.5f;
 	p.glowTight = 0.75f;
 	p.glowWide = 0.45f;
-	p.glowFloor = 0.04f;
+	p.glowFloor = 0.0f;         // reference: no floor (the mask keeps empty cells black)
 	p.glowOutside = false;
 	p.markThreshold = 0.25f;
 	p.exposure = 1.0f;
@@ -102,52 +117,89 @@ bool AsciiFilter::isReady()
 	return loadState == 1 && atlasState != -1;
 }
 
-// Ink bounds of the printable characters relative to the baseline (top < 0)
-// and the advance, at the font's loaded size.
-static void measureFont(const ofTrueTypeFont & f, float & top, float & bottom, float & advance)
+// Font metrics at the loaded size: ink bounds of the printable characters
+// relative to the baseline (top < 0), the advance, and the line box
+// (ascender, descender < 0).
+struct FontMetrics { float top, bottom, advance, ascender, descender; };
+
+static FontMetrics measureFont(const ofTrueTypeFont & f)
 {
-	top = 0.0f;
-	bottom = 0.0f;
+	FontMetrics m;
+	m.top = 0.0f;
+	m.bottom = 0.0f;
 	for (int c = 33; c <= 126; c++) {
 		const ofRectangle r = f.getStringBoundingBox(std::string(1, (char)c), 0, 0);
-		top = std::min(top, r.y);
-		bottom = std::max(bottom, r.y + r.height);
+		m.top = std::min(m.top, r.y);
+		m.bottom = std::max(m.bottom, r.y + r.height);
 	}
-	advance = f.getStringBoundingBox("MM", 0, 0).width - f.getStringBoundingBox("M", 0, 0).width;
+	m.advance = f.getStringBoundingBox("MM", 0, 0).width - f.getStringBoundingBox("M", 0, 0).width;
+	m.ascender = f.getAscenderHeight();
+	m.descender = f.getDescenderHeight();
+	return m;
 }
 
-// Atlas: 16 x 6 slots of cw x ch pixels, slot i = character 32 + i, white
-// on transparent black (R = coverage). Baked once per cell size.
-bool AsciiFilter::ensureAtlas(int cw, int ch)
+static int floorDiv2(float v)
+{
+	return (int)std::floor(v / 2.0f);
+}
+
+// Atlas: 16 x 6 slots, slot i = character 32 + i, white on transparent
+// black (R = coverage). Each slot is the cw x ch cell with a margin of
+// ch pixels all round (pad); the glyph pass reads only the cell, so
+// whatever a character draws outside its cell lands in the margin and is
+// cropped, as in the reference (and never spills into a neighbour's cell).
+// Line box (reference): font size px (default 1.1 x ch), each character
+// placed at ((cw - advance) / 2, (ch - line height) / 2), rounded down, with
+// its baseline at the ascender below that. Ink box: as before this pass, a
+// size and placement that fit the ink of all 95 characters in the cell.
+bool AsciiFilter::ensureAtlas(int cw, int ch, int px, int centring, int fontChoice)
 {
 	if (atlasState == -1)
 		return false;
-	if (atlasState == 1 && cw == atlasCw && ch == atlasCh)
+	if (atlasState == 1 && cw == atlasCw && ch == atlasCh && px == atlasPx && centring == atlasCentring && fontChoice == atlasFontChoice)
 		return true;
-	const int REF = 64;
-	ofTrueTypeFont probe;
-	if (!probe.load(FONT_FILE, REF, true, false, false, 0.3f, 72)) {
+	std::vector<std::string> files;
+	if (fontChoice == FONT_REFERENCE_ORDER)
+		for (const char * f : FONT_SYSTEM)
+			if (ofFile::doesFileExist(f, false))
+				files.push_back(f);
+	files.push_back(FONT_FILE);
+	ofTrueTypeFont font;
+	std::string used;
+	int size = std::max(4, px);
+	for (const std::string & f : files) {
+		if (centring == GLYPH_CENTRE_INK_BOX) {
+			const int REF = 64;
+			ofTrueTypeFont probe;
+			if (!probe.load(f, REF, true, false, false, 0.3f, 72))
+				continue;
+			FontMetrics m = measureFont(probe);
+			const float adv = (m.advance >= 1.0f) ? m.advance : 0.6f * REF;
+			size = std::max(4, (int)std::floor(REF * std::min((float)cw / adv, (float)ch / std::max(1.0f, m.bottom - m.top))));
+		}
+		if (font.load(f, size, true, false, false, 0.3f, 72)) {
+			used = f;
+			break;
+		}
+	}
+	if (used.empty()) {
 		ofLogError("AsciiFilter") << "could not load " << FONT_FILE;
 		atlasState = -1;
 		return false;
 	}
-	float top, bottom, adv;
-	measureFont(probe, top, bottom, adv);
-	if (adv < 1.0f)
-		adv = 0.6f * REF;
-	const float inkH = std::max(1.0f, bottom - top);
-	const int size = std::max(4, (int)std::floor(REF * std::min((float)cw / adv, (float)ch / inkH)));
-	ofTrueTypeFont font;
-	if (!font.load(FONT_FILE, size, true, false, false, 0.3f, 72)) {
-		ofLogError("AsciiFilter") << "could not load " << FONT_FILE << " at " << size << " px";
-		atlasState = -1;
-		return false;
+	const FontMetrics m = measureFont(font);
+	float baseline, xOff;
+	if (centring == GLYPH_CENTRE_INK_BOX) {
+		baseline = std::round(0.5f * (ch - (m.bottom - m.top)) - m.top);
+		xOff = std::round(0.5f * (cw - m.advance));
+	} else {
+		const float asc = std::round(m.ascender), lineH = std::round(m.ascender - m.descender);
+		baseline = (float)floorDiv2(ch - lineH) + asc;
+		xOff = (float)floorDiv2(cw - std::round(m.advance));
 	}
-	measureFont(font, top, bottom, adv);
-	const float baseline = std::round(0.5f * (ch - (bottom - top)) - top);
-	const float xOff = std::round(0.5f * (cw - adv));
 
-	allocateRect(atlasFbo, 16 * cw, 6 * ch, GL_RGBA, false);
+	const int pad = ch, sw = cw + 2 * pad, sh = ch + 2 * pad;
+	allocateRect(atlasFbo, 16 * sw, 6 * sh, GL_RGBA, false);
 	atlasFbo.begin();
 	ofClear(0, 0, 0, 0);
 	ofPushStyle();
@@ -155,15 +207,20 @@ bool AsciiFilter::ensureAtlas(int cw, int ch)
 	ofSetColor(255);
 	for (int c = 33; c <= 126; c++) {
 		const int slot = c - 32;
-		font.drawString(std::string(1, (char)c), (float)((slot % 16) * cw) + xOff, (float)((slot / 16) * ch) + baseline);
+		const int sx = (slot % 16) * sw + pad, sy = (slot / 16) * sh + pad;   // the cell inside the slot
+		font.drawString(std::string(1, (char)c), (float)sx + xOff, (float)sy + baseline);
 	}
 	ofPopStyle();
 	atlasFbo.end();
 	ofEnableBlendMode(OF_BLENDMODE_ALPHA);
 	atlasCw = cw;
 	atlasCh = ch;
+	atlasPx = px;
+	atlasCentring = centring;
+	atlasFontChoice = fontChoice;
+	atlasFont = used;
 	atlasState = 1;
-	ofLogNotice("AsciiFilter") << "font atlas " << cw << " x " << ch << " px cells, font " << size << " px";
+	ofLogNotice("AsciiFilter") << "font atlas " << cw << " x " << ch << " px cells, " << used << " at " << size << " px";
 	return true;
 }
 
@@ -245,7 +302,7 @@ bool AsciiFilter::draw(const ofTexture & colour, const ofTexture & parts, float 
 	}
 	const Params & p = params;
 	const int cw = cellW(), ch = cellH();
-	if (!ensureAtlas(cw, ch)) {
+	if (!ensureAtlas(cw, ch, fontPxFor(ch), std::max(0, std::min(1, p.glyphCentring)), std::max(0, std::min(1, p.fontChoice)))) {
 		marksThisFrame = false;
 		return false;
 	}
@@ -260,20 +317,7 @@ bool AsciiFilter::draw(const ofTexture & colour, const ofTexture & parts, float 
 	ofEnableBlendMode(OF_BLENDMODE_DISABLED);
 	ofSetColor(255);
 
-	// 1. Coverage and colour per cell.
-	cellFbo.begin();
-	cellsShader.begin();
-	cellsShader.setUniformTexture("srcTex", colour, 0);
-	cellsShader.setUniform2f("srcSize", (float)w, (float)h);
-	cellsShader.setUniform2f("cellSize", (float)cw, (float)ch);
-	cellsShader.setUniform1f("blackThreshold", ofClamp(p.blackThreshold, 0.0f, 1.0f));
-	cellsShader.setUniform1f("exposure", ofClamp(p.exposure, 0.0f, 8.0f));
-	cellsShader.setUniform1f("saturation", ofClamp(p.saturation, 0.0f, 4.0f));
-	drawPixelRect((float)gridW, (float)gridH);
-	cellsShader.end();
-	cellFbo.end();
-
-	// 2. Dominant part per cell (parts at the same size as the colour, or scaled).
+	// 1. The part of each cell (parts at the same size as the colour, or scaled).
 	partFbo.begin();
 	partsShader.begin();
 	partsShader.setUniformTexture("partsTex", parts, 0);
@@ -282,6 +326,22 @@ bool AsciiFilter::draw(const ofTexture & colour, const ofTexture & parts, float 
 	drawPixelRect((float)gridW, (float)gridH);
 	partsShader.end();
 	partFbo.end();
+
+	// 2. Coverage and colour per cell (colour from the cell's own part).
+	cellFbo.begin();
+	cellsShader.begin();
+	cellsShader.setUniformTexture("srcTex", colour, 0);
+	cellsShader.setUniformTexture("partsTex", parts, 1);
+	cellsShader.setUniformTexture("cellPartTex", partFbo.getTexture(), 2);
+	cellsShader.setUniform2f("srcSize", (float)w, (float)h);
+	cellsShader.setUniform2f("partsScale", parts.getWidth() / w, parts.getHeight() / h);
+	cellsShader.setUniform2f("cellSize", (float)cw, (float)ch);
+	cellsShader.setUniform1f("blackThreshold", ofClamp(p.blackThreshold, 0.0f, 1.0f));
+	cellsShader.setUniform1f("exposure", ofClamp(p.exposure, 0.0f, 8.0f));
+	cellsShader.setUniform1f("saturation", ofClamp(p.saturation, 0.0f, 4.0f));
+	drawPixelRect((float)gridW, (float)gridH);
+	cellsShader.end();
+	cellFbo.end();
 
 	// 3. Brightest mark per cell.
 	if (marksOn) {
@@ -296,13 +356,11 @@ bool AsciiFilter::draw(const ofTexture & colour, const ofTexture & parts, float 
 	}
 
 	// 4. The character of each cell.
-	float glyphs[48] = { 0 }, start[4] = { 0 }, len[4] = { 0 };
-	int n = 0;
+	float fill[48];   // 4 pools x 12 entries, each pool repeated
 	for (int i = 0; i < 4; i++) {
-		start[i] = (float)n;
-		for (const char * c = POOLS[i]; *c && n < 48; c++)
-			glyphs[n++] = (float)(unsigned char)*c;
-		len[i] = (float)n - start[i];
+		const size_t len = std::max<size_t>(1, std::strlen(POOLS[i]));
+		for (int k = 0; k < 12; k++)
+			fill[i * 12 + k] = (float)(unsigned char)POOLS[i][k % len];
 	}
 	float rates[3];
 	for (int i = 0; i < 3; i++)
@@ -317,9 +375,11 @@ bool AsciiFilter::draw(const ofTexture & colour, const ofTexture & parts, float 
 	decideShader.setUniform1f("minCoverage", ofClamp(p.minCoverage, 0.0f, 1.0f));
 	decideShader.setUniform1f("edgeFloor", ofClamp(p.edgeFloor, 0.0f, 1.0f));
 	decideShader.setUniform1i("oneSided", p.edgeOneSided ? 1 : 0);
-	decideShader.setUniform1fv("poolGlyph", glyphs, 48);
-	decideShader.setUniform1fv("poolStart", start, 4);
-	decideShader.setUniform1fv("poolLen", len, 4);
+	decideShader.setUniform1i("sideOnly", p.edgeSideOnly ? 1 : 0);
+	decideShader.setUniform1fv("fillGlyph", fill, 48);
+	decideShader.setUniform1f("fillFloor", ofClamp(p.fillFloor, 0.0f, 1.0f));
+	decideShader.setUniform1f("fillStart", p.fillStart);
+	decideShader.setUniform1f("fillScale", std::max(0.0f, p.fillScale));
 	decideShader.setUniform1fv("shimmerRate", rates, 3);
 	decideShader.setUniform1f("time", ofGetElapsedTimef());
 	drawPixelRect((float)gridW, (float)gridH);
@@ -332,6 +392,7 @@ bool AsciiFilter::draw(const ofTexture & colour, const ofTexture & parts, float 
 	glyphsShader.setUniformTexture("decideTex", decideFbo.getTexture(), 0);
 	glyphsShader.setUniformTexture("atlasTex", atlasFbo.getTexture(), 1);
 	glyphsShader.setUniform2f("cellSize", (float)cw, (float)ch);
+	glyphsShader.setUniform1f("atlasPad", (float)atlasCh);   // = ensureAtlas()'s pad
 	drawPixelRect((float)w, (float)h);
 	glyphsShader.end();
 	frameFbo.end();
@@ -375,22 +436,26 @@ bool AsciiFilter::draw(const ofTexture & colour, const ofTexture & parts, float 
 			downShader.end();
 			dst.end();
 		};
-		auto blur = [&](const ofFbo & src, ofFbo & dst, float dx, float dy, float sigma) {
+		auto blur = [&](const ofFbo & src, ofFbo & dst, float dx, float dy, float sigma, float reach) {
 			dst.begin();
 			blurShader.begin();
 			blurShader.setUniformTexture("srcTex", src.getTexture(), 0);
 			blurShader.setUniform2f("dir", dx, dy);
 			blurShader.setUniform1f("sigma", sigma);
+			blurShader.setUniform1f("reach", reach);
 			drawPixelRect(dst.getWidth(), dst.getHeight());
 			blurShader.end();
 			dst.end();
 		};
+		// As the reference: shrink to 1/4 (box), blur (pygame-ce
+		// gaussian_blur radius 2: sigma 1.78, taps +-4); shrink that to 1/8,
+		// blur (radius 3: sigma 2.40, taps +-5). Sigmas measured on an impulse.
 		down(*result, tightFbo[0], 4.0f);
-		blur(tightFbo[0], tightFbo[1], 1.0f, 0.0f, 1.5f);
-		blur(tightFbo[1], tightFbo[0], 0.0f, 1.0f, 1.5f);
+		blur(tightFbo[0], tightFbo[1], 1.0f, 0.0f, 1.78f, 4.0f);
+		blur(tightFbo[1], tightFbo[0], 0.0f, 1.0f, 1.78f, 4.0f);
 		down(tightFbo[0], wideFbo[0], 2.0f);
-		blur(wideFbo[0], wideFbo[1], 1.0f, 0.0f, 2.0f);
-		blur(wideFbo[1], wideFbo[0], 0.0f, 1.0f, 2.0f);
+		blur(wideFbo[0], wideFbo[1], 1.0f, 0.0f, 2.40f, 5.0f);
+		blur(wideFbo[1], wideFbo[0], 0.0f, 1.0f, 2.40f, 5.0f);
 	}
 
 	// Output, into whatever is bound (the projector window).
@@ -468,6 +533,13 @@ bool AsciiFilter::savePreset()
 	s.appendChild("minCoverage").set(p.minCoverage);
 	s.appendChild("edgeFloor").set(p.edgeFloor);
 	s.appendChild("edgeOneSided").set(p.edgeOneSided ? 1 : 0);
+	s.appendChild("edgeSideOnly").set(p.edgeSideOnly ? 1 : 0);
+	s.appendChild("fillFloor").set(p.fillFloor);
+	s.appendChild("fillStart").set(p.fillStart);
+	s.appendChild("fillScale").set(p.fillScale);
+	s.appendChild("fontPx").set(p.fontPx);
+	s.appendChild("glyphCentring").set(p.glyphCentring);
+	s.appendChild("fontChoice").set(p.fontChoice);
 	for (int i = 0; i < 3; i++)
 		s.appendChild("shimmerRate" + ofToString(i)).set(p.shimmerRate[i]);
 	s.appendChild("trailAmount").set(p.trailAmount);
@@ -497,6 +569,8 @@ bool AsciiFilter::loadPreset()
 	LOAD_F(edgeFloor) LOAD_B(edgeOneSided) LOAD_F(trailAmount) LOAD_F(glowTight)
 	LOAD_F(glowWide) LOAD_F(glowFloor) LOAD_B(glowOutside) LOAD_F(markThreshold)
 	LOAD_F(exposure) LOAD_F(saturation)
+	LOAD_B(edgeSideOnly) LOAD_F(fillFloor) LOAD_F(fillStart) LOAD_F(fillScale)
+	LOAD_I(fontPx) LOAD_I(glyphCentring) LOAD_I(fontChoice)
 #undef LOAD_I
 #undef LOAD_F
 #undef LOAD_B
@@ -515,7 +589,8 @@ void AsciiFilter::drawGui()
 	ImGui::PushID("AsciiFilter");
 	if (ImGui::CollapsingHeader("ASCII filter")) {
 		ImGui::Text("Characters over this mode's own output (display only).");
-		ImGui::Text("Visual reference: @dwcminh.ascii (look only, no code).");
+		ImGui::Text("Technique after \"The Betta Fish in ASCII\" by @dwcminh.ascii");
+		ImGui::Text("(github.com/dwcminh/ascii-art, BETTA-FISH); our own GLSL.");
 		ImGui::Checkbox("ASCII filter on", &p.enabled);
 		if (loadState == -1)
 			ImGui::Text("Shaders not loaded (bin/data/shaders/ascii): drawn unfiltered.");
@@ -540,15 +615,28 @@ void AsciiFilter::drawGui()
 		static const char * cells[] = { "6 x 10 px", "7 x 10 px", "8 x 12 px", "10 x 16 px" };
 		ImGui::Combo("Cell size", &p.cellPreset, cells, CELL_PRESETS);
 		p.cellPreset = clampPreset(p.cellPreset);
+		ImGui::SliderInt("Font size (px, 0 = auto 1.1 x cell height)", &p.fontPx, 0, 24);
+		static const char * centring[] = { "Line box (reference)", "Ink box (fit inside the cell)" };
+		ImGui::Combo("Glyph centring", &p.glyphCentring, centring, 2);
+		static const char * fonts[] = { "Consolas / Menlo if installed, else bundled (reference)", "Bundled JetBrains Mono" };
+		ImGui::Combo("Font", &p.fontChoice, fonts, 2);
+		if (atlasState == 1)
+			ImGui::Text("Atlas: %d px font, %s", fontPxFor(cellH()), atlasFont.c_str());
 		ImGui::SliderFloat("Black threshold", &p.blackThreshold, 0.0f, 0.3f);
 		ImGui::SliderFloat("Minimum coverage", &p.minCoverage, 0.0f, 1.0f);
-		ImGui::Text("(cells under it are empty: exact black, the sand shows)");
+		ImGui::Text("(0, the reference: any covered pixel draws the cell; empty cells are exact black)");
 		ImGui::SliderFloat("Outline brightness floor", &p.edgeFloor, 0.0f, 1.0f);
 		ImGui::Checkbox("Outline part boundaries on one side only", &p.edgeOneSided);
+		ImGui::Text("(on, the reference: the nearer side, by the parts' depth rank; seams once)");
+		ImGui::Checkbox("Edges started by side neighbours only", &p.edgeSideOnly);
+		ImGui::SliderFloat("Fill brightness floor", &p.fillFloor, 0.0f, 1.0f);
+		ImGui::SliderFloat("Fill pool start (brightness)", &p.fillStart, 0.0f, 1.0f);
+		ImGui::SliderFloat("Fill pool scale", &p.fillScale, 0.5f, 10.0f);
+		ImGui::Text("(pool = (brightness - start) x scale, 0..3: dark to bright letters)");
 		ImGui::SliderFloat("Mark threshold", &p.markThreshold, 0.0f, 0.5f);
 
 		ImGui::Separator();
-		ImGui::Text("Fill shimmer (letter steps per second per cell)");
+		ImGui::Text("Fill shimmer (letter steps per second, all cells together; reference 4)");
 		for (int i = 0; i < 3; i++)
 			ImGui::SliderFloat((classNames[i] + " shimmer").c_str(), &p.shimmerRate[i], 0.0f, 4.0f, "%.3f");
 

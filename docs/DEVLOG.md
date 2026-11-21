@@ -4785,3 +4785,251 @@ choose):
 2. A fill brightness lift (floor 0.45).
 3. Edges from orthogonal neighbours only, with one-sided boundaries, for
    thinner contour lines.
+
+## 2026-11-21 - ASCII filter brought in line with the reference: comparison (step 2, before any change)
+
+Reference: "The Betta Fish in ASCII" by @dwcminh.ascii,
+https://github.com/dwcminh/ascii-art (folder `BETTA-FISH`, `betta_fish.py`,
+commit d097d47; free for personal, non-commercial use, may be read and
+remixed, never passed off as one's own). Cloned to `../_ref/ascii-art`,
+outside this repository. Read in full: `README.md`, `LICENSE.txt`,
+`betta_fish.py`.
+
+The reference was run headless (SDL dummy driver, Python 3.13, numpy,
+pygame-ce 2.5.8) from a driver script outside both repositories, at
+t = 3, 7, 9.5 and 12 s. Its renders were kept out of this repository: its
+licence asks permission to repost them.
+- It runs at about 45 ms per frame on this CPU, 113 x 103 cells of 7 x 10
+  px (791 x 1030).
+- Its font list (Consolas, Menlo, DejaVu Sans Mono, Courier New) resolved
+  to FreeMono here. At 11 px: ascent 9, descent 2, line height 11; 'M'
+  renders as a 7 x 11 surface.
+- `pygame.transform.gaussian_blur` measured on an impulse: radius 2 is
+  sigma 1.78 with taps -4..4; radius 3 is sigma 2.40 with taps -5..5.
+- `smoothscale` shrinks with a box average.
+
+How the reference makes its look:
+1. Points become cells. A 3D fish (body, fins, ribbons, as point sheets)
+   is projected into a 113 x 103 character grid. Each cell keeps its
+   nearest point (z-buffer): that point's brightness L (from lighting),
+   colour, part and, for marks, glyph. Coverage = the summed screen area
+   of the cell's points, clipped to 1.
+2. Outlines. A cell becomes an edge when one of its four side neighbours
+   is empty, or holds a different part further back, or holds a "hard"
+   part with a higher index (a seam, drawn from one side). The direction
+   (gx, gy) is the sum of the offsets to all eight neighbours that pass
+   the same test, unweighted.
+3. Characters:
+   - Edges: `outline_letter`.
+   - Marks: their own glyph.
+   - Fill: a pool chosen by brightness, level = int((L - 0.42) x 4.6)
+     clipped to 0..3. Each pool is repeated to 12 entries, and the
+     character is (h + int(4t + h mod 11)) mod 12, with
+     h = (7919 row + 104729 col) mod 9973. So every cell steps 4 times a
+     second, all at the same instants, each from its own place in the
+     pool.
+4. Brightness:
+   - edges max(0.85, L);
+   - fill clip(0.45 + 0.55 L / 0.9, 0.45, 1);
+   - marks L;
+   - all but marks then x (0.30 + 0.70 coverage^0.7);
+   - colour = rgb x min(brightness, 1.4), clipped to 0..1 per channel.
+5. Image:
+   - Each cell's glyph comes from an atlas: the monospace font at 11 px,
+     each character rendered and centred by its rendered box (advance x
+     line height) in the 7 x 10 cell, overflow cropped. It is multiplied
+     by the cell colour (8-bit).
+   - Trail: previous x 0.5, max with the new frame.
+   - Glow: box-shrink the result to 1/4, Gaussian (radius 2); shrink that
+     to 1/8, Gaussian (radius 3); scale both back up, multiply by 0.75 and
+     0.45, add.
+6. Extras drawn as marks:
+   - motes, glints, bubbles, sparks (`dots`, nearest drawn only where
+     nothing nearer covers the cell, brightest last);
+   - bubbles only in empty cells;
+   - four-pointed flares (`rays`: arms of `-` `|` and short diagonals, a
+     `*` at the centre, only where brighter than what is there);
+   - stroke characters along fin rays and spark paths by their screen
+     direction (`slope_char`, 5 sectors of the angle).
+
+Comparison with `AsciiFilter` as it is now (496661c / dd87f8c):
+
+| Technique | Reference | AsciiFilter now | Match |
+|---|---|---|---|
+| Cell grid | 7 x 10 px from the top-left; cells off the grid count as empty | presets 6x10, 7x10, 8x12, 10x16 from the top-left; neighbours off the grid ignored | grid yes; border no |
+| Atlas | font 11 px in a 10 px cell (1.1 x cell height); centred by advance x line box, overflow cropped | JetBrains Mono fitted so all ink fits the cell (9 px at 7x10); centred by advance and ink | no |
+| Coverage | summed point area in the cell, clip 1; any point = drawn | 16 samples; drawn above 0.2 | partly |
+| Cell colour | the nearest point's colour and L | mean of covered samples, all parts mixed | no |
+| Part | the nearest point's part | mode of 17 samples | as near as 2D allows |
+| Outline detection | 4 side neighbours start an edge; empty, a different part further back, or a hard-part seam from the lower index | any of 8 neighbours; empty or any different part; both sides | no |
+| Stroke choice | thresholds 2:1; `+` only when g = 0; offsets unweighted | thresholds 2.414:1; `+` when both components < 0.25; diagonals x 0.707 | no |
+| Fill pools | the same 4 pools, each repeated to 12; level = int((L - 0.42) x 4.6) | the same pools; level = 4 equal bins of luminance | pools yes; level no |
+| Shimmer | integer hash; 4 steps/s, all cells together | float hash; per-part rate, staggered phase | no |
+| Brightness, colour | edges max(0.85, L); fill 0.45 + 0.55 L / 0.9; marks L; x (0.30 + 0.70 c^0.7); rgb x min(b, 1.4), clipped | edges raised to 0.85 (max channel), fill as is, marks as is, x (0.30 + 0.70 c^0.7) | edges and coverage yes; fill no |
+| Marks | own glyph, no outline, brightest wins, hidden behind nearer body | own glyph, no outline, brightest pixel in the cell wins | yes (the layers lie on the surface) |
+| Flares, ray strokes | `rays()`, `slope_char()` | none (deferred) | no |
+| Trails | x 0.5, max (8-bit) | x 0.5, max (16-bit float, cut at 1/1024) | yes |
+| Glow | 1/4 box + Gaussian sigma 1.78; 1/8 from it + sigma 2.40; bilinear up; 0.75 / 0.45 added; no floor, no mask | 1/4 box + sigma 1.5; 1/8 + sigma 2.0; 0.75 / 0.45; floor 0.04 and drawn-cell mask | structure yes; sigmas, floor, mask no |
+
+What depends on the 3D shape, and what our 2D inputs can do instead:
+- Depth (nearest point; "different part further back"). The sandbox is
+  seen from above, and the height of the sand is its nearness to the
+  projector. So the elevation band in the parts FBO's R is a depth rank:
+  a band boundary is a depth step, and the higher side is the nearer one.
+  The reference's depth rule ("outline where the neighbour is a different
+  part further back") becomes "outline where the neighbour's band is
+  lower", drawn by the higher side only.
+- Part identity per point. Parts G (layer) and B (stage) are the identity
+  of each pixel. The reference's seams (two hard parts touching, drawn by
+  the lower index) become layer or stage changes at the same band, drawn
+  by the lower (G, B).
+- Nearest point per cell. With no depth inside a cell, the cell's part is
+  the most common one among its pixels, and its colour is the mean of the
+  covered pixels of that part (no mixing across a boundary), the 2D
+  equivalent of one point's colour.
+- Lighting brightness L, from normals, kept apart from the colour. Our
+  colour arrives as one RGB value (colour map times whatever the height
+  shader added). The nearest split is L = the brightest channel and
+  rgb = colour / L, so rgb x L gives the input back. There is no lighting
+  of folds; the colour map plays that role.
+- Coverage from point areas. The fraction of the cell's pixels above the
+  black threshold, counting every pixel, is the image equivalent.
+- Fin rays and spark strokes (`slope_char`) need the direction of a curve
+  in 3D (a ray, a spark's path). The Sandbox inputs carry no such curves.
+  The band outlines already follow the contour direction, and the mark
+  layers carry no direction (a Dewitz FBO has trails, not velocities). Not
+  matched.
+- Flares (`rays`) are placed at chosen 3D points (scales, bursts, the
+  first spark). The Sandbox has no flare sources yet. The previous brief
+  deferred flares to a later layer drawn into the same inputs. Not
+  matched.
+- Marks hidden behind the body (depth test). Seeds, particles and
+  critters lie on the surface and are never behind the sand, so "marks on
+  top" is the same result.
+
+## 2026-11-21 - ASCII filter brought in line with the reference: revision and checks (step 3)
+
+Credit: the technique follows "The Betta Fish in ASCII" by @dwcminh.ascii,
+https://github.com/dwcminh/ascii-art (folder BETTA-FISH, `betta_fish.py`).
+- Its code is free for personal, non-commercial use, may be read and
+  remixed, and must never be passed off as one's own. Shifting Sands will
+  be published as a toolkit, so the techniques were re-expressed in our own
+  GLSL and C++. No code or passages were copied from the Python file.
+- Where a reference value is used, it is named as such in comments.
+- The credit and link are in `AsciiFilter.h`, in the header of every ASCII
+  shader (GL2 and GL3), in the filter's GUI and in the preview README.
+
+Display only: the changes are confined to `src/Common/AsciiFilter.*`, the
+ASCII shaders, the preview tool and docs. No simulation, model or other
+display mode file changed.
+
+The comparison table after this pass ("before" is the table in step 2):
+
+| Technique | Reference | AsciiFilter after | Match |
+|---|---|---|---|
+| Cell grid | 7 x 10 px from the top-left; cells off the grid count as empty | presets 6x10, 7x10 (default), 8x12, 10x16 from the top-left; cells off the grid count as empty | yes (7x10; the other presets are ours) |
+| Atlas | font 11 px in 10 px cells (1.1 x cell height); each character centred by advance and line box, rounded down; overflow cropped; Consolas, Menlo, DejaVu Sans Mono, Courier New, the first installed | "Font size" 0 = auto, 1.1 x cell height (11, 11, 13, 18 px); "Glyph centring" Line box (reference, default) or Ink box (the old fit); overflow cropped by a margin round each atlas cell; "Font": Consolas or Menlo if installed (Windows, macOS), else bundled JetBrains Mono, or always bundled | yes on Windows with Consolas. Font files cannot be bundled except under an open licence, so other machines use JetBrains Mono, as the preview does. |
+| Coverage | summed point area per cell, clip 1; any point draws the cell | covered pixels / pixels, every pixel read; minimum coverage 0 by default (any covered pixel draws the cell; control kept) | as far as 2D allows (area of covered pixels for area of points) |
+| Cell colour | the nearest point's colour and L | mean of the covered pixels of the cell's own part; L = its brightest channel, rgb = colour / L | as far as 2D allows (no depth inside a cell) |
+| Part | the nearest point's part | the most common part of the centre and 4 x 4 points | as far as 2D allows |
+| Outline detection | 4 side neighbours start an edge; empty, a different part further back, or a hard-part seam drawn by the lower index; direction from all 8 | the same, with parts R as depth (elevation band, higher = nearer) and (G, B) as identity: seams at the same band, drawn by the lower identity. Controls: "one side only" (on) and "side neighbours only" (on); off gives the old both-sides, 8-neighbour rule | yes, with band as depth |
+| Stroke choice | `|` if \|gx\| > 2\|gy\|; `_` / `-` by the sign of gy if \|gy\| > 2\|gx\|; `/` / `\` by the sign of gx gy; `+` if g = 0; unweighted | the same | yes |
+| Fill pools | 4 pools, each repeated to 12; level = int((L - 0.42) x 4.6) clipped 0..3 | the same; start 0.42 and scale 4.6 as GUI controls | yes (L from colour, see above) |
+| Shimmer | h = (7919 row + 104729 col) mod 9973; entry (h + int(4t + h mod 11)) mod 12; all cells step together | the same hash (exact integer arithmetic in floats); per-class rates kept as controls, default 4 / 4 / 4 | yes |
+| Brightness, colour | edges max(0.85, L); fill clip(0.45 + 0.55 L / 0.9, 0.45, 1); marks L; x (0.30 + 0.70 c^0.7) except marks; rgb x min(b, 1.4), clipped | the same; fill floor as a GUI control (0.45) | yes |
+| Marks | own glyph, never outlined, brightest last, hidden behind nearer body | own glyph, never outlined, brightest pixel in the cell wins; the layers lie on the surface, so they are never behind it | yes |
+| Ray strokes (`slope_char`) | stroke characters along fin rays and spark paths, by screen direction | none | no: our inputs carry no curves with a direction (no rays, no particle velocities in the mark FBOs) |
+| Flares (`rays`) | four-pointed flares at chosen 3D points | none | no: no flare sources in the Sandbox yet (deferred by the earlier brief, to be drawn into the same inputs) |
+| Bubbles in empty cells | drawn only where the water is empty | n/a | no: no such layer |
+| Trails | previous x 0.5, max with the frame (8-bit) | the same (16-bit float, cut at 1/1024 so trails end at exact black) | yes |
+| Glow | shrink to 1/4 (box), Gaussian radius 2; 1/8 from it, radius 3; bilinear up; 0.75 and 0.45 added; no floor, no mask | the same structure; sigmas measured on pygame-ce's `gaussian_blur` (radius 2: sigma 1.78, taps +-4; radius 3: sigma 2.40, taps +-5); floor default 0; drawn-cell mask kept on by default ("Glow lights empty cells" off) | yes inside drawn cells; the mask stays, because the check "empty cells exact black with glow on" requires it: on the sand, the unmasked halo lights bare sand (up to 118 000 empty-cell pixels, max 28/255, measured) |
+
+Decisions:
+- Depth from elevation. The sandbox is seen from above, so a band boundary
+  is a depth step, and the higher band is the nearer one. The reference's
+  "outline where a different part lies further back" therefore draws each
+  contour line once, on the higher side; the shore is drawn on the land
+  side. Plant patches and water at the same band are reference "seams",
+  drawn once by the lower layer or stage (land round a patch).
+- Colour from one part. Mixing two parts' colours at a boundary has no
+  counterpart in the reference: one point decides the cell.
+- Brightness L = the brightest channel. The reference keeps L (lighting)
+  and the colour apart. With one RGB input, splitting off the brightest
+  channel keeps rgb x L equal to the input, so marks and edges come out
+  exactly as before where the formulas agree.
+- Fill pools then follow the reference's formula on L. Land green (L 0.75)
+  takes pool 1 (`rtfj...`), white (0.96) pool 2, deep water (0.42) and
+  climax plants pool 0; pool 3 needs L >= 1.07, i.e. exposure above 1.
+  These are the reference's bins, unchanged. "Fill pool start / scale"
+  can move them.
+- Shimmer: every cell now steps 4 times a second, all at the same
+  instants, as in the reference. This replaces the staggered per-part
+  rates of the first brief; the rate controls stay.
+- Font: Consolas and Menlo are proprietary and cannot be shipped. They are
+  loaded at run time if installed, never copied into this repository.
+  DejaVu Sans Mono (third in the reference's list, free) is not bundled;
+  JetBrains Mono stays the bundled fallback.
+- Atlas cropping uses a margin round each cell in the atlas (ch px), not a
+  scissor rectangle. The result does not depend on oF's FBO row
+  orientation, which cannot be verified here.
+- Pass order: parts, then cells (the cell colour needs the cell's part).
+- New controls: font size, glyph centring, font, "edges started by side
+  neighbours only", fill brightness floor, fill pool start, fill pool
+  scale. Existing controls kept; saved in the preset.
+- Changed defaults: minimum coverage 0.2 -> 0; one side only off -> on;
+  shimmer 0.02 / 0.2 / 1.5 -> 4 / 4 / 4; glow floor 0.04 -> 0. Mark
+  threshold 0.25, exposure 1, saturation 1 unchanged (ours).
+
+The reference was run, not only read: headless, Python 3.13 + numpy +
+pygame-ce 2.5.8, about 45 ms per frame (CPU). Its renders were used for
+comparison only and are not in this repository.
+
+Checks (`tools/sandbox_ascii_preview`, Mesa llvmpipe, real GLSL files):
+- Before / after at each preset: `docs/ascii_baseline/pair_6x10.png`,
+  `pair_7x10.png`, `pair_8x12.png`, `pair_10x16.png`. Each sheet has the
+  full frame (trail + glow, after 8 moving frames, halved), then the
+  mound, water and stage crops, before beside after. "Before" is this
+  branch at dd87f8c, rendered at the start of this pass.
+- Empty cells exact (0, 0, 0), glow on, defaults (floor 0, mask on): 0
+  non-zero pixels at every preset, band fill on and off, and after a hand
+  trail.
+- Off and Dither: height shader identical to `origin/ss/dither-baseline`'s
+  (RGBA, GL3 and GL2, 7 settings); the dither filter output is identical;
+  the dither shaders and `DitherFilter.*` are unchanged.
+- Succession and water: bit-identical across Off, Dither and ASCII, by the
+  code. This pass changed no file outside the ASCII filter, its shaders,
+  the preview and docs, and nothing in the simulation reads what is drawn.
+  No separate run was made.
+- GL2 vs GL3: colour, parts and the ASCII output after 4 moving frames,
+  every preset: identical (max difference 0).
+- Frame time at 1280 x 800, llvmpipe (4 cores, software; median of 10,
+  including about 4 ms of uploads and read-back). This says nothing about
+  the installation PC; the panel shows the real GPU time.
+
+        cells   before (defaults / no trail, no glow)   after
+        6x10    41.6 / 27.1 ms                          44.2 / 27.9 ms
+        7x10    45.2 / 25.3 ms                          42.5 / 27.0 ms
+        8x12    41.8 / 25.7 ms                          46.2 / 29.2 ms
+        10x16   43.2 / 26.5 ms                          47.9 / 31.2 ms
+
+  The cells pass now reads every pixel and its part (up to 160 fetches x 2
+  per cell, instead of 16), and the wide blur has 11 taps instead of 9.
+- GLSL read line by line:
+  - GL2 and GL3 differ only in version/extension, texture2DRect,
+    varying/in and gl_FragColor (diffed; the vertex shader's attributes as
+    before).
+  - Loops have constant bounds.
+  - Dynamic indexing only into uniform arrays (fillGlyph, shimmerRate) and
+    local arrays (asciiParts).
+  - `any(notEqual())` and `bool` are valid in GLSL 1.20; `imod` keeps the
+    integer hash exact for row and column counts up to about 2000.
+  - glslangValidator passes all ASCII shaders, GL2 and GL3.
+- C++: `AsciiFilter.cpp` compiled `-fsyntax-only` against stub oF and
+  ImGui headers. The stubs now also declare `getAscenderHeight`,
+  `getDescenderHeight` and `ofFile::doesFileExist`, which oF 0.12 has. Not
+  compiled with openFrameworks, not hardware-tested.
+
+Hardware checks to add to the list of 2026-11-21:
+- The letters are upright and fill their cells (atlas orientation and
+  line-box centring with Consolas, the installation PC's font).
+- Contour lines are single, on the higher side of each band.

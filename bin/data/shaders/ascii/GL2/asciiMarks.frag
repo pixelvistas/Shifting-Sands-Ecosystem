@@ -1,3 +1,6 @@
+// Technique after "The Betta Fish in ASCII" by @dwcminh.ascii,
+// https://github.com/dwcminh/ascii-art (BETTA-FISH, betta_fish.py; free for
+// personal, non-commercial use). Our own GLSL; no code copied from it.
 // AsciiFilter pass 3: the mark of each cell = the brightest marked pixel
 // anywhere in the cell (every pixel is read, so a 1-px mark is never
 // missed). Output: that pixel of the marks buffer (RGB colour, A glyph),

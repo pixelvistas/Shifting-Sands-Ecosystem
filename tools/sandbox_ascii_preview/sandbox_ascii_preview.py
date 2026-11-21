@@ -74,7 +74,8 @@ ASCII_PARTS = dict(ASCII_COLOUR, partsPass=1)
 def ascii_defaults():
     s = open(SRC).read()
     body = s[s.index("static AsciiFilter::Params makeDefaults()"):s.index("AsciiFilter::DEFAULTS = makeDefaults")]
-    enums = {"CELLS_6x10": 0, "CELLS_7x10": 1, "CELLS_8x12": 2, "CELLS_10x16": 3}
+    enums = {"CELLS_6x10": 0, "CELLS_7x10": 1, "CELLS_8x12": 2, "CELLS_10x16": 3,
+             "GLYPH_CENTRE_LINE_BOX": 0, "GLYPH_CENTRE_INK_BOX": 1, "FONT_REFERENCE_ORDER": 0, "FONT_BUNDLED": 1}
     d = {}
     for n, idx, v in re.findall(r"p\.(\w+)(?:\[(\d)\])? = ([^;]+);", body):
         v = v.strip()
@@ -115,24 +116,53 @@ def measure(f):
     return top, bottom, f.getlength("M")
 
 
-def bake_atlas(cw, ch):
-    ref = 64
-    top, bottom, adv = measure(ImageFont.truetype(FONT, ref))
-    if adv < 1:
-        adv = 0.6 * ref
-    size = max(4, int(math.floor(ref * min(cw / adv, ch / max(1.0, bottom - top)))))
+def font_px(prm, ch):
+    """AsciiFilter::fontPxFor(): 0 = auto, 1.1 x the cell height (the reference: 11 px in 10 px cells)."""
+    return int(prm["fontPx"]) if prm.get("fontPx", 0) > 0 else int(math.floor(1.1 * ch + 0.5))
+
+
+def bake_atlas(cw, ch, px, centring):
+    """AsciiFilter::ensureAtlas(). The font here is always the bundled one: the
+    reference order (Consolas, Menlo) finds neither on Linux. Slots carry a
+    margin of ch px all round; only the cell inside is read."""
+    if centring == 1:   # ink box (before 2026-11-21)
+        ref = 64
+        top, bottom, adv = measure(ImageFont.truetype(FONT, ref))
+        if adv < 1:
+            adv = 0.6 * ref
+        size = max(4, int(math.floor(ref * min(cw / adv, ch / max(1.0, bottom - top)))))
+    else:
+        size = max(4, px)
     f = ImageFont.truetype(FONT, size)
     top, bottom, adv = measure(f)
-    baseline = cround(0.5 * (ch - (bottom - top)) - top)
-    xoff = cround(0.5 * (cw - adv))
-    img = Image.new("L", (16 * cw, 6 * ch), 0)
+    if centring == 1:
+        baseline = cround(0.5 * (ch - (bottom - top)) - top)
+        xoff = cround(0.5 * (cw - adv))
+    else:               # line box (the reference)
+        ascent, descent = f.getmetrics()
+        asc, line_h = cround(ascent), cround(ascent + descent)
+        baseline = math.floor((ch - line_h) / 2.0) + asc
+        xoff = math.floor((cw - cround(adv)) / 2.0)
+    pad = ch
+    sw, sh = cw + 2 * pad, ch + 2 * pad
+    img = Image.new("L", (16 * sw, 6 * sh), 0)
     d = ImageDraw.Draw(img)
     for c in range(33, 127):
         slot = c - 32
-        d.text(((slot % 16) * cw + xoff, (slot // 16) * ch + baseline), chr(c), font=f, fill=255, anchor="ls")
-    a = np.zeros((6 * ch, 16 * cw, 4), np.uint8)
+        d.text(((slot % 16) * sw + pad + xoff, (slot // 16) * sh + pad + baseline), chr(c), font=f, fill=255, anchor="ls")
+    a = np.zeros((6 * sh, 16 * sw, 4), np.uint8)
     a[..., 0] = np.asarray(img)
-    return a, size
+    return a, size, pad
+
+
+def atlas_cells(a, cw, ch, pad):
+    """The atlas as the glyph pass sees it: each slot's cell only (16 x 6 cells)."""
+    sw, sh = cw + 2 * pad, ch + 2 * pad
+    out = np.zeros((6 * ch, 16 * cw), np.uint8)
+    for r in range(6):
+        for c in range(16):
+            out[r * ch:(r + 1) * ch, c * cw:(c + 1) * cw] = a[r * sh + pad:r * sh + pad + ch, c * sw + pad:c * sw + pad + cw, 0]
+    return out
 
 
 # ------------------------------------------------------------ GL: the filter
@@ -211,12 +241,13 @@ class Ascii:
                                "mark": Fbo(gw, gh, GL.GL_RGBA8), "decide": Fbo(gw, gh, GL.GL_RGBA16F)}
         return self.grids[key]
 
-    def atlas(self, cw, ch):
-        if (cw, ch) not in self.atlases:
-            a, size = bake_atlas(cw, ch)
+    def atlas(self, cw, ch, px, centring):
+        key = (cw, ch, px, centring)
+        if key not in self.atlases:
+            a, size, pad = bake_atlas(cw, ch, px, centring)
             t = sdp.rect_tex(a.shape[1], a.shape[0], GL.GL_RGBA8, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, a)
-            self.atlases[(cw, ch)] = (t, size, a)
-        return self.atlases[(cw, ch)]
+            self.atlases[key] = (t, size, atlas_cells(a, cw, ch, pad), pad)
+        return self.atlases[key]
 
     def use(self, name):
         p = self.p[name]
@@ -231,7 +262,7 @@ class Ascii:
         upload(self.parts, parts8)
         g = self.grid(cw, ch)
         gw, gh = g["cell"].w, g["cell"].h
-        atlas_tex = self.atlas(cw, ch)[0]
+        atlas_tex, _, _, pad = self.atlas(cw, ch, font_px(prm, ch), int(prm["glyphCentring"]))
 
         # Marks: beginMarks() + addMarks() per layer.
         self.marks.clear()
@@ -247,21 +278,24 @@ class Ascii:
             rnd.quad(p, PW, PH)
         marks_on = len(layers) > 0
 
-        g["cell"].bind()
-        p = self.use("asciiCells")
-        tex(p, "srcTex", 0, self.colour)
-        u(p, "srcSize", float(PW), float(PH))
-        u(p, "cellSize", float(cw), float(ch))
-        u(p, "blackThreshold", prm["blackThreshold"])
-        u(p, "exposure", prm["exposure"])
-        u(p, "saturation", prm["saturation"])
-        rnd.quad(p, gw, gh)
-
         g["part"].bind()
         p = self.use("asciiParts")
         tex(p, "partsTex", 0, self.parts)
         u(p, "srcSize", float(PW), float(PH))
         u(p, "cellSize", float(cw), float(ch))
+        rnd.quad(p, gw, gh)
+
+        g["cell"].bind()
+        p = self.use("asciiCells")
+        tex(p, "srcTex", 0, self.colour)
+        tex(p, "partsTex", 1, self.parts)
+        tex(p, "cellPartTex", 2, g["part"].tex)
+        u(p, "srcSize", float(PW), float(PH))
+        u(p, "partsScale", 1.0, 1.0)
+        u(p, "cellSize", float(cw), float(ch))
+        u(p, "blackThreshold", prm["blackThreshold"])
+        u(p, "exposure", prm["exposure"])
+        u(p, "saturation", prm["saturation"])
         rnd.quad(p, gw, gh)
 
         if marks_on:
@@ -272,16 +306,7 @@ class Ascii:
             u(p, "cellSize", float(cw), float(ch))
             rnd.quad(p, gw, gh)
 
-        glyphs = np.zeros(48, np.float32)
-        start = np.zeros(4, np.float32)
-        length = np.zeros(4, np.float32)
-        n = 0
-        for i, pool in enumerate(self.pools):
-            start[i] = n
-            for c in pool[:48 - n]:
-                glyphs[n] = ord(c)
-                n += 1
-            length[i] = n - start[i]
+        fill = np.array([ord(pool[k % len(pool)]) for pool in self.pools for k in range(12)], np.float32)
         g["decide"].bind()
         p = self.use("asciiDecide")
         tex(p, "cellTex", 0, g["cell"].tex)
@@ -292,9 +317,11 @@ class Ascii:
         u(p, "minCoverage", prm["minCoverage"])
         u(p, "edgeFloor", prm["edgeFloor"])
         u(p, "oneSided", 1 if prm["edgeOneSided"] else 0, i=True)
-        GL.glUniform1fv(GL.glGetUniformLocation(p, "poolGlyph"), 48, glyphs)
-        GL.glUniform1fv(GL.glGetUniformLocation(p, "poolStart"), 4, start)
-        GL.glUniform1fv(GL.glGetUniformLocation(p, "poolLen"), 4, length)
+        u(p, "sideOnly", 1 if prm["edgeSideOnly"] else 0, i=True)
+        GL.glUniform1fv(GL.glGetUniformLocation(p, "fillGlyph"), 48, fill)
+        u(p, "fillFloor", prm["fillFloor"])
+        u(p, "fillStart", prm["fillStart"])
+        u(p, "fillScale", max(0.0, prm["fillScale"]))
         GL.glUniform1fv(GL.glGetUniformLocation(p, "shimmerRate"), 3,
                         np.array([prm["shimmerRate0"], prm["shimmerRate1"], prm["shimmerRate2"]], np.float32))
         u(p, "time", float(t))
@@ -305,6 +332,7 @@ class Ascii:
         tex(p, "decideTex", 0, g["decide"].tex)
         tex(p, "atlasTex", 1, atlas_tex)
         u(p, "cellSize", float(cw), float(ch))
+        u(p, "atlasPad", float(pad))
         rnd.quad(p, PW, PH)
 
         trail = min(max(prm["trailAmount"], 0.0), 0.98)
@@ -336,19 +364,20 @@ class Ascii:
                 u(p, "factor", float(factor))
                 rnd.quad(p, dst.w, dst.h)
 
-            def blur(src, dst, dx, dy, sigma):
+            def blur(src, dst, dx, dy, sigma, reach):
                 dst.bind()
                 p = self.use("asciiBlur")
                 tex(p, "srcTex", 0, src.tex)
                 u(p, "dir", dx, dy)
                 u(p, "sigma", sigma)
+                u(p, "reach", reach)
                 rnd.quad(p, dst.w, dst.h)
             down(result, self.tight[0], 4)
-            blur(self.tight[0], self.tight[1], 1.0, 0.0, 1.5)
-            blur(self.tight[1], self.tight[0], 0.0, 1.0, 1.5)
+            blur(self.tight[0], self.tight[1], 1.0, 0.0, 1.78, 4.0)
+            blur(self.tight[1], self.tight[0], 0.0, 1.0, 1.78, 4.0)
             down(self.tight[0], self.wide[0], 2)
-            blur(self.wide[0], self.wide[1], 1.0, 0.0, 2.0)
-            blur(self.wide[1], self.wide[0], 0.0, 1.0, 2.0)
+            blur(self.wide[0], self.wide[1], 1.0, 0.0, 2.40, 5.0)
+            blur(self.wide[1], self.wide[0], 0.0, 1.0, 2.40, 5.0)
 
         self.out.bind()
         p = self.use("asciiOut")
@@ -522,7 +551,7 @@ def cmd_frames(args):
                     row_h.append(sdp.label(crop(img, C["hand"], 2), lab))
         rows_zoom.append(row_z)
         rows_hand.append(row_h)
-        print("preset %s: atlas font %d px" % (PRESET_NAMES[pi], asc.atlas(cw, ch)[1]))
+        print("preset %s: atlas font %d px" % (PRESET_NAMES[pi], asc.atlas(cw, ch, font_px(d, ch), int(d["glyphCentring"]))[1]))
     save(sdp.sheet(rows_zoom), "sheet_zoom_mound_water%s.png" % tag)
     save(sdp.sheet(rows_hand), "sheet_hand_trail%s.png" % tag)
     # Stages, default preset, zoomed.
@@ -530,8 +559,8 @@ def cmd_frames(args):
     img = render_sequence(asc, scene, d, cw, ch)
     save(np.asarray(sdp.sheet([[crop(img, C["stages"], 2)], [crop(off, C["stages"], 2)]])), "sheet_stages_vs_off%s.png" % tag)
     for i, (cw, ch) in enumerate(sizes):
-        a = asc.atlas(cw, ch)[2]
-        save(np.repeat(np.repeat(np.stack([a[..., 0]] * 3 + [a[..., 0]], -1), 4, 0), 4, 1), "atlas_%s.png" % PRESET_NAMES[i])
+        a = asc.atlas(cw, ch, font_px(d, ch), int(d["glyphCentring"]))[2]
+        save(np.repeat(np.repeat(np.stack([a] * 4, -1), 4, 0), 4, 1), "atlas_%s.png" % PRESET_NAMES[i])
     print("wrote", OUT)
 
 
@@ -667,9 +696,27 @@ def cmd_timing(args):
                   % (PRESET_NAMES[pi], label, float(np.median(ts)), io))
 
 
+def cmd_pairs(args):
+    """Before / after sheets: args.before = an earlier out/ directory (same file names)."""
+    C = crops()
+    tag = "_filloff" if args.fill_off else ""
+    for name in PRESET_NAMES:
+        f = "ascii_%s_trailOn_glowOn%s.png" % (name, tag)
+        b = np.asarray(Image.open(os.path.join(args.before, f)).convert("RGB"))
+        a = np.asarray(Image.open(os.path.join(OUT, f)).convert("RGB"))
+        rows = [[sdp.label(np.ascontiguousarray(b[::2, ::2]), "before, %s, trail + glow" % name),
+                 sdp.label(np.ascontiguousarray(a[::2, ::2]), "after, %s, trail + glow" % name)]]
+        for k in ("mound", "water", "stages"):
+            z = 2 if k == "stages" else 3
+            rows.append([sdp.label(crop(b, C[k], z), "before: " + k), sdp.label(crop(a, C[k], z), "after: " + k)])
+        save(sdp.sheet(rows), "pair_%s%s.png" % (name, tag))
+    print("wrote pair_*.png to", OUT)
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["frames", "checks", "timing"])
+    ap.add_argument("cmd", choices=["frames", "checks", "timing", "pairs"])
+    ap.add_argument("--before", help="pairs: the out/ directory of an earlier run")
     ap.add_argument("--gl2", action="store_true")
     ap.add_argument("--fill-off", action="store_true", help="frames: Band fill off (dark-room look)")
     a = ap.parse_args()
