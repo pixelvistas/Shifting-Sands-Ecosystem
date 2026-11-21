@@ -89,6 +89,8 @@ private:
 	enum { FILTER_OFF = 0, FILTER_DITHER = 1, FILTER_ASCII = 2 };
 	int screenFilter = FILTER_ASCII;
 	bool asciiReplacesLines = true; // band outlines replace the Sandbox's own lines
+	float asciiBandMarginMM = 1.5f; // band hysteresis for the parts (SandSurfaceRenderer)
+	float asciiNormalRadiusPx = 5.0f; // surface normals: half-width of the differences, Kinect px
 	DitherFilter sandboxDither;
 	AsciiFilter sandboxAscii;
 	bool ditherActive() const { return screenFilter == FILTER_DITHER && !sandboxDither.shadersFailed(); }

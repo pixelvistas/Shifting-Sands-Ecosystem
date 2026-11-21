@@ -8,6 +8,8 @@
 //   A = coverage = covered pixels / pixels inside the source (the image
 //       counterpart of the reference's summed point area per cell);
 //   RGB = mean of the covered pixels that belong to the cell's own part
+//       (since 2026-11-21 it gives the hue only; AsciiFilter passes exposure
+//       1 here and applies exposure to the lit brightness in asciiDecide)
 //       (pass 1), after the pre-filter (exposure, then saturation about the
 //       pixel's luminance; hue kept; a colour brighter than 1 is divided by
 //       its maximum channel). The reference takes the colour of one point,

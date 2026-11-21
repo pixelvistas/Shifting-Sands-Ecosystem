@@ -1,7 +1,7 @@
 // Technique after "The Betta Fish in ASCII" by @dwcminh.ascii,
 // https://github.com/dwcminh/ascii-art (BETTA-FISH, betta_fish.py; free for
 // personal, non-commercial use). Our own GLSL; no code copied from it.
-// AsciiFilter pass 5: per output pixel, the cell's character (pass 4) from
+// AsciiFilter pass 7: per output pixel, the cell's character (pass 6) from
 // the font atlas (ASCII 32..126, 16 per row; each slot is the cell with a
 // margin of atlasPad pixels all round, and only the cell is read, so what a
 // character draws beyond its cell is cropped, as in the reference; R =

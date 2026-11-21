@@ -85,9 +85,15 @@ public:
     // drawn (the filter's band outlines replace them).
     void setAsciiFilterActive(bool on, bool replaceLines) { asciiFilterActive = on; asciiReplacesLines = replaceLines; }
     // The projector-sized sand FBO (drawn in update()) and, while the ASCII
-    // filter is on, its parts FBO (nullptr otherwise). Read only.
+    // filter is on, its parts FBO (this frame's of two) and surface-normal
+    // FBO (nullptr otherwise). Read only.
     const ofTexture & getProjectorTexture() const { return fboProjWindow.getTexture(); }
-    const ofTexture * getPartsTexture() const { return (asciiFilterActive && fboParts.isAllocated()) ? &fboParts.getTexture() : nullptr; }
+    const ofTexture * getPartsTexture() const { return (asciiFilterActive && partsValid) ? &fboParts[partsCur].getTexture() : nullptr; }
+    const ofTexture * getSurfaceTexture() const { return (asciiFilterActive && partsValid) ? &fboSurface.getTexture() : nullptr; }
+    // ASCII inputs (display only, set by ofApp): band hysteresis in mm (a
+    // pixel must pass a band edge by this much to change band) and the
+    // half-width of the surface-normal differences in Kinect pixels.
+    void setAsciiInputs(float bandMarginMM, float normalRadiusPx) { asciiBandMarginMM = bandMarginMM; asciiNormalRadiusPx = normalRadiusPx; }
 
     // Main loop function
     void setup(bool sdisplayGui);
@@ -166,7 +172,13 @@ private:
     
     // FBos
     ofFbo   fboProjWindow;    
-    ofFbo   fboParts;          // ASCII filter parts (8-bit, no multisampling, nearest)
+    ofFbo   fboParts[2];       // ASCII filter parts, this frame's and last frame's (8-bit, nearest)
+    ofFbo   fboSurface;        // ASCII filter surface normals (16-bit float, nearest)
+    int partsCur = 0;
+    bool partsValid = false;
+    float asciiBandMarginMM = 1.5f;
+    float asciiNormalRadiusPx = 5.0f;
+    enum { PASS_COLOUR = 0, PASS_PARTS = 1, PASS_SURFACE = 2 };
     ofFbo   contourLineFramebufferObject;
 
     // Base plane
@@ -217,7 +229,7 @@ private:
     bool ditherFilterActive = false;   // see setDitherFilterActive()
     bool asciiFilterActive = false;    // see setAsciiFilterActive()
     bool asciiReplacesLines = true;
-    void drawSandboxPass(ofFbo & target, bool parts);
+    void drawSandboxPass(ofFbo & target, int pass);
     float flatFadeAmount = 0.6f;       // "Hide lines on flat ground" 0..1 (x 15 deg); 0.6 from tools/land_lines_preview.py
     std::vector<float> landBandEdges;  // colour-map band boundaries, mm
     void updateLandBandEdges();

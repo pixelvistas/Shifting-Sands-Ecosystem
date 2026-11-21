@@ -236,32 +236,52 @@ void SandSurfaceRenderer::drawProjectorWindow(){
 	fboProjWindow.draw(0,0);
 }
 
+static void allocateAsciiInput(ofFbo & fbo, int w, int h, GLint format)
+{
+    if (fbo.isAllocated() && (int)fbo.getWidth() == w && (int)fbo.getHeight() == h)
+        return;
+    ofFboSettings s;
+    s.width = std::max(1, w);
+    s.height = std::max(1, h);
+    s.internalformat = format;
+    s.textureTarget = GL_TEXTURE_RECTANGLE_ARB;
+    s.minFilter = GL_NEAREST;
+    s.maxFilter = GL_NEAREST;
+    s.wrapModeHorizontal = GL_CLAMP_TO_EDGE;
+    s.wrapModeVertical = GL_CLAMP_TO_EDGE;
+    s.useDepth = false;
+    s.numSamples = 0;
+    fbo.allocate(s);
+    fbo.begin();
+    ofClear(0, 0, 0, 0);
+    fbo.end();
+}
+
 void SandSurfaceRenderer::drawSandbox() {
-    drawSandboxPass(fboProjWindow, false);
-    // ASCII filter on (display only): the same draw again, writing the parts
-    // (band, layer, stage) instead of the colour; nothing else reads it.
+    drawSandboxPass(fboProjWindow, PASS_COLOUR);
+    // ASCII filter on (display only): the same draw again, twice: the parts
+    // (band with hysteresis against last frame's parts, layer, stage) into
+    // the other of two parts FBOs, and the surface normals. Nothing else
+    // reads them.
     if (asciiFilterActive) {
-        if (!fboParts.isAllocated() || (int)fboParts.getWidth() != projResX || (int)fboParts.getHeight() != projResY) {
-            ofFboSettings s;
-            s.width = std::max(1, projResX);
-            s.height = std::max(1, projResY);
-            s.internalformat = GL_RGBA;
-            s.textureTarget = GL_TEXTURE_RECTANGLE_ARB;
-            s.minFilter = GL_NEAREST;
-            s.maxFilter = GL_NEAREST;
-            s.wrapModeHorizontal = GL_CLAMP_TO_EDGE;
-            s.wrapModeVertical = GL_CLAMP_TO_EDGE;
-            s.useDepth = false;
-            s.numSamples = 0;
-            fboParts.allocate(s);
-        }
-        drawSandboxPass(fboParts, true);
+        for (int i = 0; i < 2; i++)
+            allocateAsciiInput(fboParts[i], projResX, projResY, GL_RGBA);
+        allocateAsciiInput(fboSurface, projResX, projResY, GL_RGBA16F);
+        partsCur = 1 - partsCur;
+        drawSandboxPass(fboParts[partsCur], PASS_PARTS);
+        drawSandboxPass(fboSurface, PASS_SURFACE);
+        partsValid = true;
+    } else {
+        partsValid = false;
     }
 }
 
-// parts false: the colour (as before the ASCII filter); true: the ASCII
-// filter's parts buffer (heightMapShader partsPass), cleared to 0 = no part.
-void SandSurfaceRenderer::drawSandboxPass(ofFbo & target, bool parts) {
+// PASS_COLOUR: the colour (as before the ASCII filter); PASS_PARTS: the
+// ASCII filter's parts buffer (heightMapShader partsPass 1); PASS_SURFACE:
+// its surface normals (partsPass 2). The ASCII buffers are cleared to 0 =
+// nothing drawn.
+void SandSurfaceRenderer::drawSandboxPass(ofFbo & target, int pass) {
+    const bool parts = pass != PASS_COLOUR;
     // With the ASCII filter on and "replace lines", the Sandbox's own lines
     // are not drawn (display only; the settings keep their values).
     const bool linesOff = asciiFilterActive && asciiReplacesLines;
@@ -281,7 +301,16 @@ void SandSurfaceRenderer::drawSandboxPass(ofFbo & target, bool parts) {
     heightMapShader.setUniformTexture("pixelCornerElevationSampler", contourLineFramebufferObject.getTexture(), 3);
     heightMapShader.setUniform1f("contourLineFactor", contourLineFactor);
     heightMapShader.setUniform1i("drawContourLines", (drawContourLines && !linesOff) ? 1 : 0);
-    heightMapShader.setUniform1i("partsPass", parts ? 1 : 0);
+    heightMapShader.setUniform1i("partsPass", pass);
+    if (pass == PASS_PARTS) {
+        // Band hysteresis against last frame's parts (the other FBO).
+        heightMapShader.setUniformTexture("prevPartsSampler", fboParts[1 - partsCur].getTexture(), 8);
+        heightMapShader.setUniform1i("hasPrevParts", partsValid ? 1 : 0);
+        heightMapShader.setUniform1f("bandMargin", std::max(0.0f, asciiBandMarginMM));
+    } else {
+        heightMapShader.setUniform1i("hasPrevParts", 0);
+    }
+    heightMapShader.setUniform1f("normalRadius", ofClamp(asciiNormalRadiusPx, 0.5f, 10.0f));
     // Dither filter on (ofApp, display only): contour diagonals solid, not
     // on the 2-px checkerboard.
     heightMapShader.setUniform1i("contourSolid", ditherFilterActive ? 1 : 0);

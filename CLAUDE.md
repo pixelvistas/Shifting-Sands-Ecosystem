@@ -117,6 +117,9 @@ sand surface (shader), flow particles, agents, then the ImGui panels.
   sand FBO; parts FBO (height shader `partsPass`: band, layer 0/1/2, stage); marks = seed, Dewitz and critter FBOs
   (`getMarkTexture()`, glyph `MARK_GLYPH`). One setting `screenFilter` + Sandbox inputs in `settings/sandboxFilter.xml`
   (`ofApp`). ASCII on: Sandbox lines off by default. Test: `tools/sandbox_ascii_preview/`.
+  2026-11-21: lit by surface normals (height shader `partsPass` 2, 16F FBO), brightness stretched, emptiness and
+  thinning from it; bands with hysteresis (two parts FBOs); seams shore-only, run filter, Ground Full/Dark, debug
+  views. Plant-stage seams caused the scattered strokes (DEVLOG). `tools/sandbox_ascii_preview` debug/edges.
 
 ## Hydrology (`VegetationField::stepFlow()`)
 

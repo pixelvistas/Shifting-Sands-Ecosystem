@@ -1,7 +1,7 @@
 // Technique after "The Betta Fish in ASCII" by @dwcminh.ascii,
 // https://github.com/dwcminh/ascii-art (BETTA-FISH, betta_fish.py; free for
 // personal, non-commercial use). Our own GLSL; no code copied from it.
-// AsciiFilter pass 7: output = frame (trail result) + tightAmount x tight
+// AsciiFilter pass 9: output = frame (trail result) + tightAmount x tight
 // glow + wideAmount x wide glow, clamped to 1. Each glow is first put
 // through the black floor: x smoothstep(blackFloor, 2 blackFloor, its
 // brightest channel), so glow at or below the floor is exactly 0. Unless

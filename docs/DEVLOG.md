@@ -5033,3 +5033,243 @@ Hardware checks to add to the list of 2026-11-21:
 - The letters are upright and fill their cells (atlas orientation and
   line-box centring with Consolas, the installation PC's font).
 - Contour lines are single, on the higher side of each band.
+
+## 2026-11-21 - ASCII: lit terrain, black sand, clean contour lines (`ss/ascii-baseline`, uncommitted)
+
+The technique still follows "The Betta Fish in ASCII" by @dwcminh.ascii,
+https://github.com/dwcminh/ascii-art (BETTA-FISH, `betta_fish.py`). Its
+`scene()` lighting terms, its paling (`rgb + (WHITE - rgb) x ...`) and its
+treatment of hems and rays were re-read for this pass and re-expressed in
+our own GLSL. No code was copied.
+
+Display only. The changed files are:
+- `src/Common/AsciiFilter.*` and the ASCII shaders;
+- the height shader (new ASCII-only passes);
+- `SandSurfaceRenderer` (ASCII inputs) and `ofApp` (wiring and Sandbox GUI);
+- the preview tools and docs.
+No simulation or model file changed.
+
+### Hardware symptoms: causes confirmed or corrected (step 0, preview)
+
+Debug views were added first (ASCII panel -> "Debug view": Bands, Edges,
+Lit brightness, Fill pool). They were rendered on the code as it was
+(4152c62): `docs/ascii_baseline/debug_pairs*.png`, left columns.
+1. No black: confirmed. Emptiness came only from the colour, and the
+   Sandbox colour is never dark inside the box. The before Lit view is
+   light grey everywhere; 10 930 of 10 930 covered cells were drawn.
+2. One pool: confirmed. Brightness was the colour's brightest channel, on
+   a flat colour map. Before, 21 % of fill cells used pool 0, 79 % pool 1,
+   none pool 2 or 3. With mixed plant cover (mock, below) the split was
+   94 % pool 0 and 6 % pool 1, because the plant colours are dark. That
+   matches "nearly every letter from `; : 1 i l !`".
+3. Outline noise: corrected.
+   - Bands do not come from raw depth. The height shader reads `tex0` =
+     `KinectProjector::FilteredDepthImage`, made by `KinectGrabber::filter()`:
+     a running mean over 15 frames (`numAveragingSlots`), pixels with
+     variance over 4 mm^2 held, 0.5 mm output hysteresis, no spatial
+     filter. That is the temporally smoothed height Sandbox already uses.
+     The other smoothed height, `VegetationField::flowTerrain` (0.3 s EMA),
+     exists only on the CPU, for hydrology.
+   - Depth noise alone hardly changes the outline count. On the mock box,
+     outline cells were 14.5 % of drawn cells with no noise, 14.8 % with
+     5 mm per-pixel jitter, and 15.5 % with 3 mm jitter correlated over
+     4 px. The per-cell vote of 17 samples absorbs it.
+   - The scattered strokes come from seams between plant stages. When the
+     dominant stage changes every few Kinect pixels, as succession
+     produces where stages mix (mock "--speckle": cover 0..0.35 of every
+     stage on all land), outline cells rose to 52.9 %. That is the hardware
+     picture: strokes everywhere, contours buried.
+   - Depth jitter does make the contour lines move between frames, and
+     hysteresis addresses that (below).
+4. Flat colour: confirmed by reading. The reference pales towards white
+   as brightness passes 1 (body), and pales hems and rays; the filter did
+   not.
+
+### Step 1: stable bands, clean contour lines
+
+- Band hysteresis (height shader, parts pass). The parts buffer is now
+  two FBOs, this frame's and last frame's. A projector pixel keeps last
+  frame's band while its key height is within `bandMargin` of that band's
+  edges, so it has to pass an edge by the margin to change band.
+  - The band itself still comes from the filtered depth above (the
+    temporally smoothed height).
+  - Control: "Band hysteresis (mm)", default 1.5, in "ASCII filter:
+    Sandbox inputs", saved in `settings/sandboxFilter.xml`.
+  - Mock noise, 8 frames, outline cells changing between frames:
+    2 mm per-pixel jitter: 240.7 per frame without hysteresis, 87.4 with
+    (of about 980 outline cells); 3 mm correlated blobs: 734 -> 449.
+  - The jitter in the mock is much rougher than the filter's output, which
+    already holds changes under 0.5 mm.
+- Seams. Outlines between identities (parts G / B) are now a choice,
+  "Seams outlined":
+  - every class and identity change (the reference's rule);
+  - class changes only (G);
+  - fluid edge only (the shore), the default.
+  Depth steps (band boundaries) are always outlined. With mixed plant
+  cover and correlated noise, outline cells fall from 52.9 % to 10.9-14.7 %
+  of drawn cells. Plant patches are no longer outlined by default; they
+  differ by hue and lighting.
+- Run filter. An outline cell is kept only if the cells along its own
+  stroke direction hold strokes ("Shortest stroke run kept", default 3).
+  - The cells checked are the next cell along the stroke, or the one
+    beside it, so stair steps count. A '+' needs any neighbouring stroke.
+  - minRun 2 keeps a stroke with a stroke on one side. minRun 3 needs one
+    on both sides, or two in a row on one side.
+  - The test is made on the unfiltered strokes, in one pass. A run that
+    loses its partners can leave 1-2 cells. On the mock box, the smallest
+    groups after filtering are 2, 2, 2, 3 cells.
+  - The filter removes isolated strokes but cannot thin a dense mesh. With
+    every seam outlined over mixed plants, 5 792 strokes became 5 719. The
+    seam choice is what removes that mesh.
+- Stroke characters ("One character along a run", default on). The stroke
+  is chosen again from the direction summed over the cell and its outline
+  neighbours. The next cell along a stroke holds the same character in
+  93 % of cases, against 78 % without.
+
+### Step 2: lit terrain
+
+- Normals (height shader, new `partsPass` 2, into a 16-bit float FBO):
+  - Central differences of the same filtered depth (`worldAt()`, as the
+    flat-ground fade), at +-`normalRadius` Kinect px.
+  - Rise and run both in mm, so the slope is physical (mm per mm; a
+    Kinect pixel is about 1.9 mm here).
+  - Up is minus `worldAt().w` (the colour map's key height is
+    -elevation).
+  - The Kinect-frame slope is turned into the projected image's frame with
+    the screen-space change of the Kinect pixel coordinate, so the light's
+    azimuth is measured on the image.
+  - "Normal smoothing (Kinect px)", default 5 (+-9.5 mm). It was 3 at
+    first; with mock noise the lighting was visibly grainy.
+- Lighting (`asciiLit`, per pixel, averaged over the cell's own part).
+  The reference's terms, with the view straight down:
+  - ambient 0.60 + diffuse 0.36 x max(n.k, 0) + specular 0.55 x
+    max(n.h, 0)^20 + rim 0.26 x (1 - n.z)^2 (the reference's body
+    weights);
+  - key light from azimuth 315 (top left), elevation 40.
+  All are GUI controls, plus "Relief exaggeration" (1).
+- Water (parts G 2) has its own rule: base 0.40 + glint 0.55 x
+  max(n.h, 0)^40, using the bed's normal. It is not stretched, so it stays
+  a darker, distinct material.
+- Contrast stretch (ground and life): s = (lit - black) / (white - black),
+  then x exposure.
+  - Black 0.74, white 1.23: the 3rd and 97th percentiles of raw lit on the
+    preview terrain (median 0.908).
+  - "Auto range" sets them from this frame's percentiles (3 / 97, GUI),
+    reading back the cell texture once per press.
+- Pools from s: floor(s x 4) clipped to 0..3 ("Fill pool start" 0,
+  "scale" 4). Fill brightness: the reference's 0.45 + 0.55 s / 0.9. The
+  colour gives hue only (colour / its brightest channel).
+- Pool histogram, fill cells, 7 x 10, mock terrain:
+  - before: 21 / 79 / 0 / 0 %; with mixed plants 94 / 6 / 0 / 0 %;
+  - after: 3 / 84 / 7 / 6 % (flat sand is pool 1; lit slopes pools 2-3;
+    shadow empties or thins and leaves few pool 0 cells); with mixed plants
+    the same; with 3 mm correlated noise 9 / 40 / 23 / 28 %.
+
+### Step 3: the sand shows
+
+- Emptiness comes from s, not colour. s < 0.12 is empty (exact black).
+  For 0.12 <= s < 0.35, a cell draws only if its fixed hash is below
+  (s - 0.12) / 0.23, so letters thin into shadow. Both thresholds are GUI
+  controls.
+- Outlines and marks always draw.
+- Drawn cells on the mock box: 10 930 before, 9 254 after.
+
+### Step 4: colour
+
+- Paling as the reference's body: rgb + (white - rgb) x
+  clip((s - 1.0) x 1.0, 0, 0.5). "Pale from", "Paling rate" and "Paling at
+  most" are controls.
+- Outlines paled by 0.40 ("Outline paling"; the reference pales rays by
+  0.40).
+- Defaults: exposure 1.0 and saturation 1.0. Exposure now multiplies the
+  brightness s, since the colour gives hue only. Saturation acts on the
+  hue before normalising.
+
+### Step 5: Ground Full / Dark
+
+"Ground" (default Full). Dark:
+- ground cells (parts G 0) draw no fill except where s >= 0.85 ("Ridge
+  brightness", lit ridges);
+- life (plants) and fluid (water) cells draw full fill, with no emptiness
+  or thinning;
+- outlines and marks always draw.
+
+### Also
+
+- Pass order: parts, cells, lit, marks, edges, decide (+ info for the debug
+  views), glyphs, trails, glow.
+- New shaders: `asciiLit`, `asciiEdges`, `asciiDebug` (GL2 and GL3).
+- The filter's `draw()` takes the surface texture (nullptr: brightness from
+  the colour, as before).
+- The debug view is not saved in the preset; "Defaults" keeps it.
+
+### Checks (`tools/sandbox_ascii_preview`, Mesa llvmpipe, real GLSL)
+
+- Before / after, 7 x 10: `docs/ascii_baseline/debug_pairs.png` (no
+  noise), `debug_pairs_noise.png` (2 mm per-pixel jitter),
+  `debug_pairs_speckle.png` (mixed plants + 3 mm blobs). Each has the four
+  debug views and the output, before beside after, and Dark below.
+- Commands: `debug --tag after [--speckle --noise-mm 3 --blob-px 4]`,
+  `edges` (flicker, runs, stroke agreement), `debugpairs --before DIR`.
+- The edge view stays clean with mock noise on: the same rings and box
+  border. Under 3 mm correlated blobs the rings wobble but stay
+  continuous.
+- Empty cells exact (0, 0, 0), glow on (mask on, floor 0), every preset,
+  band fill on and off, after a hand trail. Lit-emptied cells are included
+  (about 376 000 empty-cell pixels at 7 x 10).
+- Off and Dither: height shader identical to `origin/ss/dither-baseline`'s
+  (RGBA, GL3 and GL2, 7 settings); the dither filter output is identical;
+  the dither files are unchanged.
+  - The new uniforms and the `dFdx`/`dFdy` added in the height shader do
+    not change the colour pass.
+- Succession and water: unchanged, by the code. No simulation file changed,
+  and nothing reads what is drawn. No separate run was made.
+- GL2 vs GL3: colour, parts and the ASCII output over 4 moving frames,
+  every preset: identical.
+- Frame time, 1280 x 800, llvmpipe (software; median of 10, filter only,
+  including about 4 ms of uploads and read-back of colour, parts and marks;
+  the float surface upload is extra in the preview and does not exist in
+  the app):
+
+        cells   before (4152c62) defaults / no trail, glow   after
+        6x10    44.2 / 27.9 ms                                51.6 / 36.7 ms
+        7x10    42.5 / 27.0 ms                                52.9 / 37.2 ms
+        8x12    46.2 / 29.2 ms                                51.6 / 35.4 ms
+        10x16   47.9 / 31.2 ms                                53.8 / 40.2 ms
+
+  - The added cost is the lit pass (every pixel's normal and part per
+    cell) and the edges pass.
+  - In the app the height shader also draws the surface pass: 4 depth
+    fetches per pixel, plus the existing parts pass.
+  - On a discrete GPU all of this is estimated well under 1 ms; the panel
+    shows the real time.
+- GLSL read line by line:
+  - GL2 = GL3 apart from version/extension, texture2DRect, varying/in and
+    gl_FragColor (diffed), and the vertex shader's attributes.
+  - Height shader: the GL2 and GL3 edits are the same text.
+  - glslangValidator passes all ASCII shaders, GL2 and GL3. The GL3 height
+    shader passes. The GL2 height shader still lacks its `#extension` line,
+    as before this pass; Mesa compiled and ran it.
+- C++: `AsciiFilter.cpp` compiled `-fsyntax-only` against stub oF and
+  ImGui headers. `ofApp` and `SandSurfaceRenderer` were not compiled. Not
+  compiled with openFrameworks, not hardware-tested.
+
+### Hardware checklist
+
+First: branch pulled, Release build, elevation range reset to the
+calibrated ceiling. Press "Defaults" in the ASCII section, or delete
+`settings/sandboxAscii.xml`, so older saved values do not load. Then
+press "Auto range" once on a typical terrain.
+1. Sand shows through in shadowed areas and on slopes facing away from
+   the key light.
+2. Ridges read in dense, bright letters; slopes facing away fade.
+3. Contour lines read as continuous lines with no scattered strokes,
+   including while a hand is over the sand.
+4. Water reads as a different material from land.
+5. Note Full or Dark, light direction (azimuth, elevation) and the
+   thresholds (empty, thin, ridge, band hysteresis) that read best.
+If strokes still scatter, use Debug view -> Edges and check "Seams
+outlined" (default: shore only). If the lighting looks grainy, raise
+"Normal smoothing". If the light seems to come from the wrong side, the
+azimuth is measured on the projected image, so turn it until shadows
+face away.

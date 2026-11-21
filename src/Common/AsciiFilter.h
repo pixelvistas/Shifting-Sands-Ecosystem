@@ -18,7 +18,9 @@ Inputs (per frame):
 - colour: any RGB picture; black (at or under blackThreshold) is "nothing".
 - parts: per pixel R, G, B = three part fields (8-bit values), A = 1 where
   there is a part. R is the depth rank (higher = nearer the viewer), G and
-  B the part's identity; G also selects the shimmer class (0, 1, 2).
+  B the part's identity; G is also the class: 0 ground, 1 life, 2 fluid
+  (lighting rule, Dark ground, shimmer rate).
+- surface (optional): normals per pixel for the lighting.
   Sandbox: R = elevation band (seen from above, higher sand is nearer),
   G = layer (0 land, 1 plants, 2 water), B = succession stage.
 - marks: beginMarks(), then addMarks(texture, glyph, premultiplied) per
@@ -29,18 +31,27 @@ Passes (shaders in bin/data/shaders/ascii/GL2|GL3, see each file):
 1. asciiParts: the part of each cell (the most common of its centre and a
    4 x 4 grid of points; the reference keeps its nearest point's part).
 2. asciiCells: coverage = covered pixels / pixels (every pixel read);
-   colour = mean of the covered pixels of the cell's part, pre-filtered.
-3. asciiMarks: the brightest mark pixel in the cell.
-4. asciiDecide, the reference's rules: L = brightest channel. Mark glyph;
-   empty (no coverage); outline (a side neighbour that is empty, lower in
-   depth, or across a seam; direction from all 8; | - _ / \ + at 2:1),
-   brightness max(0.85, L); fill letter from 4 pools by
-   (L - 0.42) x 4.6, entry (h + floor(4t + h mod 11)) mod 12 with an
-   integer cell hash, brightness 0.45 + 0.55 L / 0.9; x (0.30 + 0.70
-   coverage^0.7); colour rgb x min(brightness, 1.4), clipped.
-5. asciiGlyphs: the character from the font atlas x the cell colour.
-6. asciiTrail: max(previous x trailAmount, this frame) (feedback FBOs).
-7. Glow: 1/4 box shrink + Gaussian sigma 1.78, 1/8 from it + sigma 2.40
+   colour = mean of the covered pixels of the cell's part (hue only).
+3. asciiLit (2026-11-21): the reference's lighting terms (ambient, key-light
+   diffuse, specular through the half vector, rim) on the surface normals,
+   averaged per cell; fluid cells (parts G 2) by their own darker rule
+   (base + glint only).
+4. asciiMarks: the brightest mark pixel in the cell.
+5. asciiEdges: outline cells (a side neighbour that is empty, lower in
+   depth, or across a seam; direction from all 8; | - _ / \ + at 2:1).
+6. asciiDecide: brightness s = lit, contrast-stretched (black and white
+   points, or "Auto range" from percentiles) x exposure. Marks; outlines
+   kept only on runs of strokes (minRun), max(0.85, s), paled; fill: Full
+   ground empties cells darker than emptyCut and thins them up to thinCut
+   (fixed per-cell hash), Dark ground draws ground only above `ridge`;
+   pool by (s - fillStart) x fillScale, the reference's integer-hash
+   shimmer; brightness 0.45 + 0.55 s / 0.9; x (0.30 + 0.70 coverage^0.7);
+   paled towards white as s passes paleStart (as the reference); colour =
+   hue x min(brightness, 1.4), clipped. Debug views: the same pass with
+   infoPass 1, then asciiDebug (bands, edges, lit, pool).
+7. asciiGlyphs: the character from the font atlas x the cell colour.
+8. asciiTrail: max(previous x trailAmount, this frame) (feedback FBOs).
+9. Glow: 1/4 box shrink + Gaussian sigma 1.78, 1/8 from it + sigma 2.40
    (pygame-ce gaussian_blur radius 2 and 3, measured), added at 0.75 /
    0.45. Masked to drawn cells unless glowOutside, so empty cells stay
    exact black (the reference has no mask; see asciiOut.frag).
@@ -67,6 +78,9 @@ public:
 	enum { CELLS_6x10 = 0, CELLS_7x10 = 1, CELLS_8x12 = 2, CELLS_10x16 = 3, CELL_PRESETS = 4 };
 	enum { GLYPH_CENTRE_LINE_BOX = 0, GLYPH_CENTRE_INK_BOX = 1 };
 	enum { FONT_REFERENCE_ORDER = 0, FONT_BUNDLED = 1 };
+	enum { GROUND_FULL = 0, GROUND_DARK = 1 };
+	enum { SEAMS_ALL = 0, SEAMS_CLASS = 1, SEAMS_FLUID = 2 };
+	enum { DEBUG_OFF = 0, DEBUG_BANDS = 1, DEBUG_EDGES = 2, DEBUG_LIT = 3, DEBUG_POOL = 4 };
 	static const int CELL_W[CELL_PRESETS];
 	static const int CELL_H[CELL_PRESETS];
 
@@ -84,6 +98,24 @@ public:
 		int fontPx;             // 0 = auto: 1.1 x cell height (reference: 11 px in 10 px cells)
 		int glyphCentring;      // GLYPH_CENTRE_*
 		int fontChoice;         // FONT_*
+		// 2026-11-21: lighting, emptiness, clean outlines, colour, ground.
+		int seamMode;           // SEAMS_*: which identity changes are outlined (depth steps always are)
+		int minRun;             // 1..3: outline strokes need this many in a run (1 = keep all)
+		bool strokeSmooth;      // choose each stroke from the direction summed over neighbouring outline cells
+		float lightAzimuth;     // degrees from the top of the image, clockwise
+		float lightElevation;   // degrees above the ground
+		float relief;           // slope exaggeration before lighting
+		float ambient, diffuse, specular, specPower, rim;   // the reference's lighting terms
+		float waterBase, waterGlint, waterPower;            // fluid (parts G 2): its own rule
+		float litBlack, litWhite;   // contrast stretch of ground and life (raw lit brightness)
+		float autoLow, autoHigh;    // percentiles for "Auto range"
+		float emptyCut;         // stretched brightness under this: empty (exact black)
+		float thinCut;          // between emptyCut and this: letters thin out
+		float edgePale;         // outlines paled towards white by this
+		float paleStart, paleRate, paleMax;   // paling as brightness passes paleStart
+		int ground;             // GROUND_*
+		float ridge;            // Dark: ground draws only at this brightness or more
+		int debugView;          // DEBUG_* (not saved in the preset)
 		float shimmerRate[3];   // fill-letter steps per second, by shimmer class (parts G)
 		float trailAmount;      // 0 = no trails
 		float glowTight;        // amount of the 1/4-resolution glow
@@ -103,7 +135,9 @@ public:
 	void addMarks(const ofTexture & layer, char glyph, bool premultiplied);
 	// colour and parts: GL_TEXTURE_RECTANGLE textures of the same size.
 	// Returns false (and draws nothing) if the filter cannot draw.
-	bool draw(const ofTexture & colour, const ofTexture & parts, float x, float y);
+	// surface: normals (RGB, image frame x right, y down, z up; A = 1 where
+	// drawn), same size or scaled; nullptr: brightness from the colour.
+	bool draw(const ofTexture & colour, const ofTexture & parts, const ofTexture * surface, float x, float y);
 	bool isReady();
 
 	// Widgets only, under a collapsing header, into the current ImGui window.
@@ -144,16 +178,19 @@ private:
 	static int clampPreset(int p) { return std::max(0, std::min(CELL_PRESETS - 1, p)); }
 	bool loadShaders();
 	bool ensureAtlas(int cw, int ch, int px, int centring, int fontChoice);
+	void measureLitRange();
+	bool autoRangeRequested = false;
+	std::string rangeStatus;
 	void ensureTargets(int w, int h, int cw, int ch);
 
 	ofShader cellsShader, partsShader, marksShader, markWriteShader, decideShader,
-		glyphsShader, trailShader, downShader, blurShader, outShader;
+		glyphsShader, trailShader, downShader, blurShader, outShader, litShader, edgesShader, debugShader;
 	int loadState = 0;      // 0 not tried, 1 loaded, -1 failed
 	int atlasState = 0;     // 0 not made, 1 made, -1 font failed
 	int atlasCw = 0, atlasCh = 0, atlasPx = 0, atlasCentring = -1, atlasFontChoice = -1;
 	std::string atlasFont;
 	ofFbo atlasFbo;
-	ofFbo cellFbo, partFbo, markCellFbo, decideFbo;   // one texel per cell
+	ofFbo cellFbo, partFbo, markCellFbo, decideFbo, litFbo, edgeFbo, infoFbo;   // one texel per cell
 	ofFbo marksFbo, frameFbo, trailFbo[2];            // output size
 	ofFbo tightFbo[2], wideFbo[2];                    // 1/4 and 1/8 size
 	int outW = 0, outH = 0, gridW = 0, gridH = 0;

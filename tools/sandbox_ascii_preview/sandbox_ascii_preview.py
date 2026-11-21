@@ -68,6 +68,13 @@ GLYPHS = {"seed": mark_glyph("SeedLayer.cpp", "SeedLayer"), "particle": mark_gly
 LINES_OFF = {"drawLandLines": False, "drawWaterLines": False, "drawShorelineGlow": False, "drawContourLines": False}
 ASCII_COLOUR = dict(plantDisplay=3, contourSolid=0, **LINES_OFF)
 ASCII_PARTS = dict(ASCII_COLOUR, partsPass=1)
+ASCII_SURFACE = dict(ASCII_COLOUR, partsPass=2)
+
+
+def sandbox_input(name):
+    """ofApp's defaults for the ASCII Sandbox inputs (band hysteresis, normal radius)."""
+    h = open(os.path.join(REPO, "src", "ofApp.h")).read()
+    return float(re.search(r"float %s = ([0-9.]+)f;" % name, h).group(1))
 
 
 # ------------------------------------------------------------ the filter's own constants
@@ -75,7 +82,8 @@ def ascii_defaults():
     s = open(SRC).read()
     body = s[s.index("static AsciiFilter::Params makeDefaults()"):s.index("AsciiFilter::DEFAULTS = makeDefaults")]
     enums = {"CELLS_6x10": 0, "CELLS_7x10": 1, "CELLS_8x12": 2, "CELLS_10x16": 3,
-             "GLYPH_CENTRE_LINE_BOX": 0, "GLYPH_CENTRE_INK_BOX": 1, "FONT_REFERENCE_ORDER": 0, "FONT_BUNDLED": 1}
+             "GLYPH_CENTRE_LINE_BOX": 0, "GLYPH_CENTRE_INK_BOX": 1, "FONT_REFERENCE_ORDER": 0, "FONT_BUNDLED": 1,
+             "GROUND_FULL": 0, "GROUND_DARK": 1, "SEAMS_ALL": 0, "SEAMS_CLASS": 1, "SEAMS_FLUID": 2, "DEBUG_OFF": 0}
     d = {}
     for n, idx, v in re.findall(r"p\.(\w+)(?:\[(\d)\])? = ([^;]+);", body):
         v = v.strip()
@@ -205,7 +213,7 @@ def upload(tex, arr):
 
 class Ascii:
     PASSES = ["asciiCells", "asciiParts", "asciiMarks", "asciiMarkWrite", "asciiDecide", "asciiGlyphs",
-              "asciiTrail", "asciiDown", "asciiBlur", "asciiOut"]
+              "asciiTrail", "asciiDown", "asciiBlur", "asciiOut", "asciiDebug", "asciiLit", "asciiEdges"]
 
     def __init__(self, rnd):
         self.rnd = rnd
@@ -217,6 +225,7 @@ class Ascii:
         self.colour = sdp.rect_tex(PW, PH, GL.GL_RGBA8, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE)
         self.parts = sdp.rect_tex(PW, PH, GL.GL_RGBA8, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE)
         self.layer = sdp.rect_tex(PW, PH, GL.GL_RGBA8, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE)
+        self.surface = sdp.rect_tex(PW, PH, GL.GL_RGBA32F, GL.GL_RGBA, GL.GL_FLOAT)
         self.marks = Fbo(PW, PH, GL.GL_RGBA8)
         self.frame = Fbo(PW, PH, GL.GL_RGBA16F)
         self.trail = [Fbo(PW, PH, GL.GL_RGBA16F), Fbo(PW, PH, GL.GL_RGBA16F)]
@@ -238,7 +247,9 @@ class Ascii:
         if key not in self.grids:
             gw, gh = (PW + cw - 1) // cw, (PH + ch - 1) // ch
             self.grids[key] = {"cell": Fbo(gw, gh, GL.GL_RGBA16F), "part": Fbo(gw, gh, GL.GL_RGBA8),
-                               "mark": Fbo(gw, gh, GL.GL_RGBA8), "decide": Fbo(gw, gh, GL.GL_RGBA16F)}
+                               "mark": Fbo(gw, gh, GL.GL_RGBA8), "decide": Fbo(gw, gh, GL.GL_RGBA16F),
+                               "info": Fbo(gw, gh, GL.GL_RGBA16F), "lit": Fbo(gw, gh, GL.GL_RGBA16F),
+                               "edge": Fbo(gw, gh, GL.GL_RGBA8)}
         return self.grids[key]
 
     def atlas(self, cw, ch, px, centring):
@@ -254,12 +265,15 @@ class Ascii:
         GL.glUseProgram(p)
         return p
 
-    def run(self, colour8, parts8, layers, prm, t, cw, ch):
+    def run(self, colour8, parts8, layers, prm, t, cw, ch, surface=None):
         """One frame of AsciiFilter::draw(); layers: [(rgba8, glyph, premultiplied)]."""
         rnd = self.rnd
         u, tex = rnd.u, rnd.tex
         upload(self.colour, colour8)
         upload(self.parts, parts8)
+        if surface is not None:
+            GL.glBindTexture(R, self.surface)
+            GL.glTexSubImage2D(R, 0, 0, 0, PW, PH, GL.GL_RGBA, GL.GL_FLOAT, np.ascontiguousarray(surface, np.float32))
         g = self.grid(cw, ch)
         gw, gh = g["cell"].w, g["cell"].h
         atlas_tex, _, _, pad = self.atlas(cw, ch, font_px(prm, ch), int(prm["glyphCentring"]))
@@ -294,9 +308,34 @@ class Ascii:
         u(p, "partsScale", 1.0, 1.0)
         u(p, "cellSize", float(cw), float(ch))
         u(p, "blackThreshold", prm["blackThreshold"])
-        u(p, "exposure", prm["exposure"])
+        u(p, "exposure", 1.0)        # hue only; exposure scales the brightness in asciiDecide
         u(p, "saturation", prm["saturation"])
         rnd.quad(p, gw, gh)
+
+        # Lit brightness per cell (AsciiFilter: keyDirection(), half vector).
+        g["lit"].clear()
+        if surface is not None:
+            g["lit"].bind()
+            p = self.use("asciiLit")
+            a, e = math.radians(prm["lightAzimuth"]), math.radians(min(max(prm["lightElevation"], 1.0), 90.0))
+            key = np.array([math.cos(e) * math.sin(a), -math.cos(e) * math.cos(a), math.sin(e)])
+            half = key + np.array([0.0, 0.0, 1.0])
+            half /= np.linalg.norm(half)
+            tex(p, "surfaceTex", 0, self.surface)
+            tex(p, "partsTex", 1, self.parts)
+            tex(p, "cellPartTex", 2, g["part"].tex)
+            u(p, "srcSize", float(PW), float(PH))
+            u(p, "surfaceScale", 1.0, 1.0)
+            u(p, "partsScale", 1.0, 1.0)
+            u(p, "cellSize", float(cw), float(ch))
+            u(p, "keyDir", *map(float, key))
+            u(p, "halfDir", *map(float, half))
+            u(p, "relief", prm["relief"])
+            for n in ("ambient", "diffuse", "specular", "rim", "waterBase", "waterGlint"):
+                u(p, n, prm[n])
+            u(p, "specPower", min(max(prm["specPower"], 1.0), 200.0))
+            u(p, "waterPower", min(max(prm["waterPower"], 1.0), 200.0))
+            rnd.quad(p, gw, gh)
 
         if marks_on:
             g["mark"].bind()
@@ -306,26 +345,70 @@ class Ascii:
             u(p, "cellSize", float(cw), float(ch))
             rnd.quad(p, gw, gh)
 
+        g["edge"].bind()
+        p = self.use("asciiEdges")
+        tex(p, "cellTex", 0, g["cell"].tex)
+        tex(p, "partTex", 1, g["part"].tex)
+        u(p, "gridSize", float(gw), float(gh))
+        u(p, "minCoverage", prm["minCoverage"])
+        u(p, "oneSided", 1 if prm["edgeOneSided"] else 0, i=True)
+        u(p, "sideOnly", 1 if prm["edgeSideOnly"] else 0, i=True)
+        u(p, "seamMode", int(prm["seamMode"]), i=True)
+        rnd.quad(p, gw, gh)
+
         fill = np.array([ord(pool[k % len(pool)]) for pool in self.pools for k in range(12)], np.float32)
         g["decide"].bind()
         p = self.use("asciiDecide")
         tex(p, "cellTex", 0, g["cell"].tex)
         tex(p, "partTex", 1, g["part"].tex)
-        tex(p, "markTex", 2, (g["mark"] if marks_on else g["part"]).tex)
+        tex(p, "litTex", 2, g["lit"].tex)
+        tex(p, "markTex", 3, (g["mark"] if marks_on else g["part"]).tex)
+        tex(p, "edgeTex", 4, g["edge"].tex)
         u(p, "marksOn", 1 if marks_on else 0, i=True)
         u(p, "gridSize", float(gw), float(gh))
         u(p, "minCoverage", prm["minCoverage"])
+        u(p, "minRun", int(min(max(prm["minRun"], 1), 3)), i=True)
+        u(p, "strokeSmooth", 1 if prm["strokeSmooth"] else 0, i=True)
         u(p, "edgeFloor", prm["edgeFloor"])
-        u(p, "oneSided", 1 if prm["edgeOneSided"] else 0, i=True)
-        u(p, "sideOnly", 1 if prm["edgeSideOnly"] else 0, i=True)
+        u(p, "edgePale", prm["edgePale"])
+        u(p, "litBlack", prm["litBlack"])
+        u(p, "litWhite", prm["litWhite"])
+        u(p, "exposure", prm["exposure"])
+        u(p, "ground", int(prm["ground"]), i=True)
+        u(p, "ridge", prm["ridge"])
+        u(p, "emptyCut", prm["emptyCut"])
+        u(p, "thinCut", max(prm["thinCut"], prm["emptyCut"]))
         GL.glUniform1fv(GL.glGetUniformLocation(p, "fillGlyph"), 48, fill)
         u(p, "fillFloor", prm["fillFloor"])
         u(p, "fillStart", prm["fillStart"])
         u(p, "fillScale", max(0.0, prm["fillScale"]))
+        u(p, "paleStart", prm["paleStart"])
+        u(p, "paleRate", max(0.0, prm["paleRate"]))
+        u(p, "paleMax", min(max(prm["paleMax"], 0.0), 1.0))
         GL.glUniform1fv(GL.glGetUniformLocation(p, "shimmerRate"), 3,
                         np.array([prm["shimmerRate0"], prm["shimmerRate1"], prm["shimmerRate2"]], np.float32))
         u(p, "time", float(t))
+        u(p, "infoPass", 0, i=True)
         rnd.quad(p, gw, gh)
+
+        # Debug views (AsciiFilter::draw with debugView > 0): the decide pass
+        # again with infoPass 1, then asciiDebug instead of the characters.
+        view = int(prm.get("debugView", 0))
+        if view > 0:
+            g["info"].bind()
+            u(p, "infoPass", 1, i=True)
+            rnd.quad(p, gw, gh)
+            u(p, "infoPass", 0, i=True)
+            self.out.bind()
+            dp = self.use("asciiDebug")
+            tex(dp, "infoTex", 0, g["info"].tex)
+            tex(dp, "partTex", 1, g["part"].tex)
+            u(dp, "cellSize", float(cw), float(ch))
+            u(dp, "view", view, i=True)
+            rnd.quad(dp, PW, PH)
+            GL.glUseProgram(0)
+            self.trail_valid = False
+            return self.out.read8()
 
         self.frame.bind()
         p = self.use("asciiGlyphs")
@@ -395,6 +478,12 @@ class Ascii:
 
     def decide(self, cw, ch):
         return self.grid(cw, ch)["decide"].readf()
+
+    def info(self, cw, ch):
+        return self.grid(cw, ch)["info"].readf()
+
+    def lit(self, cw, ch):
+        return self.grid(cw, ch)["lit"].readf()
 
 
 # ------------------------------------------------------------ the scene
@@ -472,13 +561,31 @@ def crops():
 
 class Scene:
     """The Sandbox inputs (colour, parts, marks) for frames 0..frames-1, cached."""
-    def __init__(self, rnd, box, rd, frames=8, hand=True):
-        self.colour, self.parts, self.layers = [], [], []
+    def __init__(self, rnd, box, rd, frames=8, hand=True, noise_mm=0.0, seed=11, blob_px=0.0, margin=None, radius=None):
+        self.colour, self.parts, self.layers, self.surface = [], [], [], []
+        margin = sandbox_input("asciiBandMarginMM") if margin is None else margin
+        radius = sandbox_input("asciiNormalRadiusPx") if radius is None else radius
         base = box.depth
+        rng = np.random.default_rng(seed)
         for k in range(frames):
             box.depth = set_depth(box, hand_bump(box, k, frames)) if hand else base
+            if noise_mm > 0:   # mock noise: a fresh Gaussian jitter of the filtered depth each frame
+                n = rng.normal(0.0, 1.0, box.depth.shape)
+                if blob_px > 0:   # spatially correlated (blobs about blob_px Kinect px across), rescaled to sigma
+                    n = gauss2(n, blob_px)
+                    n /= max(n.std(), 1e-9)
+                box.depth = box.depth + (noise_mm * n).astype(np.float32)
             self.colour.append(rnd.sandbox(box, rd, ASCII_COLOUR))
-            self.parts.append(rnd.sandbox(box, rd, ASCII_PARTS))
+            # SandSurfaceRenderer: parts with hysteresis against last frame's parts.
+            extra = {"bandMargin": (margin, False), "hasPrevParts": (1 if self.parts else 0, True),
+                     "normalRadius": (radius, False)}
+            if self.parts:
+                prev = sdp.rect_tex(PW, PH, GL.GL_RGBA8, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, self.parts[-1])
+            else:
+                prev = sdp.rect_tex(PW, PH, GL.GL_RGBA8, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE)
+            self.parts.append(rnd.sandbox(box, rd, dict(ASCII_PARTS, extraTex=[("prevPartsSampler", 8, prev)], extraU=extra)))
+            GL.glDeleteTextures([prev])
+            self.surface.append(rnd.sandbox(box, rd, dict(ASCII_SURFACE, extraU={"normalRadius": (radius, False)})))
             self.layers.append(mark_layers(box, k))
         box.depth = base
 
@@ -487,7 +594,7 @@ def render_sequence(asc, scene, prm, cw, ch, fps=60.0):
     asc.reset()
     out = None
     for k in range(len(scene.colour)):
-        out = asc.run(scene.colour[k], scene.parts[k], scene.layers[k], prm, k / fps, cw, ch)
+        out = asc.run(scene.colour[k], scene.parts[k], scene.layers[k], prm, k / fps, cw, ch, scene.surface[k])
     return out
 
 
@@ -584,7 +691,7 @@ def cmd_checks(args):
                 prm = dict(d, glowOutside=outside)
                 asc.reset()
                 for k in range(6):   # a still scene: trails settle
-                    img = asc.run(scene.colour[0], scene.parts[0], scene.layers[0], prm, k / 60.0, cw, ch)
+                    img = asc.run(scene.colour[0], scene.parts[0], scene.layers[0], prm, k / 60.0, cw, ch, scene.surface[0])
                 em = empty_pixels(asc, cw, ch)
                 nz = (img[em, :3] > 0).any(-1)
                 print("exact black, band fill %-3s %-5s glow on, floor %.2f, glow lights empty cells %-5s: "
@@ -596,9 +703,9 @@ def cmd_checks(args):
         cw, ch = sizes[1]
         mv = Scene(rnd, box, rd, frames=8, hand=True)
         for k in range(8):
-            asc.run(mv.colour[k], mv.parts[k], [], d, k / 60.0, cw, ch)
+            asc.run(mv.colour[k], mv.parts[k], [], d, k / 60.0, cw, ch, mv.surface[k])
         for k in range(8, 48):
-            img = asc.run(scene.colour[0], scene.parts[0], [], d, k / 60.0, cw, ch)
+            img = asc.run(scene.colour[0], scene.parts[0], [], d, k / 60.0, cw, ch, scene.surface[0])
         em = empty_pixels(asc, cw, ch)
         print("exact black after a hand trail (40 still frames later), band fill %s: %d of %d empty-cell px not 0"
               % ("off" if fill_off else "on", (img[em, :3] > 0).any(-1).sum(), em.sum()))
@@ -673,13 +780,13 @@ def cmd_timing(args):
     print(GL.glGetString(GL.GL_RENDERER).decode())
     for pi, (cw, ch) in enumerate(cell_sizes()):
         for label, prm in (("defaults", d), ("trail and glow off", dict(d, trailAmount=0.0, glowTight=0.0, glowWide=0.0))):
-            asc.run(scene.colour[0], scene.parts[0], scene.layers[0], prm, 0.0, cw, ch)
+            asc.run(scene.colour[0], scene.parts[0], scene.layers[0], prm, 0.0, cw, ch, scene.surface[0])
             GL.glFinish()
             n = 10
             ts = []
             for k in range(n):
                 t = time.perf_counter()
-                asc.run(scene.colour[0], scene.parts[0], scene.layers[0], prm, k / 60.0, cw, ch)
+                asc.run(scene.colour[0], scene.parts[0], scene.layers[0], prm, k / 60.0, cw, ch, scene.surface[0])
                 GL.glFinish()
                 ts.append(1000 * (time.perf_counter() - t))
             # The same uploads and read-back with no passes, to subtract.
@@ -694,6 +801,195 @@ def cmd_timing(args):
             io = 1000 * (time.perf_counter() - t) / n
             print("1280 x 800, cells %-5s %-19s median %6.1f ms per frame, of which uploads + read-back %5.1f ms"
                   % (PRESET_NAMES[pi], label, float(np.median(ts)), io))
+
+
+DEBUG_VIEWS = {1: "bands", 2: "edges", 3: "lit", 4: "pool"}
+
+
+def gauss2(a, sigma):
+    """Separable Gaussian blur (numpy, edge-clamped)."""
+    r = int(math.ceil(3 * sigma))
+    k = np.exp(-0.5 * (np.arange(-r, r + 1) / sigma) ** 2)
+    k /= k.sum()
+    out = a
+    for ax in (0, 1):
+        pad = [(0, 0), (0, 0)]
+        pad[ax] = (r, r)
+        p = np.pad(out, pad, mode="edge")
+        out = sum(k[i] * np.take(p, range(i, i + out.shape[ax]), axis=ax) for i in range(2 * r + 1))
+    return out
+
+
+def speckle_plants(box, seed=3):
+    """Mock mixed vegetation: on all land, cover 0..0.35 with the dominant stage
+    changing every few Kinect pixels (what succession produces where stages
+    mix), on top of the patches."""
+    rng = np.random.default_rng(seed)
+    land = ~box.water
+    for i in range(3):   # R climax, G pioneer, B intermediate
+        c = gauss2(rng.random((box.rows, box.cols)), 1.5)
+        c = np.clip((c - c.mean()) / max(c.std(), 1e-9) * 0.12 + 0.12, 0, 0.35) * land
+        box.veg[..., i] = np.maximum(box.veg[..., i], (c * 255).astype(np.uint8))
+
+
+def cell_stats(info):
+    """Edge share and pool histogram from asciiDecide's info output."""
+    drawn = info[..., 3] > 0.75
+    edge = info[..., 2] > 0.5
+    lv = np.floor(info[..., 1] + 0.5)
+    fill = drawn & ~edge & (lv >= 0)
+    hist = [int(((lv == k) & fill).sum()) for k in range(4)]
+    return int(drawn.sum()), int(edge.sum()), hist
+
+
+def cmd_debug(args):
+    """The four debug views and the final output (7 x 10, Full), with and
+    without mock depth noise; out/debug_<tag>_<view>[_noise].png."""
+    ctx, rnd, box, rd = setup(args.gl2)
+    asc = Ascii(rnd)
+    d = ascii_defaults()
+    cw, ch = cell_sizes()[1]
+    tag = args.tag
+    if args.speckle:
+        speckle_plants(box)
+        tag += "_speckle"
+    for noise in (0.0, args.noise_mm):
+        sc = Scene(rnd, box, rd, frames=args.frames, hand=False, noise_mm=noise, blob_px=args.blob_px)
+        suffix = ("_noise" + ("_blob" if args.blob_px > 0 else "")) if noise > 0 else ""
+        imgs = {}
+        for view in (1, 2, 3, 4):
+            asc.reset()
+            for k in range(args.frames):
+                img = asc.run(sc.colour[k], sc.parts[k], sc.layers[k], dict(d, debugView=view), k / 60.0, cw, ch, sc.surface[k])
+            imgs[DEBUG_VIEWS[view]] = img
+            save(img, "debug_%s_%s%s.png" % (tag, DEBUG_VIEWS[view], suffix))
+        drawn, edges, hist = cell_stats(asc.info(cw, ch))
+        lt = asc.lit(cw, ch)
+        land = (lt[..., 2] > 0.5) & (lt[..., 1] < 0.5)
+        if land.any():
+            print("  raw lit of ground/life cells, percentiles 2/3/5/50/95/97/98: %s"
+                  % " ".join("%.3f" % np.percentile(lt[..., 0][land], q) for q in (2, 3, 5, 50, 95, 97, 98)))
+        asc.reset()
+        for k in range(args.frames):
+            img = asc.run(sc.colour[k], sc.parts[k], sc.layers[k], d, k / 60.0, cw, ch, sc.surface[k])
+        imgs["output"] = img
+        save(img, "debug_%s_output%s.png" % (tag, suffix))
+        if "ground" in d:   # Dark ground (2026-11-21 and later)
+            asc.reset()
+            for k in range(args.frames):
+                img = asc.run(sc.colour[k], sc.parts[k], sc.layers[k], dict(d, ground=1), k / 60.0, cw, ch, sc.surface[k])
+            save(img, "debug_%s_output_dark%s.png" % (tag, suffix))
+        tot = max(1, sum(hist))
+        print("%s, noise %.1f mm: %d drawn cells, %d outline cells (%.1f %%); fill pools 0-3: %s (%s)"
+              % (tag, noise, drawn, edges, 100.0 * edges / max(1, drawn), hist,
+                 " / ".join("%.0f %%" % (100.0 * h / tot) for h in hist)))
+    print("wrote", OUT)
+
+
+def edge_components(edge):
+    """Sizes of 8-connected groups of outline cells."""
+    seen = np.zeros_like(edge, bool)
+    sizes = []
+    H, W = edge.shape
+    for y0, x0 in zip(*np.nonzero(edge)):
+        if seen[y0, x0]:
+            continue
+        stack, n = [(y0, x0)], 0
+        seen[y0, x0] = True
+        while stack:
+            y, x = stack.pop()
+            n += 1
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    yy, xx = y + dy, x + dx
+                    if 0 <= yy < H and 0 <= xx < W and edge[yy, xx] and not seen[yy, xx]:
+                        seen[yy, xx] = True
+                        stack.append((yy, xx))
+        sizes.append(n)
+    return sorted(sizes)
+
+
+STEP = {ord("_"): (1, 0), ord("-"): (1, 0), ord("|"): (0, 1), ord("/"): (1, -1), ord("\\"): (1, 1)}
+
+
+def stroke_agreement(glyph, edge):
+    """Share of outline cells whose next cell along their own stroke (or one
+    beside it) holds the same character."""
+    H, W = edge.shape
+    same = tot = 0
+    for y, x in zip(*np.nonzero(edge)):
+        g = int(glyph[y, x])
+        if g not in STEP:
+            continue
+        dx, dy = STEP[g]
+        cand = [(y + dy, x + dx)] + ([(y + dy + 1, x + dx), (y + dy - 1, x + dx)] if dy == 0 else
+                                     [(y + dy, x + dx + 1), (y + dy, x + dx - 1)] if dx == 0 else
+                                     [(y + dy, x), (y, x + dx)])
+        nb = [(yy, xx) for yy, xx in cand if 0 <= yy < H and 0 <= xx < W and edge[yy, xx]]
+        if not nb:
+            continue
+        tot += 1
+        same += any(int(glyph[yy, xx]) == g for yy, xx in nb)
+    return same / max(1, tot), tot
+
+
+def cmd_edges(args):
+    """Step 1 checks: edge flicker under mock noise with and without band
+    hysteresis, the shortest stroke run kept, and stroke agreement."""
+    ctx, rnd, box, rd = setup(args.gl2)
+    asc = Ascii(rnd)
+    d = ascii_defaults()
+    cw, ch = cell_sizes()[1]
+    if args.speckle:
+        speckle_plants(box)
+    for margin in (0.0, sandbox_input("asciiBandMarginMM")):
+        sc = Scene(rnd, box, rd, frames=args.frames, hand=False, noise_mm=args.noise_mm, blob_px=args.blob_px, margin=margin)
+        asc.reset()
+        prev, flips = None, []
+        for k in range(args.frames):
+            asc.run(sc.colour[k], sc.parts[k], sc.layers[k], dict(d, debugView=2), k / 60.0, cw, ch, sc.surface[k])
+            e = asc.info(cw, ch)[..., 2] > 0.5
+            if prev is not None:
+                flips.append(int((e != prev).sum()))
+            prev = e
+        print("noise %.1f mm%s, band hysteresis %.1f mm: outline cells %d; changed between frames: %s (mean %.1f)"
+              % (args.noise_mm, " (blobs %.0f px)" % args.blob_px if args.blob_px else "", margin, int(prev.sum()),
+                 flips, float(np.mean(flips)) if flips else 0.0))
+    d = dict(d, seamMode=args.seam_mode) if args.seam_mode is not None else d
+    for run, smooth in ((1, False), (2, False), (3, False), (3, True)):
+        prm = dict(d, minRun=run, strokeSmooth=smooth)
+        asc.reset()
+        asc.run(sc.colour[-1], sc.parts[-1], sc.layers[-1], dict(prm, debugView=2), 0.0, cw, ch, sc.surface[-1])
+        edge = asc.info(cw, ch)[..., 2] > 0.5
+        asc.run(sc.colour[-1], sc.parts[-1], [], prm, 0.0, cw, ch, sc.surface[-1])
+        glyph = np.floor(asc.decide(cw, ch)[..., 3] + 0.5)
+        sizes = edge_components(edge)
+        agree, tot = stroke_agreement(glyph, edge)
+        print("seams %d, shortest run %d, stroke smoothing %-5s: %d outline cells in %d groups; smallest groups %s; next cell along a stroke has the same character: %.0f %% of %d"
+              % (d["seamMode"], run, smooth, int(edge.sum()), len(sizes), sizes[:6], 100 * agree, tot))
+
+
+def cmd_debugpairs(args):
+    """Before / after sheets of the debug views and outputs (7 x 10):
+    args.before holds debug_before_*.png from the earlier code."""
+    def img(d, name):
+        f = os.path.join(d, name)
+        return np.asarray(Image.open(f).convert("RGB"))[::2, ::2].copy() if os.path.exists(f) else None
+    for suffix in ("", "_noise", "_speckle"):
+        rows = []
+        for view in ("bands", "edges", "lit", "pool", "output"):
+            bn = "debug_before%s_%s%s.png" % ("_speckle" if suffix == "_speckle" else "", view, "_noise_blob" if suffix == "_speckle" else suffix)
+            an = "debug_after%s_%s%s.png" % ("_speckle" if suffix == "_speckle" else "", view, "_noise_blob" if suffix == "_speckle" else suffix)
+            b, a = img(args.before, bn), img(OUT, an)
+            if b is None or a is None:
+                continue
+            rows.append([sdp.label(b, "before: " + view), sdp.label(a, "after: " + view)])
+        dk = img(OUT, "debug_after%s_output_dark%s.png" % ("_speckle" if suffix == "_speckle" else "", "_noise_blob" if suffix == "_speckle" else suffix))
+        if dk is not None and rows:
+            rows.append([np.zeros_like(rows[-1][0]), sdp.label(dk, "after: output, Dark ground")])
+        if rows:
+            save(sdp.sheet(rows), "debug_pairs%s.png" % suffix)
+    print("wrote debug_pairs*.png to", OUT)
 
 
 def cmd_pairs(args):
@@ -715,7 +1011,13 @@ def cmd_pairs(args):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["frames", "checks", "timing", "pairs"])
+    ap.add_argument("cmd", choices=["frames", "checks", "timing", "pairs", "debug", "edges", "debugpairs"])
+    ap.add_argument("--tag", default="now", help="debug: name in the output files (e.g. before / after)")
+    ap.add_argument("--noise-mm", type=float, default=2.0, help="debug: mock depth jitter, sigma in mm")
+    ap.add_argument("--blob-px", type=float, default=0.0, help="debug: mock noise correlated over this many Kinect px (0: per pixel)")
+    ap.add_argument("--seam-mode", type=int, default=None, help="edges: override seamMode (0 all, 1 class, 2 fluid)")
+    ap.add_argument("--speckle", action="store_true", help="debug: mock mixed plant cover on all land")
+    ap.add_argument("--frames", type=int, default=6, help="debug: frames rendered (state such as hysteresis builds up)")
     ap.add_argument("--before", help="pairs: the out/ directory of an earlier run")
     ap.add_argument("--gl2", action="store_true")
     ap.add_argument("--fill-off", action="store_true", help="frames: Band fill off (dark-room look)")

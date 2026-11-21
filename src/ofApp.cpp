@@ -114,6 +114,7 @@ void ofApp::update() {
 	// ASCII filter on: flat plants, the parts pass, and (by default) no
 	// Sandbox lines in the colour (the filter's band outlines replace them).
 	sandSurfaceRenderer->setAsciiFilterActive(asciiActive(), asciiReplacesLines);
+	sandSurfaceRenderer->setAsciiInputs(asciiBandMarginMM, asciiNormalRadiusPx);
    	sandSurfaceRenderer->update();
 
 	if (kinectProjector->getKinectROI() != lastKinectROI)
@@ -268,7 +269,7 @@ bool ofApp::drawAsciiProjector()
 		sandboxAscii.addMarks(*t, WaterFlowField::MARK_GLYPH, true);  // additive RGB
 	if (const ofTexture * t = critterController.getMarkTexture())
 		sandboxAscii.addMarks(*t, CCritterController::MARK_GLYPH, false); // straight alpha
-	return sandboxAscii.draw(colour, *parts, 0, 0);
+	return sandboxAscii.draw(colour, *parts, sandSurfaceRenderer->getSurfaceTexture(), 0, 0);
 }
 
 // Each filter's own "on" flag follows the one setting.
@@ -318,6 +319,10 @@ void ofApp::drawFilterGui()
 	if (ImGui::CollapsingHeader("ASCII filter: Sandbox inputs")) {
 		changed |= ImGui::Checkbox("Band outlines replace the Sandbox lines", &asciiReplacesLines);
 		ImGui::Text("(off: land, water and shore lines stay in the colour, for comparison)");
+		changed |= ImGui::SliderFloat("Band hysteresis (mm)", &asciiBandMarginMM, 0.0f, 5.0f);
+		ImGui::Text("(a pixel changes band only once its height is this far past the edge)");
+		changed |= ImGui::SliderFloat("Normal smoothing (Kinect px)", &asciiNormalRadiusPx, 0.5f, 10.0f);
+		ImGui::Text("(lighting slope: central differences over +- this, about 1.9 mm per px)");
 		ImGui::Text("Mark glyphs (drawn instead of the layer):");
 		changed |= markGlyphCombo("Seeds", SeedLayer::MARK_GLYPH);
 		changed |= markGlyphCombo("Flow particles (Dewitz)", WaterFlowField::MARK_GLYPH);
@@ -339,6 +344,8 @@ void ofApp::loadFilterSettings()
 		return;
 	if (s.getChild("filter")) screenFilter = s.getChild("filter").getIntValue();
 	if (s.getChild("asciiReplacesLines")) asciiReplacesLines = s.getChild("asciiReplacesLines").getIntValue() != 0;
+	if (s.getChild("asciiBandMarginMM")) asciiBandMarginMM = s.getChild("asciiBandMarginMM").getFloatValue();
+	if (s.getChild("asciiNormalRadiusPx")) asciiNormalRadiusPx = s.getChild("asciiNormalRadiusPx").getFloatValue();
 	auto glyph = [&](const char * name, char & g) {
 		auto c = s.getChild(name);
 		if (!c)
@@ -358,6 +365,8 @@ void ofApp::saveFilterSettings()
 	auto s = xml.appendChild("SANDBOXFILTER");
 	s.appendChild("filter").set(screenFilter);
 	s.appendChild("asciiReplacesLines").set(asciiReplacesLines ? 1 : 0);
+	s.appendChild("asciiBandMarginMM").set(asciiBandMarginMM);
+	s.appendChild("asciiNormalRadiusPx").set(asciiNormalRadiusPx);
 	s.appendChild("seedGlyph").set((int)(unsigned char)SeedLayer::MARK_GLYPH);
 	s.appendChild("particleGlyph").set((int)(unsigned char)WaterFlowField::MARK_GLYPH);
 	s.appendChild("critterGlyph").set((int)(unsigned char)CCritterController::MARK_GLYPH);

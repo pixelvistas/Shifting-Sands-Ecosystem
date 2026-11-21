@@ -29,7 +29,7 @@ static AsciiFilter::Params makeDefaults()
 	p.edgeOneSided = true;
 	p.edgeSideOnly = true;
 	p.fillFloor = 0.45f;
-	p.fillStart = 0.42f;
+	p.fillStart = 0.42f;        // replaced below (2026-11-21: pools from lit brightness)
 	p.fillScale = 4.6f;
 	p.fontPx = 0;               // auto: 1.1 x cell height
 	p.glyphCentring = AsciiFilter::GLYPH_CENTRE_LINE_BOX;
@@ -37,6 +37,40 @@ static AsciiFilter::Params makeDefaults()
 	p.shimmerRate[0] = 4.0f;    // reference: 4 steps a second for every cell
 	p.shimmerRate[1] = 4.0f;    // (Sandbox: bare land, plants, water)
 	p.shimmerRate[2] = 4.0f;
+	// 2026-11-21: light the terrain, let the sand show, clean outlines,
+	// colour like the reference (DEVLOG). Lighting weights are the
+	// reference's body terms (betta_fish.py); thresholds were set on the
+	// headless preview (tools/sandbox_ascii_preview) and are to be confirmed
+	// on the sand.
+	p.seamMode = AsciiFilter::SEAMS_FLUID;
+	p.minRun = 3;
+	p.strokeSmooth = true;
+	p.lightAzimuth = 315.0f;    // from the top left
+	p.lightElevation = 40.0f;
+	p.relief = 1.0f;
+	p.ambient = 0.60f;
+	p.diffuse = 0.36f;
+	p.specular = 0.55f;
+	p.specPower = 20.0f;
+	p.rim = 0.26f;
+	p.waterBase = 0.40f;
+	p.waterGlint = 0.55f;
+	p.waterPower = 40.0f;
+	p.litBlack = 0.74f;         // preview terrain, 3rd and 97th percentile of raw lit ("Auto range")
+	p.litWhite = 1.23f;
+	p.autoLow = 3.0f;
+	p.autoHigh = 97.0f;
+	p.emptyCut = 0.12f;
+	p.thinCut = 0.35f;
+	p.fillStart = 0.0f;         // pools: s 0..0.25, 0.25..0.5, 0.5..0.75, 0.75 and up
+	p.fillScale = 4.0f;
+	p.edgePale = 0.40f;         // the reference pales its fin rays by 0.40
+	p.paleStart = 1.0f;         // the reference's body: rgb + (white - rgb) x clip(lum - 1, 0, 0.5)
+	p.paleRate = 1.0f;
+	p.paleMax = 0.5f;
+	p.ground = AsciiFilter::GROUND_FULL;
+	p.ridge = 0.85f;
+	p.debugView = AsciiFilter::DEBUG_OFF;
 	p.trailAmount = 0.5f;
 	p.glowTight = 0.75f;
 	p.glowWide = 0.45f;
@@ -94,6 +128,9 @@ bool AsciiFilter::loadShaders()
 	const std::string dir = ofIsGLProgrammableRenderer() ? "shaders/ascii/GL3/" : "shaders/ascii/GL2/";
 	const std::string v = dir + "ascii.vert";
 	const bool ok = cellsShader.load(v, dir + "asciiCells.frag")
+		&& litShader.load(v, dir + "asciiLit.frag")
+		&& edgesShader.load(v, dir + "asciiEdges.frag")
+		&& debugShader.load(v, dir + "asciiDebug.frag")
 		&& partsShader.load(v, dir + "asciiParts.frag")
 		&& marksShader.load(v, dir + "asciiMarks.frag")
 		&& markWriteShader.load(v, dir + "asciiMarkWrite.frag")
@@ -232,6 +269,9 @@ void AsciiFilter::ensureTargets(int w, int h, int cw, int ch)
 		allocateRect(partFbo, gw, gh, GL_RGBA, false);
 		allocateRect(markCellFbo, gw, gh, GL_RGBA, false);
 		allocateRect(decideFbo, gw, gh, GL_RGBA16F, false);
+		allocateRect(litFbo, gw, gh, GL_RGBA16F, false);
+		allocateRect(edgeFbo, gw, gh, GL_RGBA, false);
+		allocateRect(infoFbo, gw, gh, GL_RGBA16F, false);
 		gridW = gw;
 		gridH = gh;
 	}
@@ -293,13 +333,22 @@ void AsciiFilter::addMarks(const ofTexture & layer, char glyph, bool premultipli
 }
 
 // ------------------------------------------------------------ draw
-bool AsciiFilter::draw(const ofTexture & colour, const ofTexture & parts, float x, float y)
+// Key light towards the light, in the image frame (x right, y down, z up):
+// azimuth from the top of the image, clockwise; elevation above the ground.
+static glm::vec3 keyDirection(float azimuthDeg, float elevationDeg)
+{
+	const float a = ofDegToRad(azimuthDeg), e = ofDegToRad(ofClamp(elevationDeg, 1.0f, 90.0f));
+	return glm::vec3(std::cos(e) * std::sin(a), -std::cos(e) * std::cos(a), std::sin(e));
+}
+
+bool AsciiFilter::draw(const ofTexture & colour, const ofTexture & parts, const ofTexture * surface, float x, float y)
 {
 	const int w = (int)colour.getWidth(), h = (int)colour.getHeight();
 	if (!isReady() || !isRect(colour) || !isRect(parts) || w <= 0 || h <= 0) {
 		marksThisFrame = false;
 		return false;
 	}
+	const bool hasSurface = surface && isRect(*surface);
 	const Params & p = params;
 	const int cw = cellW(), ch = cellH();
 	if (!ensureAtlas(cw, ch, fontPxFor(ch), std::max(0, std::min(1, p.glyphCentring)), std::max(0, std::min(1, p.fontChoice)))) {
@@ -327,7 +376,8 @@ bool AsciiFilter::draw(const ofTexture & colour, const ofTexture & parts, float 
 	partsShader.end();
 	partFbo.end();
 
-	// 2. Coverage and colour per cell (colour from the cell's own part).
+	// 2. Coverage and colour per cell (colour from the cell's own part; it
+	// gives the hue only, so exposure is applied to the brightness in pass 6).
 	cellFbo.begin();
 	cellsShader.begin();
 	cellsShader.setUniformTexture("srcTex", colour, 0);
@@ -337,13 +387,48 @@ bool AsciiFilter::draw(const ofTexture & colour, const ofTexture & parts, float 
 	cellsShader.setUniform2f("partsScale", parts.getWidth() / w, parts.getHeight() / h);
 	cellsShader.setUniform2f("cellSize", (float)cw, (float)ch);
 	cellsShader.setUniform1f("blackThreshold", ofClamp(p.blackThreshold, 0.0f, 1.0f));
-	cellsShader.setUniform1f("exposure", ofClamp(p.exposure, 0.0f, 8.0f));
+	cellsShader.setUniform1f("exposure", 1.0f);
 	cellsShader.setUniform1f("saturation", ofClamp(p.saturation, 0.0f, 4.0f));
 	drawPixelRect((float)gridW, (float)gridH);
 	cellsShader.end();
 	cellFbo.end();
 
-	// 3. Brightest mark per cell.
+	// 3. Lit brightness per cell (from the surface normals; none: cleared, and
+	// pass 6 falls back to the colour's brightness).
+	litFbo.begin();
+	if (hasSurface) {
+		const glm::vec3 key = keyDirection(p.lightAzimuth, p.lightElevation);
+		const glm::vec3 half = glm::normalize(key + glm::vec3(0, 0, 1));
+		litShader.begin();
+		litShader.setUniformTexture("surfaceTex", *surface, 0);
+		litShader.setUniformTexture("partsTex", parts, 1);
+		litShader.setUniformTexture("cellPartTex", partFbo.getTexture(), 2);
+		litShader.setUniform2f("srcSize", (float)w, (float)h);
+		litShader.setUniform2f("surfaceScale", surface->getWidth() / w, surface->getHeight() / h);
+		litShader.setUniform2f("partsScale", parts.getWidth() / w, parts.getHeight() / h);
+		litShader.setUniform2f("cellSize", (float)cw, (float)ch);
+		litShader.setUniform3f("keyDir", key.x, key.y, key.z);
+		litShader.setUniform3f("halfDir", half.x, half.y, half.z);
+		litShader.setUniform1f("relief", ofClamp(p.relief, 0.0f, 10.0f));
+		litShader.setUniform1f("ambient", p.ambient);
+		litShader.setUniform1f("diffuse", p.diffuse);
+		litShader.setUniform1f("specular", p.specular);
+		litShader.setUniform1f("specPower", ofClamp(p.specPower, 1.0f, 200.0f));
+		litShader.setUniform1f("rim", p.rim);
+		litShader.setUniform1f("waterBase", p.waterBase);
+		litShader.setUniform1f("waterGlint", p.waterGlint);
+		litShader.setUniform1f("waterPower", ofClamp(p.waterPower, 1.0f, 200.0f));
+		drawPixelRect((float)gridW, (float)gridH);
+		litShader.end();
+	} else {
+		ofClear(0, 0, 0, 0);
+	}
+	litFbo.end();
+	if (autoRangeRequested && hasSurface)
+		measureLitRange();
+	autoRangeRequested = false;
+
+	// 4. Brightest mark per cell.
 	if (marksOn) {
 		markCellFbo.begin();
 		marksShader.begin();
@@ -355,7 +440,21 @@ bool AsciiFilter::draw(const ofTexture & colour, const ofTexture & parts, float 
 		markCellFbo.end();
 	}
 
-	// 4. The character of each cell.
+	// 5. Outline cells and their strokes.
+	edgeFbo.begin();
+	edgesShader.begin();
+	edgesShader.setUniformTexture("cellTex", cellFbo.getTexture(), 0);
+	edgesShader.setUniformTexture("partTex", partFbo.getTexture(), 1);
+	edgesShader.setUniform2f("gridSize", (float)gridW, (float)gridH);
+	edgesShader.setUniform1f("minCoverage", ofClamp(p.minCoverage, 0.0f, 1.0f));
+	edgesShader.setUniform1i("oneSided", p.edgeOneSided ? 1 : 0);
+	edgesShader.setUniform1i("sideOnly", p.edgeSideOnly ? 1 : 0);
+	edgesShader.setUniform1i("seamMode", std::max(0, std::min(2, p.seamMode)));
+	drawPixelRect((float)gridW, (float)gridH);
+	edgesShader.end();
+	edgeFbo.end();
+
+	// 6. The character of each cell (and, for the debug views, its info).
 	float fill[48];   // 4 pools x 12 entries, each pool repeated
 	for (int i = 0; i < 4; i++) {
 		const size_t len = std::max<size_t>(1, std::strlen(POOLS[i]));
@@ -365,26 +464,65 @@ bool AsciiFilter::draw(const ofTexture & colour, const ofTexture & parts, float 
 	float rates[3];
 	for (int i = 0; i < 3; i++)
 		rates[i] = ofClamp(p.shimmerRate[i], 0.0f, 30.0f);
-	decideFbo.begin();
-	decideShader.begin();
-	decideShader.setUniformTexture("cellTex", cellFbo.getTexture(), 0);
-	decideShader.setUniformTexture("partTex", partFbo.getTexture(), 1);
-	decideShader.setUniformTexture("markTex", (marksOn ? markCellFbo : partFbo).getTexture(), 2);
-	decideShader.setUniform1i("marksOn", marksOn ? 1 : 0);
-	decideShader.setUniform2f("gridSize", (float)gridW, (float)gridH);
-	decideShader.setUniform1f("minCoverage", ofClamp(p.minCoverage, 0.0f, 1.0f));
-	decideShader.setUniform1f("edgeFloor", ofClamp(p.edgeFloor, 0.0f, 1.0f));
-	decideShader.setUniform1i("oneSided", p.edgeOneSided ? 1 : 0);
-	decideShader.setUniform1i("sideOnly", p.edgeSideOnly ? 1 : 0);
-	decideShader.setUniform1fv("fillGlyph", fill, 48);
-	decideShader.setUniform1f("fillFloor", ofClamp(p.fillFloor, 0.0f, 1.0f));
-	decideShader.setUniform1f("fillStart", p.fillStart);
-	decideShader.setUniform1f("fillScale", std::max(0.0f, p.fillScale));
-	decideShader.setUniform1fv("shimmerRate", rates, 3);
-	decideShader.setUniform1f("time", ofGetElapsedTimef());
-	drawPixelRect((float)gridW, (float)gridH);
-	decideShader.end();
-	decideFbo.end();
+	const int view = std::max(0, std::min(4, p.debugView));
+	for (int info = 0; info < (view > 0 ? 2 : 1); info++) {
+		ofFbo & target = info ? infoFbo : decideFbo;
+		target.begin();
+		decideShader.begin();
+		decideShader.setUniformTexture("cellTex", cellFbo.getTexture(), 0);
+		decideShader.setUniformTexture("partTex", partFbo.getTexture(), 1);
+		decideShader.setUniformTexture("litTex", litFbo.getTexture(), 2);
+		decideShader.setUniformTexture("markTex", (marksOn ? markCellFbo : partFbo).getTexture(), 3);
+		decideShader.setUniformTexture("edgeTex", edgeFbo.getTexture(), 4);
+		decideShader.setUniform1i("marksOn", marksOn ? 1 : 0);
+		decideShader.setUniform2f("gridSize", (float)gridW, (float)gridH);
+		decideShader.setUniform1f("minCoverage", ofClamp(p.minCoverage, 0.0f, 1.0f));
+		decideShader.setUniform1i("minRun", std::max(1, std::min(3, p.minRun)));
+		decideShader.setUniform1i("strokeSmooth", p.strokeSmooth ? 1 : 0);
+		decideShader.setUniform1f("edgeFloor", ofClamp(p.edgeFloor, 0.0f, 1.0f));
+		decideShader.setUniform1f("edgePale", ofClamp(p.edgePale, 0.0f, 1.0f));
+		decideShader.setUniform1f("litBlack", p.litBlack);
+		decideShader.setUniform1f("litWhite", p.litWhite);
+		decideShader.setUniform1f("exposure", ofClamp(p.exposure, 0.0f, 8.0f));
+		decideShader.setUniform1i("ground", p.ground == GROUND_DARK ? 1 : 0);
+		decideShader.setUniform1f("ridge", p.ridge);
+		decideShader.setUniform1f("emptyCut", p.emptyCut);
+		decideShader.setUniform1f("thinCut", std::max(p.thinCut, p.emptyCut));
+		decideShader.setUniform1fv("fillGlyph", fill, 48);
+		decideShader.setUniform1f("fillFloor", ofClamp(p.fillFloor, 0.0f, 1.0f));
+		decideShader.setUniform1f("fillStart", p.fillStart);
+		decideShader.setUniform1f("fillScale", std::max(0.0f, p.fillScale));
+		decideShader.setUniform1f("paleStart", p.paleStart);
+		decideShader.setUniform1f("paleRate", std::max(0.0f, p.paleRate));
+		decideShader.setUniform1f("paleMax", ofClamp(p.paleMax, 0.0f, 1.0f));
+		decideShader.setUniform1fv("shimmerRate", rates, 3);
+		decideShader.setUniform1f("time", ofGetElapsedTimef());
+		decideShader.setUniform1i("infoPass", info);
+		drawPixelRect((float)gridW, (float)gridH);
+		decideShader.end();
+		target.end();
+	}
+
+	// Debug views: drawn instead of the characters (no trails, no glow).
+	if (view > 0) {
+		debugShader.begin();
+		debugShader.setUniformTexture("infoTex", infoFbo.getTexture(), 0);
+		debugShader.setUniformTexture("partTex", partFbo.getTexture(), 1);
+		debugShader.setUniform2f("cellSize", (float)cw, (float)ch);
+		debugShader.setUniform1i("view", view);
+		ofPushMatrix();
+		ofTranslate(x, y);
+		drawPixelRect((float)w, (float)h);
+		ofPopMatrix();
+		debugShader.end();
+		ofPopStyle();
+		ofEnableBlendMode(OF_BLENDMODE_ALPHA);
+		timer.end();
+		timing = false;
+		marksThisFrame = false;
+		trailValid = false;
+		return true;
+	}
 
 	// 5. Characters from the atlas.
 	frameFbo.begin();
@@ -482,6 +620,37 @@ bool AsciiFilter::draw(const ofTexture & colour, const ofTexture & parts, float 
 	return true;
 }
 
+// "Auto range": the contrast stretch's black and white points from this
+// frame's lit cells (ground and life, with normals): the autoLow and autoHigh
+// percentiles. Reads the cell texture back (a few thousand texels), once per
+// button press.
+void AsciiFilter::measureLitRange()
+{
+	ofFloatPixels px;
+	litFbo.readToPixels(px);
+	std::vector<float> v;
+	const size_t n = px.getWidth() * px.getHeight();
+	const float * d = px.getData();
+	const size_t ch = px.getNumChannels();
+	for (size_t i = 0; i < n && ch >= 3; i++)
+		if (d[i * ch + 2] > 0.5f && d[i * ch + 1] < 0.5f)
+			v.push_back(d[i * ch]);
+	if (v.size() < 16) {
+		rangeStatus = "auto range: too few lit cells";
+		return;
+	}
+	std::sort(v.begin(), v.end());
+	auto pct = [&](float q) { return v[std::min(v.size() - 1, (size_t)(ofClamp(q, 0.0f, 100.0f) / 100.0f * (v.size() - 1)))]; };
+	const float lo = pct(params.autoLow), hi = pct(params.autoHigh);
+	if (hi - lo < 1e-3f) {
+		rangeStatus = "auto range: lit brightness is flat";
+		return;
+	}
+	params.litBlack = lo;
+	params.litWhite = hi;
+	rangeStatus = "auto range: black " + ofToString(lo, 3) + ", white " + ofToString(hi, 3) + " (" + ofToString(v.size()) + " cells)";
+}
+
 // ------------------------------------------------------------ GPU timer (as DitherFilter's)
 void AsciiFilter::GpuTimer::begin()
 {
@@ -540,6 +709,32 @@ bool AsciiFilter::savePreset()
 	s.appendChild("fontPx").set(p.fontPx);
 	s.appendChild("glyphCentring").set(p.glyphCentring);
 	s.appendChild("fontChoice").set(p.fontChoice);
+	s.appendChild("seamMode").set(p.seamMode);
+	s.appendChild("minRun").set(p.minRun);
+	s.appendChild("strokeSmooth").set(p.strokeSmooth ? 1 : 0);
+	s.appendChild("lightAzimuth").set(p.lightAzimuth);
+	s.appendChild("lightElevation").set(p.lightElevation);
+	s.appendChild("relief").set(p.relief);
+	s.appendChild("ambient").set(p.ambient);
+	s.appendChild("diffuse").set(p.diffuse);
+	s.appendChild("specular").set(p.specular);
+	s.appendChild("specPower").set(p.specPower);
+	s.appendChild("rim").set(p.rim);
+	s.appendChild("waterBase").set(p.waterBase);
+	s.appendChild("waterGlint").set(p.waterGlint);
+	s.appendChild("waterPower").set(p.waterPower);
+	s.appendChild("litBlack").set(p.litBlack);
+	s.appendChild("litWhite").set(p.litWhite);
+	s.appendChild("autoLow").set(p.autoLow);
+	s.appendChild("autoHigh").set(p.autoHigh);
+	s.appendChild("emptyCut").set(p.emptyCut);
+	s.appendChild("thinCut").set(p.thinCut);
+	s.appendChild("edgePale").set(p.edgePale);
+	s.appendChild("paleStart").set(p.paleStart);
+	s.appendChild("paleRate").set(p.paleRate);
+	s.appendChild("paleMax").set(p.paleMax);
+	s.appendChild("ground").set(p.ground);
+	s.appendChild("ridge").set(p.ridge);
 	for (int i = 0; i < 3; i++)
 		s.appendChild("shimmerRate" + ofToString(i)).set(p.shimmerRate[i]);
 	s.appendChild("trailAmount").set(p.trailAmount);
@@ -571,6 +766,11 @@ bool AsciiFilter::loadPreset()
 	LOAD_F(exposure) LOAD_F(saturation)
 	LOAD_B(edgeSideOnly) LOAD_F(fillFloor) LOAD_F(fillStart) LOAD_F(fillScale)
 	LOAD_I(fontPx) LOAD_I(glyphCentring) LOAD_I(fontChoice)
+	LOAD_I(seamMode) LOAD_I(minRun) LOAD_B(strokeSmooth) LOAD_F(lightAzimuth) LOAD_F(lightElevation) LOAD_F(relief)
+	LOAD_F(ambient) LOAD_F(diffuse) LOAD_F(specular) LOAD_F(specPower) LOAD_F(rim)
+	LOAD_F(waterBase) LOAD_F(waterGlint) LOAD_F(waterPower) LOAD_F(litBlack) LOAD_F(litWhite)
+	LOAD_F(autoLow) LOAD_F(autoHigh) LOAD_F(emptyCut) LOAD_F(thinCut) LOAD_F(edgePale)
+	LOAD_F(paleStart) LOAD_F(paleRate) LOAD_F(paleMax) LOAD_I(ground) LOAD_F(ridge)
 #undef LOAD_I
 #undef LOAD_F
 #undef LOAD_B
@@ -606,11 +806,59 @@ void AsciiFilter::drawGui()
 		ImGui::SameLine();
 		if (ImGui::Button("Defaults")) {
 			const bool on = p.enabled;
+			const int view = p.debugView;
 			p = DEFAULTS;
 			p.enabled = on;
+			p.debugView = view;
 		}
 		if (!presetStatus.empty())
 			ImGui::Text("Preset: %s", presetStatus.c_str());
+
+		static const char * views[] = { "Off", "Bands (parts R)", "Edges", "Lit brightness", "Fill pool" };
+		ImGui::Combo("Debug view", &p.debugView, views, 5);
+		static const char * grounds[] = { "Full", "Dark (land: contours and lit ridges only)" };
+		ImGui::Combo("Ground", &p.ground, grounds, 2);
+		if (p.ground == GROUND_DARK)
+			ImGui::SliderFloat("Ridge brightness (Dark)", &p.ridge, 0.0f, 1.5f);
+
+		if (ImGui::TreeNode("Light")) {
+			ImGui::SliderFloat("Key azimuth (deg, from the top, clockwise)", &p.lightAzimuth, 0.0f, 360.0f);
+			ImGui::SliderFloat("Key elevation (deg)", &p.lightElevation, 5.0f, 90.0f);
+			ImGui::SliderFloat("Relief exaggeration", &p.relief, 0.0f, 5.0f);
+			ImGui::SliderFloat("Ambient", &p.ambient, 0.0f, 1.5f);
+			ImGui::SliderFloat("Diffuse", &p.diffuse, 0.0f, 1.5f);
+			ImGui::SliderFloat("Specular", &p.specular, 0.0f, 1.5f);
+			ImGui::SliderFloat("Specular power", &p.specPower, 1.0f, 100.0f);
+			ImGui::SliderFloat("Rim (steep slopes)", &p.rim, 0.0f, 1.5f);
+			ImGui::SliderFloat("Water base", &p.waterBase, 0.0f, 1.5f);
+			ImGui::SliderFloat("Water glint", &p.waterGlint, 0.0f, 1.5f);
+			ImGui::SliderFloat("Water glint power", &p.waterPower, 1.0f, 200.0f);
+			ImGui::SliderFloat("Black point (raw lit)", &p.litBlack, 0.0f, 2.0f);
+			ImGui::SliderFloat("White point (raw lit)", &p.litWhite, 0.0f, 2.5f);
+			ImGui::SliderFloat("Auto range low percentile", &p.autoLow, 0.0f, 50.0f);
+			ImGui::SliderFloat("Auto range high percentile", &p.autoHigh, 50.0f, 100.0f);
+			if (ImGui::Button("Auto range (from this frame)"))
+				autoRangeRequested = true;
+			if (!rangeStatus.empty())
+				ImGui::Text("%s", rangeStatus.c_str());
+			ImGui::TreePop();
+		}
+		if (ImGui::TreeNode("Emptiness and colour")) {
+			ImGui::SliderFloat("Empty below (brightness)", &p.emptyCut, 0.0f, 1.0f);
+			ImGui::SliderFloat("Thin letters below (brightness)", &p.thinCut, 0.0f, 1.0f);
+			ImGui::SliderFloat("Outline paling", &p.edgePale, 0.0f, 1.0f);
+			ImGui::SliderFloat("Pale from (brightness)", &p.paleStart, 0.0f, 2.0f);
+			ImGui::SliderFloat("Paling rate", &p.paleRate, 0.0f, 4.0f);
+			ImGui::SliderFloat("Paling at most", &p.paleMax, 0.0f, 1.0f);
+			ImGui::TreePop();
+		}
+		if (ImGui::TreeNode("Outlines")) {
+			static const char * seams[] = { "Every class and identity change", "Class changes (G)", "Fluid edge only (shore)" };
+			ImGui::Combo("Seams outlined", &p.seamMode, seams, 3);
+			ImGui::SliderInt("Shortest stroke run kept (cells, 1 = all)", &p.minRun, 1, 3);
+			ImGui::Checkbox("One character along a run (smoothed direction)", &p.strokeSmooth);
+			ImGui::TreePop();
+		}
 
 		static const char * cells[] = { "6 x 10 px", "7 x 10 px", "8 x 12 px", "10 x 16 px" };
 		ImGui::Combo("Cell size", &p.cellPreset, cells, CELL_PRESETS);
@@ -649,7 +897,7 @@ void AsciiFilter::drawGui()
 		ImGui::Text("(off: empty cells stay exact black)");
 
 		ImGui::Separator();
-		ImGui::Text("Pre-filter (before the filter; hue kept)");
+		ImGui::Text("Pre-filter: saturation of the hue; exposure x brightness");
 		ImGui::SliderFloat("Exposure", &p.exposure, 0.25f, 4.0f);
 		ImGui::SliderFloat("Saturation", &p.saturation, 0.0f, 3.0f);
 	}

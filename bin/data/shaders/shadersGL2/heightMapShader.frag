@@ -86,6 +86,22 @@ const float STAGE_MIN_COVER = 0.04;
 // writes for the dither filter: 1 pioneer, 2 intermediate, 3 climax, 0
 // none), A = 1. Values / 255.
 uniform int partsPass;
+// Band hysteresis (2026-11-21): with partsPass 1, prevPartsSampler is the
+// parts buffer of the previous frame (same projector pixel = same texel:
+// gl_FragCoord). The pixel keeps its previous band while its key height is
+// within bandMargin mm of that band (it must pass a band edge by the margin
+// to change band). bandMargin 0 = no hysteresis.
+uniform sampler2DRect prevPartsSampler;
+uniform int hasPrevParts;
+uniform float bandMargin;            // mm
+// partsPass 2 (2026-11-21): the surface normal for AsciiFilter's lighting,
+// output RGB = unit normal in the projected image's frame (x right, y down
+// as in openFrameworks' window coordinates, z up), A = 1. Slope from central
+// differences of the filtered depth (the same worldAt() as the flat-ground
+// fade), +-normalRadius Kinect px, rise and run both in mm, so the slope is
+// physical (dimensionless, mm per mm). Kinect-frame slope is turned into the
+// image frame with the screen-space change of the Kinect pixel coordinate.
+uniform float normalRadius;          // Kinect px
 // Water lines (2026-11-05): glowing bathymetric contours on simulated
 // water only, from the same per-pixel elevation as the colour map
 // (depthfrag). waterLineTransform maps depthfrag to elevation / spacing.
@@ -224,6 +240,10 @@ void main()
     // Land lines: key height (mm) and its change per projector pixel.
     float hMM = depthfrag * heightTransform.x + heightTransform.y;
     float hW = fwidth(hMM);
+    // Kinect pixel coordinate per projector pixel (surface pass, 2026-11-21);
+    // taken here, in uniform control flow.
+    vec2 tcDx = dFdx(texcoordfrag);
+    vec2 tcDy = dFdy(texcoordfrag);
 
     // ASCII filter parts (2026-11-21): see partsPass above. After the
     // derivatives, so they stay in uniform control flow.
@@ -237,10 +257,45 @@ void main()
             if (hMM >= landEdge[i])
                 band += 1.0;
         }
+        if (hasPrevParts == 1 && bandMargin > 0.0)
+        {
+            vec4 prev = texture2DRect(prevPartsSampler, gl_FragCoord.xy);
+            if (prev.a > 0.5)
+            {
+                float pb = floor(prev.r * 255.0 + 0.5);
+                float lo = -1e6, hi = 1e6;   // the previous band's edges
+                for (int i = 0; i < 16; i++)
+                {
+                    if (i >= landEdgeCount)
+                        break;
+                    if (float(i) == pb - 1.0)
+                        lo = landEdge[i];
+                    if (float(i) == pb)
+                        hi = landEdge[i];
+                }
+                if (hMM >= lo - bandMargin && hMM < hi + bandMargin)
+                    band = pb;
+            }
+        }
         bool water = drawSimWater == 1 && simWater;
         float stage = (!water && plantDisplay == 3 && hasVegetation == 1) ? stageOf(veg) : 0.0;
         float layer = water ? 2.0 : ((stage > 0.0) ? 1.0 : 0.0);
         gl_FragColor = vec4(band / 255.0, layer / 255.0, stage / 255.0, 1.0);
+        return;
+    }
+    if (partsPass == 2)
+    {
+        float r = max(normalRadius, 0.5);
+        vec2 kx = vec2(r, 0.0), ky = vec2(0.0, r);
+        // Up is minus worldAt().w (the colour map's key height is -elevation).
+        vec2 g = vec2(-riseOverRun(worldAt(texcoordfrag - kx), worldAt(texcoordfrag + kx)),
+                      -riseOverRun(worldAt(texcoordfrag - ky), worldAt(texcoordfrag + ky)));
+        // Along the image's x and y: the unit Kinect-frame directions of one
+        // projector pixel step (square Kinect pixels assumed).
+        vec2 ux = tcDx / max(length(tcDx), 1e-6);
+        vec2 uy = tcDy / max(length(tcDy), 1e-6);
+        vec3 n = normalize(vec3(-dot(g, ux), -dot(g, uy), 1.0));
+        gl_FragColor = vec4(n, 1.0);
         return;
     }
     // Flat-ground fade: 1 on slopes, 0 where the wide-baseline slope is

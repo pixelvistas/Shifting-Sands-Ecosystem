@@ -310,6 +310,11 @@ class Target:
         a = GL.glReadPixels(0, 0, self.w, self.h, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE)
         return np.frombuffer(a, np.uint8).reshape(self.h, self.w, 4).copy()
 
+    def readf(self):
+        GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, self.fbo)
+        a = GL.glReadPixels(0, 0, self.w, self.h, GL.GL_RGBA, GL.GL_FLOAT)
+        return np.frombuffer(a, np.float32).reshape(self.h, self.w, 4).copy()
+
 
 class Renderer:
     def __init__(self, ctx, gl2, height_dir=None):
@@ -408,7 +413,12 @@ class Renderer:
         t_contour = rect_tex(PW + 1, PH + 1, GL.GL_RGBA8, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE)
         world, proj = matrices()
         p = self.p_height
-        self.sand.begin((0, 0, 0, 0) if d.get("partsPass") else (0, 0, 0, 1))  # parts (ASCII preview): cleared to "no part"
+        # ASCII preview: the parts (partsPass 1) and surface (2) passes clear to
+        # 0 = nothing drawn; the surface pass needs a float target.
+        if d.get("partsPass") == 2 and not hasattr(self, "sandf"):
+            self.sandf = Target(PW, PH, GL.GL_RGBA32F)
+        target = self.sandf if d.get("partsPass") == 2 else self.sand
+        target.begin((0, 0, 0, 0) if d.get("partsPass") else (0, 0, 0, 1))
         GL.glUseProgram(p)
         self.tex(p, "tex0", 0, t_depth)
         self.tex(p, "heightColorMapSampler", 2, t_cmap)
@@ -424,6 +434,10 @@ class Renderer:
         self.u(p, "drawContourLines", int(d["drawContourLines"]), i=True)
         self.u(p, "contourSolid", int(d.get("contourSolid", 0)), i=True)
         self.u(p, "partsPass", int(d.get("partsPass", 0)), i=True)        # ASCII filter parts (absent before ss/ascii-baseline)
+        for name, unit, t in d.get("extraTex", ()):                        # ASCII preview: e.g. prevPartsSampler
+            self.tex(p, name, unit, t)
+        for name, (v, is_int) in d.get("extraU", {}).items():              # ASCII preview: e.g. bandMargin
+            self.u(p, name, *(v if isinstance(v, tuple) else (v,)), i=is_int)
         self.u(p, "heightMapNumEntries", float(n))
         self.u(p, "time", 0.0)
         wl_den = hm_scale * max(0.1, d["waterLineDistance"])
@@ -474,7 +488,7 @@ class Renderer:
         idx = np.stack([a, a + 1, a + mw, a + 1, a + mw + 1, a + mw], -1).ravel()
         self.draw(p, pts, pts, idx, PW, PH)
         GL.glUseProgram(0)
-        img = self.sand.read8()
+        img = target.readf() if target is not self.sand else self.sand.read8()
         GL.glDeleteTextures([t_cmap, t_depth, t_veg, t_site, t_contour])
         return img
 
