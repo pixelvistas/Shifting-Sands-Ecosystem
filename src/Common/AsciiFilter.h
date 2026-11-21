@@ -5,12 +5,15 @@ the size of the output) and draws them as a dense grid of coloured
 characters on pure black. Knows nothing about the mode that produced the
 pictures; the caller says what the part fields and mark layers are.
 
-Visual reference: "The Betta Fish in ASCII" by @dwcminh.ascii. Only the
-look was taken from it (dense true-colour characters on black, stroke
-characters along edges, letters by brightness, double glow, short
-trails); its code is licensed for personal, non-commercial use and was
-not read, ported or copied. Everything here was written from a
-description of the technique.
+Visual reference: "The Betta Fish in ASCII" by @dwcminh.ascii (dense
+true-colour characters on black, stroke characters along edges, letters
+by brightness, double glow, short trails). Its code is licensed for
+personal, non-commercial use. This filter was written from a description
+of the technique (the project brief) before that code was read; the code
+was read afterwards, on 2026-11-21, only to compare (DEVLOG), and nothing
+was ported or copied from it. The brief's constants (fill pools, 7 x 10
+cells, outline rule, edge floor 0.85, coverage curve, trail 0.5, glow
+0.75 / 0.45) match that code's.
 
 Inputs (per frame):
 - colour: any RGB picture; black (at or under blackThreshold) is "nothing".

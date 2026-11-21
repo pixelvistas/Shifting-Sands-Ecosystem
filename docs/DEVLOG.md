@@ -4708,3 +4708,80 @@ Renderer -> Screen filter = ASCII, the default):
 Also: Screen filter Off and Dither for comparison, and "Band outlines
 replace the Sandbox lines" off to compare the Sandbox's own lines with the
 outlines.
+
+## 2026-11-21 - ASCII baseline compared with the BETTA-FISH source (`ss/ascii-baseline`)
+
+At the user's request, after the filter was built (496661c), the source of
+github.com/dwcminh/ascii-art/BETTA-FISH (`betta_fish.py`, Python, NumPy,
+pygame-ce) was read to compare it with this build. It was cloned outside
+this repository, and nothing from it was ported or copied. The licence
+(LICENSE.txt) allows personal, non-commercial use, reading the code to
+learn from it, and remixing it for one's own experiments. Commercial use
+and reposting its images need the author's permission. Passing the code
+or the artwork off as one's own is never allowed. `AsciiFilter.h` now
+states this provenance; the earlier statement "not read" was true when
+the filter was written.
+
+The brief's constants are the source's own:
+- the four fill pools, character for character;
+- 7 x 10 px cells;
+- the outline rule (|gx| > 2|gy| `|`, |gy| > 2|gx| `_` / `-` by the sign
+  of gy, else `/` / `\` by the sign of gx gy, `+` when g is 0);
+- edge brightness max(0.85, L);
+- brightness x (0.30 + 0.70 coverage^0.7), with marks not scaled;
+- trail = max(previous x 0.5, frame);
+- tight glow at 1/4 and wide at 1/8, made from the tight one, added at
+  0.75 and 0.45.
+
+Differences:
+- Input. BETTA-FISH projects a 3D point cloud into the grid. Each cell
+  takes its nearest point (z-buffer); coverage is the summed screen area
+  of the points in the cell. Here the input is a picture: coverage and
+  colour come from 4 x 4 samples, and the part is the mode of those
+  samples.
+- Outlines. BETTA-FISH makes a cell an edge only through its four
+  orthogonal neighbours; diagonals add to g but never start an edge. It
+  draws a boundary between two parts from the front side only, by depth
+  or by part order. Here, per the brief, any of the 8 neighbours starts an
+  edge and both sides draw it, so contour lines come out two cells thick.
+  The "one side only" option is the nearest equivalent (by part key).
+  Thresholds here are 2.414 (octants) and |g| < 0.25 for `+`, with
+  diagonals weighted 0.707; BETTA-FISH uses 2 and exact zero, unweighted.
+- Fill letters:
+  - Pool choice. BETTA-FISH uses level = clip((L - 0.42) x 4.6, 0, 3),
+    where L is its lighting value. Here: 4 equal bins of the colour's
+    luminance.
+  - Brightness. BETTA-FISH lifts the fill to clip(0.45 + 0.55 L / 0.9,
+    0.45, 1). Here the fill keeps the cell's own colour, so it reads
+    dimmer.
+  - Shimmer. BETTA-FISH: index = (h + int(4t + h mod 11)) mod 12, with
+    each pool repeated to 12 and an integer hash h. Every cell steps at 4
+    per second, and because the phase offset is a whole number, all cells
+    step at the same instants. Here each cell has a fractional phase and
+    the rate depends on the part (0.02 / 0.2 / 1.5 per second), so changes
+    are staggered. The brief asked for "shimmer without flicker".
+- Glyphs. BETTA-FISH renders the system monospace font at 11 px into a
+  7 x 10 cell, centred, cropping whatever overflows; the letters are large
+  for the cell. Here the 95 characters' ink is fitted inside the cell
+  (9 px), so the letters are smaller and the grid looks sparser and darker
+  at the same cell size.
+- Glow. BETTA-FISH has no black floor and no mask: its glow lights the
+  empty water around the fish, which is part of the look on a dark
+  screen. Here the floor and the drawn-cell mask (the brief's
+  requirements) keep the sand exactly black.
+- Marks. BETTA-FISH's marks are points it places itself (motes, glints,
+  bubbles, sparks), drawn only where the fish is not in front. Here they
+  are the Sandbox layers' FBOs. In both, marks keep their own glyph and
+  are never outlined.
+- Trails: the same rule. BETTA-FISH uses 8-bit surfaces; here RGBA16F with
+  a 1/1024 cut-off.
+- Not here (deferred by the brief): four-pointed flares, colour waves with
+  a white-hot front, stroke characters along fin rays drawn by the slope
+  of the ray on screen, scale glints.
+
+Possible changes toward the reference look (none made; for the user to
+choose):
+1. A glyph scale option, so letters fill the cell as in BETTA-FISH.
+2. A fill brightness lift (floor 0.45).
+3. Edges from orthogonal neighbours only, with one-sided boundaries, for
+   thinner contour lines.
